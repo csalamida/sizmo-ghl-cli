@@ -10,13 +10,30 @@
 
 Requires Node.js 20+.
 
+**Option A — clone + install (puts `sizmo` on your PATH):**
+
 ```sh
-git clone https://github.com/sizmo/sizmo-cli  # TODO: confirm repo URL before publishing
-cd sizmo-cli
+git clone https://github.com/csalamida07-cyber/sizmo-ghl-cli
+cd sizmo-ghl-cli
 bash install.sh
 ```
 
 `install.sh` symlinks `bin/sizmo.mjs` into `~/.local/bin/sizmo`. Add `~/.local/bin` to `$PATH` if not already present (the script will warn you if needed).
+
+**Option B — run with no install, straight from GitHub:**
+
+```sh
+npx github:csalamida07-cyber/sizmo-ghl-cli brief
+```
+
+**Option C — clone + run directly:**
+
+```sh
+git clone https://github.com/csalamida07-cyber/sizmo-ghl-cli && cd sizmo-ghl-cli
+node bin/sizmo.mjs brief
+```
+
+> `npx sizmo` (npm install) is coming once the package is published to npm.
 
 Then configure a profile:
 

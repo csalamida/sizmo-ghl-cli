@@ -10,8 +10,8 @@
 ## Step 1 — clone and link
 
 ```sh
-git clone https://github.com/sizmo/sizmo-cli   # TODO: confirm repo URL before publishing
-cd sizmo-cli
+git clone https://github.com/csalamida07-cyber/sizmo-ghl-cli
+cd sizmo-ghl-cli
 bash install.sh
 ```
 
