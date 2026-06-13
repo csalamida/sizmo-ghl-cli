@@ -1,7 +1,7 @@
 // commands/opp.mjs — create, move, or update a pipeline opportunity.
 // Scope required: opportunities.write
 // Pipeline and stage names are resolved to IDs via the CRM model.
-// NEVER fires without --confirm. No-confirm → exit 4 + envelope.
+// NEVER fires without --confirm. No-confirm → exit 5 (CONFIRM) + envelope.
 // 401/403 → exit 3 with scope guidance.
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
@@ -87,7 +87,7 @@ export async function run(args, ctx) {
     if (!pl) {
       throw new GhlError(
         `unknown pipeline '${plName}' — run sizmo crm pipelines`,
-        EXIT.AUTH,
+        EXIT.NOTFOUND,
         'sizmo crm pipelines to list available pipelines'
       );
     }
@@ -95,7 +95,7 @@ export async function run(args, ctx) {
     if (!stage) {
       throw new GhlError(
         `unknown stage '${stName}' in pipeline '${plName}' — run sizmo crm pipelines`,
-        EXIT.AUTH,
+        EXIT.NOTFOUND,
         'sizmo crm pipelines to list available stages'
       );
     }
@@ -155,7 +155,7 @@ export async function run(args, ctx) {
     if (!found) {
       throw new GhlError(
         `unknown stage '${stName}' — run sizmo crm pipelines`,
-        EXIT.AUTH,
+        EXIT.NOTFOUND,
         'sizmo crm pipelines to list available stages'
       );
     }

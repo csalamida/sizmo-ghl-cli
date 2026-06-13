@@ -1,7 +1,7 @@
 {
   "name": "sizmo",
   "version": "0.5.0",
-  "description": "Unofficial read-only GoHighLevel CLI — read your CRM (leads, bookings, pipeline, A/R, payments) from the terminal. Not affiliated with HighLevel.",
+  "description": "Unofficial GoHighLevel CLI — read your CRM + make confirm-gated operational changes from the terminal. Money never moves through it. Not affiliated with HighLevel.",
   "type": "module",
   "bin": {
     "sizmo": "bin/sizmo.mjs"
@@ -21,7 +21,7 @@
     "crm",
     "cli",
     "leadconnector",
-    "read-only"
+    "confirm-gated"
   ],
   "repository": {
     "type": "git",

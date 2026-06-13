@@ -1,5 +1,5 @@
 // test/commands/tag.test.mjs
-// No-confirm → exit 4 + envelope, NO http write fired.
+// No-confirm → exit 5 (CONFIRM) + envelope, NO http write fired.
 // --confirm → write fires once, exit 0.
 // 401/403 → exit 3 + scope message.
 // --dry-run → status dry_run, no write, exit 0.
@@ -13,11 +13,11 @@ const CONTACT = 'cid-001';
 
 // ── no --confirm ─────────────────────────────────────────────────────────────
 
-test('tag add: no --confirm → exit 4 + envelope, no write fired', async () => {
+test('tag add: no --confirm → exit 5 (CONFIRM) + envelope, no write fired', async () => {
   const { ctx, getPrinted, getCalledWrites } = makeFakeCtx({ confirmed: false });
   const code = await run({ _: [CONTACT], add: 'VIP' }, ctx);
   ctx.out.flush();
-  assert.equal(code, EXIT.CONFIRM, 'exit code must be CONFIRM (4)');
+  assert.equal(code, EXIT.CONFIRM, 'exit code must be CONFIRM (5)');
   const writes = getCalledWrites();
   assert.equal(writes.length, 0, 'no http write must fire without --confirm');
   const envelope = JSON.parse(getPrinted());

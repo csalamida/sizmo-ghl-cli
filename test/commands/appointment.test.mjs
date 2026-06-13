@@ -1,7 +1,7 @@
 // test/commands/appointment.test.mjs
 // Tests appointment book / cancel.
 // Calendar name→id resolution via injected model. Unknown name → exit 3.
-// No-confirm → exit 4 + envelope, no write fired.
+// No-confirm → exit 5 (CONFIRM) + envelope, no write fired.
 // --confirm → write fires once, exit 0.
 // 401/403 → exit 3.
 // --dry-run → dry_run, no write.
@@ -34,7 +34,7 @@ test('appointment book: no --confirm → exit 4 + envelope, no write fired', asy
   const { ctx, getPrinted, getCalledWrites } = makeFakeCtx({ confirmed: false, model: MODEL });
   const code = await run({ _: ['book'], calendar: 'Coaching Calls', contact: CONTACT, start: START }, ctx);
   ctx.out.flush();
-  assert.equal(code, EXIT.CONFIRM, 'exit must be CONFIRM (4)');
+  assert.equal(code, EXIT.CONFIRM, 'exit must be CONFIRM (5)');
   assert.equal(getCalledWrites().length, 0, 'no write without --confirm');
   const envelope = JSON.parse(getPrinted());
   assert.equal(envelope.data.status, 'confirmation_required');
@@ -56,11 +56,11 @@ test('appointment book: --confirm → POST fires once, exit 0', async () => {
 
 // ── book — unknown calendar ───────────────────────────────────────────────────
 
-test('appointment book: unknown calendar → exit AUTH', async () => {
+test('appointment book: unknown calendar → exit NOTFOUND', async () => {
   const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL });
   await assert.rejects(
     () => run({ _: ['book'], calendar: 'Mystery Calendar', contact: CONTACT, start: START }, ctx),
-    (e) => { assert.equal(e.code, EXIT.AUTH); assert.ok(/unknown calendar/i.test(e.message)); return true; }
+    (e) => { assert.equal(e.code, EXIT.NOTFOUND); assert.ok(/unknown calendar/i.test(e.message)); return true; }
   );
 });
 

@@ -1,7 +1,7 @@
 // commands/appointment.mjs — book or cancel a calendar appointment.
 // Scope required: calendars.write
 // Calendar name resolved to ID via CRM model.
-// NEVER fires without --confirm. No-confirm → exit 4 + envelope.
+// NEVER fires without --confirm. No-confirm → exit 5 (CONFIRM) + envelope.
 // 401/403 → exit 3 with scope guidance.
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
@@ -64,7 +64,7 @@ export async function run(args, ctx) {
     if (!cal) {
       throw new GhlError(
         `unknown calendar '${calName}' — run sizmo crm calendars`,
-        EXIT.AUTH,
+        EXIT.NOTFOUND,
         'sizmo crm calendars to list available calendars'
       );
     }

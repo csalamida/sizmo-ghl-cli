@@ -1,10 +1,10 @@
 # sizmo
 
-**Unofficial read-only GoHighLevel CLI.** Your GoHighLevel CRM — leads, bookings, pipeline, receivables, payments, and a money-ranked to-do list — from the terminal, in one command.
+**Unofficial GoHighLevel CLI — read your CRM + make confirm-gated operational changes from the terminal. Money never moves through it.** Not affiliated with HighLevel.
 
 > Not affiliated with, endorsed by, or supported by HighLevel. This is an independent open-source tool.
 
-`sizmo` reads your GoHighLevel location — leads, bookings, pipeline, A/R, money leaks — from the terminal. It never writes, never charges, never sends. Every outward action stays human-triggered.
+`sizmo` reads your GoHighLevel location — leads, bookings, pipeline, A/R, money leaks — from the terminal. Write operations (tag, note, opp, appointment, send) require explicit `--confirm`; without it the CLI prints the exact change and a rerun command, then exits 5. Nothing fires silently. Money stays out — no charges, collections, refunds, or invoice-issuing; payments and invoices are read-only.
 
 ## Install
 
@@ -51,6 +51,12 @@ contacts.readonly · conversations.readonly · opportunities.readonly
 calendars.readonly · invoices.readonly · payments/transactions.readonly
 ```
 
+For write commands (tag, note, opp, appointment, send), also add:
+
+```
+contacts.write · opportunities.write · calendars.write · conversations/message.write
+```
+
 Granting fewer is fine — missing scopes show as ⚠ in affected metrics rather than failing the whole command. Run `sizmo auth check` after setup to see a per-lane scope report.
 
 **Auth: PIT vs MCP** — `sizmo` uses a Private Integration Token (PIT), not the GoHighLevel MCP server. See [`docs/how-to/auth-pit-vs-mcp.md`](docs/how-to/auth-pit-vs-mcp.md) for the comparison and when you'd want each.
@@ -80,6 +86,37 @@ Command list generated from `sizmo schema` (authoritative — pulled directly fr
 | `sizmo segment` | Find contacts by criteria — tag, phone, age, etc. | `--tag X`, `--without-tag X`, `--no-tags`, `--created-days N`, `--has-phone`, `--no-phone`, `--top N` (default 20) |
 | `sizmo crm` | Query the local CRM model — counts, lists, staleness | `--all` (show all items) |
 | `sizmo sync` | Refresh the local CRM model (pipelines, calendars, tags, fields, users, location) | `[entity]` (sync one) |
+
+### Writes (confirm-gated)
+
+These commands change data in GoHighLevel. Every write requires `--confirm`; without it the CLI prints the exact change + a rerun command and exits 5. Nothing fires silently. Money never moves — no charge, collect, refund, or invoice-issue.
+
+| Command | Summary | Required flags | Scope needed |
+|---------|---------|----------------|--------------|
+| `sizmo tag <contactId> --add <tag>` | Add a tag to a contact | `--add` or `--remove` | `contacts.write` |
+| `sizmo tag <contactId> --remove <tag>` | Remove a tag from a contact | `--add` or `--remove` | `contacts.write` |
+| `sizmo note <contactId> --text "..."` | Add a note to a contact | `--text` | `contacts.write` |
+| `sizmo opp create --name --pipeline --stage --contact` | Create a pipeline opportunity | `--name`, `--pipeline`, `--stage`, `--contact` | `opportunities.write` |
+| `sizmo opp move <oppId> --stage <name>` | Move an opportunity to a stage | `--stage` | `opportunities.write` |
+| `sizmo opp update <oppId> [--value --status]` | Update value or status of an opportunity | `--value` or `--status` | `opportunities.write` |
+| `sizmo appointment book --calendar --contact --start` | Book an appointment | `--calendar`, `--contact`, `--start` | `calendars.write` |
+| `sizmo appointment cancel <apptId>` | Cancel an appointment | apptId positional | `calendars.write` |
+| `sizmo send <contactId> --channel sms\|email --message "..."` | Send an SMS or email | `--channel`, `--message` | `conversations/message.write` |
+
+**How writes work:**
+
+```sh
+# Step 1 — preview (no --confirm): prints change description + rerun command, exits 5
+sizmo tag cid-001 --add VIP --json
+
+# Step 2 — execute (with --confirm): fires the write, exits 0
+sizmo tag cid-001 --add VIP --confirm
+
+# --dry-run: shows change description without executing, exits 0
+sizmo tag cid-001 --add VIP --dry-run
+```
+
+Pipeline/calendar names are resolved to IDs from the local CRM model. Run `sizmo sync` first if you've changed stages or calendars.
 
 ### Utility commands
 
@@ -157,10 +194,12 @@ The JSON `_meta` block in every `crm` response lets agents branch on staleness w
 
 **Scope requirements** for a full sync: `opportunities.readonly`, `calendars.readonly`, `locations/tags.readonly`, `locations/customFields.readonly`, `users.readonly`, `locations.readonly`. A 401/403 on one entity marks it blocked; the rest still store. `sizmo crm` shows `✖ needs <scope>` for blocked entities.
 
-## Read-only + safety promise
+## Safety model
 
-- **Never writes to GoHighLevel.** No contacts created, no messages sent, no invoices issued, no payments charged.
-- **Money is always human-triggered.** The CLI reads; humans approve every action that has a dollar attached.
+- **Reads are always free.** Read commands never change anything in GoHighLevel.
+- **Writes require explicit `--confirm`.** Tag, note, opp, appointment, and send commands print the exact change + a rerun command and exit 5 (confirmation-required) without `--confirm`. Nothing fires silently — safe for agent use.
+- **Money stays out.** No charge, collect, refund, or invoice-issue — ever. Payments and invoices are read-only in every path. The only writes are operational: tags, notes, opportunities, appointments, and messages.
+- **`--dry-run` available on all writes.** Shows the change description without executing. Exits 0.
 - **PIT never in argv.** Credentials are passed via stdin (`--pit-stdin`) or env var (`--pit-env VAR`). Never logged, never echoed raw.
 - **60-second read cache.** Repeated calls within 60s return cached data. `cacheAgeMs` in the envelope tells you how old. Use `--fresh` to bypass.
 
@@ -180,7 +219,8 @@ The JSON `_meta` block in every `crm` response lets agents branch on staleness w
 | 1 | API error |
 | 2 | Usage error (bad flag / unknown command) |
 | 3 | Auth error / no location resolved |
-| 4 | Not found |
+| 4 | Not found (unknown pipeline/stage/calendar name) |
+| 5 | Confirmation required — rerun with `--confirm` to execute |
 
 ## Multi-client
 

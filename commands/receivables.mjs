@@ -2,7 +2,7 @@
 // Trust-fix #1: LOC from ctx.cfg.loc.
 // Trust-fix #2: invoices paginate to completion (was offset-capped at 2000).
 // Trust-fix #3: per-currency totals (never cross-sum).
-// READ-ONLY. Agent can send/void one at a time, L2 confirm. NEVER charges.
+// READ-ONLY. Invoices and payments are read-only — no charges, no voids, no sends from this command.
 import { paginate } from '../lib/paginate.mjs';
 
 export const meta = {
@@ -113,7 +113,7 @@ export async function run(args, ctx) {
     });
     if (data.outstanding > TOP) ctx.out.line(`  … +${data.outstanding - TOP} more`);
     ctx.out.line('  ' + '─'.repeat(72));
-    ctx.out.line('  → I can (re)send or void ONE at a time on your say-so (L2). I NEVER charge/collect — that stays you.\n');
+    ctx.out.line('  → This command is read-only. To send a message about an invoice, use: sizmo send <contactId> --channel sms --message "..." --confirm\n');
   });
   return 0;
 }

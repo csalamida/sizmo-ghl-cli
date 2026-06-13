@@ -4,7 +4,7 @@
 //   - exact recipient contact id
 //   - channel (sms/email)
 //   - full message body (never truncated in the confirmation stage)
-// NEVER fires without --confirm. No-confirm → exit 4 + envelope.
+// NEVER fires without --confirm. No-confirm → exit 5 (CONFIRM) + envelope.
 // 401/403 → exit 3 with scope guidance.
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';

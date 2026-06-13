@@ -1,6 +1,6 @@
 // test/commands/send.test.mjs
 // HIGHEST BLAST — confirm preview MUST show exact recipient + channel + full body.
-// No-confirm → exit 4 + envelope, NO http write fired.
+// No-confirm → exit 5 (CONFIRM) + envelope, NO http write fired.
 // --confirm → write fires once, exit 0.
 // 401/403 → exit 3 + scope message.
 // --dry-run → dry_run, no write, exit 0.
@@ -19,7 +19,7 @@ test('send sms: no --confirm → exit 4, no write fired, envelope shows recipien
   const { ctx, getPrinted, getCalledWrites } = makeFakeCtx({ confirmed: false });
   const code = await run({ _: [CONTACT], channel: 'sms', message: MESSAGE }, ctx);
   ctx.out.flush();
-  assert.equal(code, EXIT.CONFIRM, 'exit must be CONFIRM (4)');
+  assert.equal(code, EXIT.CONFIRM, 'exit must be CONFIRM (5)');
   assert.equal(getCalledWrites().length, 0, 'no http write without --confirm');
 
   const envelope = JSON.parse(getPrinted());

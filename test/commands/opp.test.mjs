@@ -1,7 +1,7 @@
 // test/commands/opp.test.mjs
 // Tests opp create / move / update.
 // Name→id resolution via injected model. Unknown name → exit 3.
-// No-confirm → exit 4 + envelope, no write fired.
+// No-confirm → exit 5 (CONFIRM) + envelope, no write fired.
 // --confirm → write fires once, exit 0.
 // 401/403 → exit 3.
 // --dry-run → dry_run, no write.
@@ -39,7 +39,7 @@ test('opp create: no --confirm → exit 4 + envelope, no write fired', async () 
   const { ctx, getPrinted, getCalledWrites } = makeFakeCtx({ confirmed: false, model: MODEL });
   const code = await run({ _: ['create'], name: 'Deal A', pipeline: 'Main Sales', stage: 'New Lead', contact: 'cid-x' }, ctx);
   ctx.out.flush();
-  assert.equal(code, EXIT.CONFIRM, 'exit must be CONFIRM (4)');
+  assert.equal(code, EXIT.CONFIRM, 'exit must be CONFIRM (5)');
   assert.equal(getCalledWrites().length, 0, 'no http write without --confirm');
   const envelope = JSON.parse(getPrinted());
   assert.equal(envelope.data.status, 'confirmation_required');
@@ -59,23 +59,23 @@ test('opp create: --confirm → POST fires once, exit 0', async () => {
   assert.equal(getCalledWrites().filter(w => w.startsWith('POST')).length, 1);
 });
 
-// ── opp create — unknown pipeline → exit AUTH ─────────────────────────────────
+// ── opp create — unknown pipeline → exit NOTFOUND ────────────────────────────
 
-test('opp create: unknown pipeline → exit AUTH (exit 3)', async () => {
+test('opp create: unknown pipeline → exit NOTFOUND (exit 4)', async () => {
   const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL });
   await assert.rejects(
     () => run({ _: ['create'], name: 'X', pipeline: 'Unknown Pipeline', stage: 'New Lead', contact: 'c' }, ctx),
-    (e) => { assert.equal(e.code, EXIT.AUTH); assert.ok(/unknown pipeline/i.test(e.message)); return true; }
+    (e) => { assert.equal(e.code, EXIT.NOTFOUND); assert.ok(/unknown pipeline/i.test(e.message)); return true; }
   );
 });
 
-// ── opp create — unknown stage → exit AUTH ────────────────────────────────────
+// ── opp create — unknown stage → exit NOTFOUND ───────────────────────────────
 
-test('opp create: unknown stage → exit AUTH (exit 3)', async () => {
+test('opp create: unknown stage → exit NOTFOUND (exit 4)', async () => {
   const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL });
   await assert.rejects(
     () => run({ _: ['create'], name: 'X', pipeline: 'Main Sales', stage: 'Nonexistent Stage', contact: 'c' }, ctx),
-    (e) => { assert.equal(e.code, EXIT.AUTH); assert.ok(/unknown stage/i.test(e.message)); return true; }
+    (e) => { assert.equal(e.code, EXIT.NOTFOUND); assert.ok(/unknown stage/i.test(e.message)); return true; }
   );
 });
 
@@ -111,11 +111,11 @@ test('opp move: --confirm → PUT fires once, exit 0', async () => {
 
 // ── opp move — unknown stage ──────────────────────────────────────────────────
 
-test('opp move: unknown stage → exit AUTH', async () => {
+test('opp move: unknown stage → exit NOTFOUND', async () => {
   const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL });
   await assert.rejects(
     () => run({ _: ['move', 'opp-123'], stage: 'Ghost Stage' }, ctx),
-    (e) => { assert.equal(e.code, EXIT.AUTH); assert.ok(/unknown stage/i.test(e.message)); return true; }
+    (e) => { assert.equal(e.code, EXIT.NOTFOUND); assert.ok(/unknown stage/i.test(e.message)); return true; }
   );
 });
 
