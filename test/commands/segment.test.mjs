@@ -89,3 +89,53 @@ test('segment: golden data keys present', () => {
     assert.ok(k in data, `golden must have key: ${k}`);
   }
 });
+
+// ── token-lean tests ──────────────────────────────────────────────────────────
+
+test('segment: default lean sample has only id + name fields', async () => {
+  const contacts = [
+    { id: 'c1', contactName: 'Alice', email: 'a@test.com', phone: null, tags: ['vip'], dateAdded: new Date(1_699_000_000_000).toISOString() },
+    { id: 'c2', contactName: 'Bob',   email: 'b@test.com', phone: null, tags: [],      dateAdded: new Date(1_699_100_000_000).toISOString() },
+  ];
+  const fixture = { 'GET /contacts/?locationId=L-TEST&limit=100': { status: 200, j: { contacts } } };
+  const { ctx, getPrinted } = makeFakeCtx({ fixture });
+  const code = await run({ 'no-phone': true }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 0);
+  const envelope = JSON.parse(getPrinted());
+  const sample = envelope.data.sample;
+  assert.ok(sample.length > 0, 'sample has items');
+  for (const item of sample) {
+    assert.ok('id' in item && 'name' in item, 'lean sample has id + name');
+    assert.ok(!('email' in item), 'lean sample must not have email');
+    assert.ok(!('phone' in item), 'lean sample must not have phone');
+    assert.ok(!('tags' in item), 'lean sample must not have tags');
+  }
+  // count + IDs still intact
+  assert.equal(envelope.data.matched, 2, 'matched count intact');
+  assert.ok(envelope.data.contactIds.includes('c1'), 'contactIds intact');
+});
+
+test('segment --full: sample includes email, phone, tags', async () => {
+  const contacts = [
+    { id: 'c1', contactName: 'Alice', email: 'a@test.com', phone: null, tags: ['vip'], dateAdded: new Date(1_699_000_000_000).toISOString() },
+  ];
+  const fixture = { 'GET /contacts/?locationId=L-TEST&limit=100': { status: 200, j: { contacts } } };
+  const { ctx, getPrinted } = makeFakeCtx({ fixture });
+  const code = await run({ 'no-phone': true, full: true }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 0);
+  const envelope = JSON.parse(getPrinted());
+  const item = envelope.data.sample[0];
+  assert.ok('email' in item, '--full sample has email');
+  assert.ok('phone' in item, '--full sample has phone');
+  assert.ok('tags' in item, '--full sample has tags');
+  assert.ok('id' in item && 'name' in item, '--full sample has id + name');
+});
+
+test('segment: --full flag declared in meta.flags', async () => {
+  const { meta } = await import('../../commands/segment.mjs');
+  const fullFlag = meta.flags.find(f => f.name === '--full');
+  assert.ok(fullFlag, '--full must be in meta.flags');
+  assert.equal(fullFlag.type, 'bool', '--full must be type bool');
+});

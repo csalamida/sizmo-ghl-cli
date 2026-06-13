@@ -43,7 +43,7 @@ test('brief: run returns 0', async () => {
   assert.equal(code, 0, 'run() must return 0');
 });
 
-test('brief: envelope has data.snapshot, data.actions (array), data.sources', async () => {
+test('brief: default envelope has data.snapshot + data.actions but NO data.sources', async () => {
   const { ctx, getPrinted } = makeCtx(makeAllClearHttp());
   await run({ days: 7 }, ctx);
   ctx.out.flush();
@@ -52,7 +52,18 @@ test('brief: envelope has data.snapshot, data.actions (array), data.sources', as
   assert.ok(envelope.data, 'envelope.data present');
   assert.ok('snapshot' in envelope.data, 'data.snapshot present');
   assert.ok(Array.isArray(envelope.data.actions), 'data.actions is array');
-  assert.ok(envelope.data.sources, 'data.sources present');
+  // default lean: sources blob absent (no duplication)
+  assert.ok(!('sources' in envelope.data), 'data.sources must NOT be in default JSON output (token-lean)');
+  // internal _sources must also be stripped
+  assert.ok(!('_sources' in envelope.data), 'data._sources must NOT leak into envelope');
+});
+
+test('brief: --verbose restores data.sources blob', async () => {
+  const { ctx, getPrinted } = makeCtx(makeAllClearHttp());
+  await run({ days: 7, verbose: true }, ctx);
+  ctx.out.flush();
+  const envelope = JSON.parse(getPrinted());
+  assert.ok(envelope.data.sources, 'data.sources present with --verbose');
   for (const k of ['triage', 'noshow', 'pipeline', 'receivables']) {
     assert.ok(k in envelope.data.sources, `data.sources.${k} present`);
   }
@@ -85,9 +96,29 @@ test('brief: degraded sub-collect does not throw, still returns 0', async () => 
   assert.equal(code, 0, 'still returns 0 when a sub-collect degrades');
   const envelope = JSON.parse(getPrinted());
   assert.ok(Array.isArray(envelope.data.actions), 'actions array still present');
-  // pipeline source should be degraded sentinel or empty stuck array
+  // default lean: sources not in envelope; use --verbose to drill into sub-source state
+
+  // verify degraded flag propagated into envelope
+  assert.ok(envelope.degraded === true, 'envelope.degraded true when pipeline degrades');
+});
+
+test('brief: degraded sub-collect visible via --verbose sources', async () => {
+  const http = { get: async (path, opts = {}) => {
+    if (path === '/opportunities/pipelines') return { code: 500, ok: false, j: {} };
+    if (path === '/contacts/') return { code: 200, ok: true, j: { contacts: [] } };
+    if (path === '/calendars/') return { code: 200, ok: true, j: { calendars: [] } };
+    if (path === '/payments/transactions') return { code: 200, ok: true, j: { data: [] } };
+    if (path === '/opportunities/search') return { code: 200, ok: true, j: { opportunities: [] } };
+    if (path === '/conversations/search') return { code: 200, ok: true, j: { conversations: [] } };
+    if (path === '/invoices/') return { code: 200, ok: true, j: { invoices: [] } };
+    return { code: 200, ok: true, j: {} };
+  }};
+  const { ctx, getPrinted } = makeCtx(http);
+  await run({ days: 7, verbose: true }, ctx);
+  ctx.out.flush();
+  const envelope = JSON.parse(getPrinted());
   const pipeSrc = envelope.data.sources.pipeline;
-  assert.ok(pipeSrc, 'sources.pipeline present even when degraded');
+  assert.ok(pipeSrc, 'sources.pipeline present with --verbose even when degraded');
 });
 
 test('brief: empty data → empty actions list, all-clear implied', async () => {
@@ -213,5 +244,59 @@ test('brief: golden data keys present', () => {
   assert.ok(Array.isArray(data.actions), 'golden.actions is array');
   for (const k of ['triage', 'noshow', 'pipeline', 'receivables']) {
     assert.ok(k in data.sources, `golden.sources.${k} present`);
+  }
+});
+
+// ── token-lean tests ──────────────────────────────────────────────────────────
+
+test('brief --concise: snapshot metrics + action stubs only (no prose, no nested payloads)', async () => {
+  const { ctx, getPrinted } = makeCtx(makeAllClearHttp());
+  ctx.concise = true; // inject global --concise
+  await run({ days: 7 }, ctx);
+  ctx.out.flush();
+  const envelope = JSON.parse(getPrinted());
+  const data = envelope.data;
+  // snapshot must be a lean metrics array
+  assert.ok(data.snapshot, 'concise snapshot present');
+  assert.ok(Array.isArray(data.snapshot.metrics), 'concise snapshot.metrics is array');
+  // each metric: label + value only (no note/blocker prose)
+  for (const m of data.snapshot.metrics) {
+    assert.ok('label' in m && 'value' in m, 'each metric has label + value');
+    assert.ok(!('note' in m), 'note must be absent in concise metric');
+  }
+  // actions: kind + recipe (no inputs, no name prose)
+  assert.ok(Array.isArray(data.actions), 'concise actions is array');
+  for (const a of data.actions) {
+    assert.ok('kind' in a && 'recipe' in a, 'each action has kind + recipe');
+    assert.ok(!('inputs' in a), 'inputs must be absent in concise action');
+    assert.ok(!('contact' in a), 'contact must be absent in concise action');
+  }
+  // honesty fields stay in envelope even in concise
+  assert.ok('degraded' in envelope, 'degraded present in concise envelope');
+  assert.ok('warnings' in envelope, 'warnings present in concise envelope');
+});
+
+test('brief --concise: snapshot numbers unchanged vs default', async () => {
+  // Run once default, once concise — snapshot metric values must be identical.
+  const http = makeAllClearHttp();
+  const { ctx: ctx1, getPrinted: get1 } = makeCtx(http);
+  await run({ days: 7 }, ctx1);
+  ctx1.out.flush();
+  const defaultData = JSON.parse(get1()).data;
+
+  const { ctx: ctx2, getPrinted: get2 } = makeCtx(http);
+  ctx2.concise = true;
+  await run({ days: 7 }, ctx2);
+  ctx2.out.flush();
+  const conciseData = JSON.parse(get2()).data;
+
+  // Compare metric values between default snapshot and concise snapshot
+  const defaultMetrics = defaultData.snapshot.metrics || [];
+  const conciseMetrics = conciseData.snapshot.metrics || [];
+  assert.equal(conciseMetrics.length, defaultMetrics.length, 'same number of metrics');
+  for (let i = 0; i < defaultMetrics.length; i++) {
+    assert.equal(conciseMetrics[i].label, defaultMetrics[i].label, `metric[${i}] label matches`);
+    assert.deepStrictEqual(conciseMetrics[i].value, defaultMetrics[i].blocked ? null : defaultMetrics[i].value,
+      `metric[${i}] value matches`);
   }
 });

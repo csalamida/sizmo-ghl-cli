@@ -12,7 +12,10 @@ import { rankActions, hasMixedCurrencies } from '../lib/prioritize.mjs';
 export const meta = {
   name: 'brief',
   summary: 'morning brief — numbers + NEEDS YOU TODAY',
-  flags: [{ name: '--days', type: 'int', default: 7, desc: 'snapshot window in days' }],
+  flags: [
+    { name: '--days',    type: 'int',  default: 7,     desc: 'snapshot window in days' },
+    { name: '--verbose', type: 'bool', default: false, desc: 'include raw sources blob in JSON output' },
+  ],
   readOnly: true,
 };
 
@@ -85,6 +88,35 @@ async function safe(name, fn, ctx) {
   }
 }
 
+// Build what actually gets passed to ctx.out.data() — strips the internal _sources
+// property and applies --concise trimming when ctx.concise is set.
+function buildEmitData(data, ctx) {
+  // data._sources is an internal-only ref (set when --verbose is NOT passed).
+  // If --verbose was passed, data.sources is already set and _sources absent.
+  const { _sources, ...rest } = data;
+
+  if (ctx.concise) {
+    // --concise: snapshot metrics values-only array + action count+recipe (no prose, no inputs)
+    const snap = rest.snapshot;
+    const conciseSnapshot = snap?.__error
+      ? { __error: snap.__error }
+      : { metrics: (snap?.metrics || []).map(m => ({ label: m.label, value: m.blocked ? null : m.value, blocked: m.blocked || undefined })) };
+
+    return {
+      snapshot: conciseSnapshot,
+      actions: (rest.actions || []).map(a => ({
+        kind:   a.kind,
+        recipe: a.recipe,
+        money:  a.money ?? undefined,
+        age:    a.age ?? undefined,
+      })),
+      ...(rest.sources && { sources: rest.sources }),
+    };
+  }
+
+  return rest;
+}
+
 // ── collect: the composable data layer ───────────────────────────────────────
 export async function collect(args, ctx) {
   const DAYS = args.days != null ? args.days : 7;
@@ -137,13 +169,19 @@ export async function collect(args, ctx) {
     });
   }
 
-  return {
+  const base = {
     location: loc,
     days: DAYS,
     snapshot: snap,
     actions,
-    sources: { triage, noshow, pipeline: pipe, receivables: ar },
   };
+
+  // sources is always computed (TTY render reads _sources below).
+  // Only included in the returned data when --verbose is passed.
+  const fullSources = { triage, noshow, pipeline: pipe, receivables: ar };
+  return args.verbose
+    ? { ...base, sources: fullSources }
+    : { ...base, _sources: fullSources }; // _sources = internal, stripped before emit
 }
 
 // ── run: bimodal output (JSON envelope OR TTY morning card) ──────────────────
@@ -151,10 +189,13 @@ export async function run(args, ctx) {
   const DAYS = args.days != null ? args.days : 7;
   const data = await collect(args, ctx);
 
-  // Machine mode: hand the combined document to the envelope
-  ctx.out.data(data);
+  // Machine mode: emit lean or verbose data via buildEmitData.
+  // --concise (global ctx.concise) trims to numbers + action counts only.
+  ctx.out.data(buildEmitData(data, ctx));
 
   // TTY mode: render the MORNING BRIEF card
+  // _sources is the internal ref (non-verbose path); sources is the verbose path.
+  const sources = data.sources || data._sources || {};
   ctx.out.card(() => {
     const today = new Date().toLocaleDateString('en-US', {
       timeZone: 'Asia/Manila', weekday: 'long', month: 'short', day: 'numeric',
@@ -182,7 +223,7 @@ export async function run(args, ctx) {
     }
 
     // NEEDS YOU TODAY — ordered by rankActions (same ranker as ghl focus)
-    const { triage, noshow, pipeline: pipe, receivables: ar } = data.sources;
+    const { triage, noshow, pipeline: pipe, receivables: ar } = sources;
 
     ctx.out.line('\n  NEEDS YOU TODAY');
     ctx.out.line('  ' + bar());

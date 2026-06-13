@@ -15,6 +15,7 @@ export const meta = {
     { name: '--has-phone', type: 'bool', desc: 'must have phone' },
     { name: '--no-phone', type: 'bool', desc: 'must NOT have phone' },
     { name: '--top', type: 'int', default: 20, desc: 'max rows to show in sample' },
+    { name: '--full', type: 'bool', default: false, desc: 'include full contact objects in sample (default: id+name only)' },
   ],
   readOnly: true,
 };
@@ -91,19 +92,32 @@ export async function collect(args, ctx) {
     return { location: LOC, criteria: crit, scanned: 0, matched: 0, contactIds: [], sample: [] };
   }
 
+  const FULL = !!args.full;
+
+  // Default lean: {id, name} sample. --full: full contact objects (email, phone, tags, etc.).
+  const sample = hits.slice(0, TOP).map(c => {
+    if (FULL) {
+      return {
+        name: c.contactName || ((c.firstName || '') + ' ' + (c.lastName || '')).trim() || c.email,
+        email: c.email,
+        phone: c.phone || null,
+        tags: c.tags || [],
+        id: c.id,
+      };
+    }
+    return {
+      id: c.id,
+      name: c.contactName || ((c.firstName || '') + ' ' + (c.lastName || '')).trim() || c.email || '(no name)',
+    };
+  });
+
   return {
     location: LOC,
     criteria: crit,
     scanned,
     matched: hits.length,
     contactIds: hits.map(c => c.id),
-    sample: hits.slice(0, TOP).map(c => ({
-      name: c.contactName || ((c.firstName || '') + ' ' + (c.lastName || '')).trim() || c.email,
-      email: c.email,
-      phone: c.phone || null,
-      tags: c.tags || [],
-      id: c.id,
-    })),
+    sample,
   };
 }
 
