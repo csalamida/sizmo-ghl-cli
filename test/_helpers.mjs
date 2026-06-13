@@ -14,21 +14,37 @@
 import { makeOut } from '../lib/output.mjs';
 import { makeResolver } from '../lib/resolver.mjs';
 
-export function makeFakeCtx({ fixture = {}, loc = 'L-TEST', now = 1_700_000_000_000, json = true, model: injectedModel = undefined } = {}) {
+export function makeFakeCtx({
+  fixture = {},
+  loc = 'L-TEST',
+  now = 1_700_000_000_000,
+  json = true,
+  model: injectedModel = undefined,
+  confirmed = false,
+  dryRun = false,
+} = {}) {
   // fixture: { "GET /contacts/?locationId=L-TEST&limit=100": { status:200, j:{...} }, ... } keyed by method+path+query
-  // Track which paths were actually called (for C3 assertions)
+  // Write fixture keys use the same format: "POST /contacts/id/tags", "DELETE /contacts/id/tags", etc.
+  // Track which paths were actually called (for C3 + write-guard assertions)
   const calledPaths = [];
-  const http = { get: async (path, { query } = {}) => {
-    const qs = query ? '?' + new URLSearchParams(Object.fromEntries(Object.entries(query).filter(([,v])=>v!=null).map(([k,v])=>[k,String(v)]))).toString() : '';
-    const key = `GET ${path}${qs}`;
+  const calledWrites = []; // separate log for write calls (POST/PUT/DELETE) so tests can assert none fired
+
+  function fakeFetch(method, path, opts = {}) {
+    const qs = opts?.query ? '?' + new URLSearchParams(Object.fromEntries(Object.entries(opts.query).filter(([,v])=>v!=null).map(([k,v])=>[k,String(v)]))).toString() : '';
+    const key = `${method} ${path}${qs}`;
+    if (method !== 'GET') calledWrites.push(key);
     calledPaths.push(key);
-    // Bare-path fallback only when request carries NO query string — this preserves backward
-    // compat for tests that key as "GET /path" but DOES NOT swallow pagination misses:
-    // a page-2 request ("GET /path?offset=100") will NOT fall back to "GET /path" and will throw.
-    const hit = fixture[key] || (!qs ? fixture[`GET ${path}`] : undefined);
+    const hit = fixture[key] || (!qs ? fixture[`${method} ${path}`] : undefined);
     if (!hit) throw new Error('unmocked request: ' + key);
     return { code: hit.status, ok: hit.status >= 200 && hit.status < 300, j: hit.j, txt: JSON.stringify(hit.j) };
-  }};
+  }
+
+  const http = {
+    get:    async (path, opts = {})        => fakeFetch('GET',    path, opts),
+    post:   async (path, _body, opts = {}) => fakeFetch('POST',   path, opts),
+    put:    async (path, _body, opts = {}) => fakeFetch('PUT',    path, opts),
+    delete: async (path, _body, opts = {}) => fakeFetch('DELETE', path, opts),
+  };
   let printed = '';
   const out = makeOut({ json, tty: false, command: 'test', location: loc, write: s => printed += s, writeErr: () => {} });
 
@@ -47,9 +63,11 @@ export function makeFakeCtx({ fixture = {}, loc = 'L-TEST', now = 1_700_000_000_
   }
 
   return {
-    ctx: { http, cfg: { loc, tz: 'Asia/Manila', currency: null }, out, now, ...modelCtxExtras },
+    ctx: { http, cfg: { loc, tz: 'Asia/Manila', currency: null }, out, now, confirmed, dryRun, ...modelCtxExtras },
     getPrinted: () => printed,
     // C3: expose called paths so tests can assert structure endpoints were NOT called
     getCalledPaths: () => [...calledPaths],
+    // Write-guard: expose write calls so tests can assert no write fired without --confirm
+    getCalledWrites: () => [...calledWrites],
   };
 }
