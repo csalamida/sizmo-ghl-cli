@@ -3,13 +3,43 @@
   "version": "0.4.0",
   "description": "Unofficial read-only GoHighLevel CLI for coaches and consultants. Not affiliated with HighLevel.",
   "type": "module",
-  "bin": { "sizmo": "bin/sizmo.mjs" },
-  "engines": { "node": ">=20" },
-  "scripts": { "test": "node --test" },
+  "bin": {
+    "sizmo": "bin/sizmo.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "prepublishOnly": "node --test"
+  },
   "author": "Sizmo / CJ Salamida",
   "license": "MIT",
-  "keywords": ["gohighlevel", "ghl", "crm", "cli", "leadconnector", "read-only"],
-  "repository": { "type": "git", "url": "git+https://github.com/csalamida07-cyber/sizmo-ghl-cli.git" },
-  "bugs": { "url": "https://github.com/csalamida07-cyber/sizmo-ghl-cli/issues" },
-  "homepage": "https://github.com/csalamida07-cyber/sizmo-ghl-cli#readme"
+  "keywords": [
+    "gohighlevel",
+    "ghl",
+    "crm",
+    "cli",
+    "leadconnector",
+    "read-only"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/csalamida07-cyber/sizmo-ghl-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/csalamida07-cyber/sizmo-ghl-cli/issues"
+  },
+  "homepage": "https://github.com/csalamida07-cyber/sizmo-ghl-cli#readme",
+  "files": [
+    "bin/",
+    "lib/",
+    "commands/",
+    "SKILL.md",
+    "INSTALL.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
