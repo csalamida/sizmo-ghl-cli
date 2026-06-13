@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "command": "noshow",
+  "location": "LOC_TEST_000",
+  "data": {
+    "location": "LOC_TEST_000",
+    "calendars": 8,
+    "noshows": 1,
+    "shown": 1,
+    "list": [
+      {
+        "name": "Meeting with Carl Salamida | Carl James",
+        "contactId": "BdXHfPGwobjH67CQ9w79",
+        "apptId": "osSqKwchJ2GgjjeKNkHD",
+        "when": "2026-05-13T16:00:00.000Z",
+        "calendar": "Discovery Call with Carl"
+      }
+    ]
+  },
+  "degraded": false,
+  "warnings": []
+}

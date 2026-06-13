@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "command": "snapshot",
+  "location": "LOC_TEST_000",
+  "data": {
+    "location": "LOC_TEST_000",
+    "window": {
+      "days": 7,
+      "startISO": "2026-06-04T21:52:21.627Z",
+      "endISO": "2026-06-11T21:52:21.627Z"
+    },
+    "metrics": [
+      {
+        "label": "Leads",
+        "value": 5,
+        "note": "new contacts · 1 page(s) scanned",
+        "blocked": false,
+        "blocker": ""
+      },
+      {
+        "label": "Bookings",
+        "value": 1,
+        "note": "appointments · 8/8 calendars",
+        "blocked": false,
+        "blocker": ""
+      },
+      {
+        "label": "Show rate",
+        "value": null,
+        "note": "",
+        "blocked": true,
+        "blocker": "no completed (showed/noshow) appts in window yet"
+      },
+      {
+        "label": "Collected",
+        "value": "$1",
+        "note": "1 payment(s) · 3 txns scanned",
+        "blocked": false,
+        "blocker": ""
+      },
+      {
+        "label": "Reply rate",
+        "value": "20%",
+        "note": "4 thread(s) still waiting on you",
+        "blocked": false,
+        "blocker": ""
+      },
+      {
+        "label": "Pipeline value",
+        "value": "₱100,000",
+        "note": "29 open deal(s)",
+        "blocked": false,
+        "blocker": ""
+      }
+    ]
+  },
+  "degraded": false,
+  "warnings": []
+}

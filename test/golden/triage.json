@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "command": "triage",
+  "location": "LOC_TEST_000",
+  "data": {
+    "location": "LOC_TEST_000",
+    "scanned": 59,
+    "waiting": 6,
+    "shown": 6,
+    "threads": [
+      {
+        "rank": 0,
+        "name": "DreamTeam Support",
+        "channel": "Email",
+        "waiting": "29d",
+        "unread": 12,
+        "snippet": "",
+        "conversationId": "1hyv6lqnCtXGpcF5Nvgm",
+        "contactId": "dLLDOafH8JT2KM88wiIt",
+        "email": "hello@dreamteam.support"
+      },
+      {
+        "rank": 0,
+        "name": "Example Contact",
+        "channel": "Email",
+        "waiting": "23d",
+        "unread": 31,
+        "snippet": "",
+        "conversationId": "mcO2u8jryjD1ZBKCBm2G",
+        "contactId": "nEFUyG8iNR117x3kJxT8",
+        "email": "test@example.com"
+      },
+      {
+        "rank": 0,
+        "name": "Anthropic",
+        "channel": "Email",
+        "waiting": "3d",
+        "unread": 1,
+        "snippet": "",
+        "conversationId": "qO5Wah5dM3AcXzP8rfrA",
+        "contactId": "Vn8zmSFzqmzZLWrJ34Ef",
+        "email": "no-reply-qqfjmtpwcv-vna1xnm26zw@mail.anthropic.com"
+      },
+      {
+        "rank": 0,
+        "name": "Anthropic, PBC",
+        "channel": "Email",
+        "waiting": "1d",
+        "unread": 2,
+        "snippet": "",
+        "conversationId": "p1phHBGC7ayzl0ufC3ab",
+        "contactId": "HQ8THM23w8WmW3kG3tVt",
+        "email": "failed-payments@mail.anthropic.com"
+      },
+      {
+        "rank": 0,
+        "name": "Anthropic Team",
+        "channel": "Email",
+        "waiting": "1d",
+        "unread": 1,
+        "snippet": "",
+        "conversationId": "rYYMZdgEjUzbP4uIPYcH",
+        "contactId": "bCg6V8y4nWQKrr9zuilm",
+        "email": "notice@email.anthropic.com"
+      },
+      {
+        "rank": 0,
+        "name": "Pencil.dev",
+        "channel": "Email",
+        "waiting": "6h",
+        "unread": 1,
+        "snippet": "",
+        "conversationId": "JvbjqXk2FyAqzwDkSYqZ",
+        "contactId": "lqLdTNAgsqUvdc4o6tY3",
+        "email": "info@pencil.dev"
+      }
+    ]
+  },
+  "degraded": false,
+  "warnings": []
+}

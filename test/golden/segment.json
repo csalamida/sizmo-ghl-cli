@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "command": "segment",
+  "location": "LOC_TEST_000",
+  "data": {
+    "location": "LOC_TEST_000",
+    "criteria": [
+      "no-phone"
+    ],
+    "scanned": 71,
+    "matched": 30,
+    "contactIds": [
+      "lqLdTNAgsqUvdc4o6tY3",
+      "bCg6V8y4nWQKrr9zuilm",
+      "Vn8zmSFzqmzZLWrJ34Ef",
+      "HQ8THM23w8WmW3kG3tVt",
+      "phjSYh9tkCzvTfrCrs4Q",
+      "gpKPJVI5ndh113LverYE",
+      "0S2votUIbs8mWjUrAJCN",
+      "IyQWb35aRg1n2O8xTNPX",
+      "2qCdxfTsqsege0GJiDVJ",
+      "FOatE1t0Ptb1dFRzuKY7",
+      "BL88FIHi3Qk8u68h71JK",
+      "GpqzMoM9PznaMG1OhRRX",
+      "XU4F6Paeurx6KMlHa7zX",
+      "dLLDOafH8JT2KM88wiIt",
+      "CgedircxcokfwNASsLRU",
+      "Dlgp66Ebanvi1lBTZkuY",
+      "AhklmcQgTppHZn9z3zGM",
+      "FC7kAfJfkhSKtDChs5Pw",
+      "nEFUyG8iNR117x3kJxT8",
+      "wTEejlhGntIT75PJRy3D",
+      "uaM7RtOTiUlCObFf4CIU",
+      "QZdxpVkngeU2EY6pJlnT",
+      "gyOWmFDYkZ3A57PFDpxN",
+      "N6jYWSzfBdl4k4gwk7NY",
+      "QMd6vZm1B1KO7yOjQqsC",
+      "oLLtPnk6NbLapxY5OUO7",
+      "yw1KuzZfWq07lYX0Anea",
+      "XLFqXQLLE9vqd2dHj4TJ",
+      "GU9I1Sq5cSrAOErpPPB2",
+      "AQXaZnNbHgCzL0xjUNN7"
+    ],
+    "sample": [
+      {
+        "name": "pencil.dev",
+        "email": "info@pencil.dev",
+        "phone": null,
+        "tags": [],
+        "id": "lqLdTNAgsqUvdc4o6tY3"
+      },
+      {
+        "name": "anthropic team",
+        "email": "notice@email.anthropic.com",
+        "phone": null,
+        "tags": [],
+        "id": "bCg6V8y4nWQKrr9zuilm"
+      },
+      {
+        "name": "anthropic",
+        "email": "no-reply-qqfjmtpwcv-vna1xnm26zw@mail.anthropic.com",
+        "phone": null,
+        "tags": [],
+        "id": "Vn8zmSFzqmzZLWrJ34Ef"
+      },
+      {
+        "name": "anthropic, pbc",
+        "email": "failed-payments@mail.anthropic.com",
+        "phone": null,
+        "tags": [],
+        "id": "HQ8THM23w8WmW3kG3tVt"
+      },
+      {
+        "name": "dudes crisostomo",
+        "email": "subscribed.know@gmail.com",
+        "phone": null,
+        "tags": [],
+        "id": "phjSYh9tkCzvTfrCrs4Q"
+      },
+      {
+        "name": "joamar derije",
+        "email": "joamarderije@gmail.com",
+        "phone": null,
+        "tags": [
+          "src-bottleneck-audit",
+          "industry-agency",
+          "revenue-under-10k",
+          "hot-lead"
+        ],
+        "id": "gpKPJVI5ndh113LverYE"
+      },
+      {
+        "name": "caveman",
+        "email": "caveman-test@example.com",
+        "phone": null,
+        "tags": [
+          "src-bottleneck-audit",
+          "industry-contractor",
+          "revenue-50k-200k"
+        ],
+        "id": "0S2votUIbs8mWjUrAJCN"
+      },
+      {
+        "name": "todd holiday",
+        "email": "todd@myautomationpros.com",
+        "phone": null,
+        "tags": [
+          "booked call"
+        ],
+        "id": "IyQWb35aRg1n2O8xTNPX"
+      },
+      {
+        "name": "angel ricci sabile",
+        "email": "angelriccisabile09@gmail.com",
+        "phone": null,
+        "tags": [
+          "pageforge",
+          "beta-tester"
+        ],
+        "id": "2qCdxfTsqsege0GJiDVJ"
+      },
+      {
+        "name": "marcus rivera",
+        "email": "marcus.rivera.test@pageforge.tech",
+        "phone": null,
+        "tags": [
+          "pageforge",
+          "beta-tester"
+        ],
+        "id": "FOatE1t0Ptb1dFRzuKY7"
+      },
+      {
+        "name": "hazel veyra",
+        "email": "hazel.sysandops@gmail.com",
+        "phone": null,
+        "tags": [
+          "pageforge",
+          "beta-tester"
+        ],
+        "id": "BL88FIHi3Qk8u68h71JK"
+      },
+      {
+        "name": "angel ricci sabile",
+        "email": "sabilericci0@gmail.com",
+        "phone": null,
+        "tags": [
+          "pageforge",
+          "beta-tester"
+        ],
+        "id": "GpqzMoM9PznaMG1OhRRX"
+      },
+      {
+        "name": "gabriel john fordan",
+        "email": "gabrieljohnfordan@gmail.com",
+        "phone": null,
+        "tags": [
+          "booked call"
+        ],
+        "id": "XU4F6Paeurx6KMlHa7zX"
+      },
+      {
+        "name": "dreamteam support",
+        "email": "hello@dreamteam.support",
+        "phone": null,
+        "tags": [],
+        "id": "dLLDOafH8JT2KM88wiIt"
+      },
+      {
+        "name": "aivee matias",
+        "email": "ivy@dreamteam.support",
+        "phone": null,
+        "tags": [],
+        "id": "CgedircxcokfwNASsLRU"
+      },
+      {
+        "name": "carmela de leon",
+        "email": "carmeladigitallab@gmail.com",
+        "phone": null,
+        "tags": [],
+        "id": "Dlgp66Ebanvi1lBTZkuY"
+      },
+      {
+        "name": "the creative corner",
+        "email": "thecreativecornertarlac@gmail.com",
+        "phone": null,
+        "tags": [],
+        "id": "AhklmcQgTppHZn9z3zGM"
+      },
+      {
+        "name": "frezelrites@gmail.com",
+        "email": "frezelrites@gmail.com",
+        "phone": null,
+        "tags": [],
+        "id": "FC7kAfJfkhSKtDChs5Pw"
+      },
+      {
+        "name": "coresyndicate",
+        "email": "test@example.com",
+        "phone": null,
+        "tags": [],
+        "id": "nEFUyG8iNR117x3kJxT8"
+      },
+      {
+        "name": "carl@mg.coresyndicate.io",
+        "email": "carl@mg.coresyndicate.io",
+        "phone": null,
+        "tags": [],
+        "id": "wTEejlhGntIT75PJRy3D"
+      }
+    ]
+  },
+  "degraded": false,
+  "warnings": []
+}

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "command": "receivables",
+  "location": "LOC_TEST_000",
+  "data": {
+    "location": "LOC_TEST_000",
+    "scanned": 6,
+    "outstanding": 1,
+    "totalOwed": 300,
+    "currency": "PHP",
+    "list": [
+      {
+        "name": "Test User",
+        "num": "003002",
+        "due": 300,
+        "total": 300,
+        "cur": "PHP",
+        "status": "sent",
+        "age": 105,
+        "id": "698da08e8e58c75279dd9e68"
+      }
+    ]
+  },
+  "degraded": false,
+  "warnings": []
+}

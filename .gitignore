@@ -1,0 +1,23 @@
+node_modules/
+
+# sizmo credential store — never commit
+.config/
+*.env
+.env
+.env.*
+.env.local
+.env.*.local
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage / test output
+coverage/
+.nyc_output/

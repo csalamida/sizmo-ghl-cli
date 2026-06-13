@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "command": "booked-not-paid",
+  "location": "LOC_TEST_000",
+  "data": {
+    "location": "LOC_TEST_000",
+    "days": 60,
+    "calendars": 8,
+    "contactsWithSessions": 4,
+    "invoicesScanned": 6,
+    "neverBilled": [
+      {
+        "name": "Consultation with Carl - Dudes Crisostomo",
+        "contactId": "phjSYh9tkCzvTfrCrs4Q",
+        "sessions": 1,
+        "lastSession": "2026-06-06T12:00:00.000Z",
+        "lastSessionTs": 1780747200000,
+        "attended": "unmarked"
+      },
+      {
+        "name": "Meeting with Dacia Woods | Carl James",
+        "contactId": "xZQw1E7jx8TTTZ8seIxU",
+        "sessions": 1,
+        "lastSession": "2026-05-19T20:00:00.000Z",
+        "lastSessionTs": 1779220800000,
+        "attended": "unmarked"
+      },
+      {
+        "name": "Appointment with CJ",
+        "contactId": "IyQWb35aRg1n2O8xTNPX",
+        "sessions": 1,
+        "lastSession": "2026-04-13T16:00:00.000Z",
+        "lastSessionTs": 1776096000000,
+        "attended": "unmarked"
+      }
+    ],
+    "billedUnpaid": [
+      {
+        "name": "Meeting with Carl Salamida | Carl James",
+        "contactId": "BdXHfPGwobjH67CQ9w79",
+        "sessions": 2,
+        "lastSession": "2026-05-07T17:00:00.000Z",
+        "lastSessionTs": 1778173200000,
+        "attended": "unmarked",
+        "due": 300,
+        "cur": "PHP"
+      }
+    ],
+    "billedUnpaidTotal": 300,
+    "currency": "PHP",
+    "settled": 0,
+    "caveat": "contact-level matching; payments lookback window+60d; prepaid clients older than that may flag falsely"
+  },
+  "degraded": false,
+  "warnings": []
+}

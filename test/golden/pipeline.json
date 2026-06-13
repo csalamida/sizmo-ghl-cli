@@ -1,0 +1,303 @@
+{
+  "schemaVersion": 1,
+  "command": "pipeline",
+  "location": "LOC_TEST_000",
+  "data": {
+    "location": "LOC_TEST_000",
+    "totalValue": 100000,
+    "openCount": 29,
+    "pipelines": [
+      {
+        "pipeline": "Bottleneck Audit Lead Magnet",
+        "stages": [
+          {
+            "stage": "02 — Audit Engaged",
+            "count": 2,
+            "value": 0
+          },
+          {
+            "stage": "01 — New Lead",
+            "count": 2,
+            "value": 0
+          }
+        ]
+      },
+      {
+        "pipeline": "CG | Lead Acquisition Pipeline",
+        "stages": [
+          {
+            "stage": "Booked A Call",
+            "count": 8,
+            "value": 0
+          },
+          {
+            "stage": "Not Interested",
+            "count": 13,
+            "value": 0
+          },
+          {
+            "stage": "New Lead",
+            "count": 1,
+            "value": 10000
+          }
+        ]
+      },
+      {
+        "pipeline": "CG | Marketing Pipeline",
+        "stages": [
+          {
+            "stage": "Other",
+            "count": 1,
+            "value": 30000
+          },
+          {
+            "stage": "Funnel Building",
+            "count": 1,
+            "value": 30000
+          },
+          {
+            "stage": "Social Media Management",
+            "count": 1,
+            "value": 30000
+          }
+        ]
+      }
+    ],
+    "stuck": [
+      {
+        "name": "Test CJ",
+        "value": 30000,
+        "stage": "Social Media Management",
+        "idle": "501d",
+        "oppId": "ONuU6PzqBLlZqSRSJQhV",
+        "contactId": "beh6WsRlgfJkaysSk4SN"
+      },
+      {
+        "name": "Carl Salamida Test",
+        "value": 30000,
+        "stage": "Funnel Building",
+        "idle": "501d",
+        "oppId": "66HFes1zZCZhr25UA0Bj",
+        "contactId": "Q2Nbi90eOF9X6wmY7gmH"
+      },
+      {
+        "name": "Carl Testing 2",
+        "value": 30000,
+        "stage": "Other",
+        "idle": "501d",
+        "oppId": "9u4Y6JxlnsuxJhkHLO34",
+        "contactId": "bGTFcqcoiKGvSlAxJViV"
+      },
+      {
+        "name": "Carl Salamida Test",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "489d",
+        "oppId": "hpnucArY9L6571EottHL",
+        "contactId": "Q2Nbi90eOF9X6wmY7gmH"
+      },
+      {
+        "name": "Test User",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "487d",
+        "oppId": "FubKPiqShO5SGyDdMNgG",
+        "contactId": "xXOHHJ00BNaiC8R1Acno"
+      },
+      {
+        "name": "Guest Visitor Levvn",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "474d",
+        "oppId": "h51RKNS6vOVMYwH7bIK3",
+        "contactId": "GU9I1Sq5cSrAOErpPPB2"
+      },
+      {
+        "name": "Carl Salamida - testuser@example.com",
+        "value": 10000,
+        "stage": "New Lead",
+        "idle": "329d",
+        "oppId": "yz43FAGBgElKjCNvuY9u",
+        "contactId": "BdXHfPGwobjH67CQ9w79"
+      },
+      {
+        "name": "Athanassios Natsikas - hello@bookscrm.com",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "329d",
+        "oppId": "dt1aj6jaAUFgZ4CqbXvP",
+        "contactId": "fnjkNA7khW976uCyM0oq"
+      },
+      {
+        "name": "Peter Pila - peterppila@gmail.com",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "327d",
+        "oppId": "0WaTpDOOx997dOwUQVkk",
+        "contactId": "QXG0ULJVFkD4PqbSSkEc"
+      },
+      {
+        "name": "Mary Makilan - mary@thegrowthleague.com",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "322d",
+        "oppId": "t20a1rx6Z0vUMMl0T6TY",
+        "contactId": "6vqnISTQLGwUR6E8gYQX"
+      },
+      {
+        "name": "Daniel Huang - daniel@cornerstonecompany.org",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "318d",
+        "oppId": "HAwqZlRldJi8CKiqmrCm",
+        "contactId": "EcCV5ev0WyUWmYshtP6r"
+      },
+      {
+        "name": "Dante Garcia - dante@abbaco.com.au",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "318d",
+        "oppId": "rdbzyPyuCTk200DGOTCA",
+        "contactId": "quM2pAa1EHaqjWVYINco"
+      },
+      {
+        "name": "Courtney Leseman - courtney@lifetimenavigators.com",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "318d",
+        "oppId": "LTJp1R5aMLxOf00HOGGJ",
+        "contactId": "r6dxYl5PSF4c07wickKY"
+      },
+      {
+        "name": "Desiree Mascarenas - desireemascarenas@gmail.com",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "311d",
+        "oppId": "Gqc1qFmkkrq2IWbb6a6s",
+        "contactId": "FSLKYGqxap74CjZ52a47"
+      },
+      {
+        "name": "Fahmi Ilman - fahmi@bfunded.io",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "218d",
+        "oppId": "vBQEtqXcPPRY3i3lFNGy",
+        "contactId": "c0BzPXig9I1VUpVPw30K"
+      },
+      {
+        "name": "Cathy Hennessy - chennessy1970@gmail.com",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "218d",
+        "oppId": "HbDwcOkcoMfSoHl4kHkx",
+        "contactId": "36pTuBHA6iNykvYTFd1F"
+      },
+      {
+        "name": "Gaylin Ware  - gaylin@simpeloptinsagency.com",
+        "value": 0,
+        "stage": "Not Interested",
+        "idle": "211d",
+        "oppId": "LKre5UBaTZdSjaCw6Ik0",
+        "contactId": "gVZnZ1FXfm1wJfJFfqmq"
+      },
+      {
+        "name": "Amit Sharma - dermalasermedspallc@gmail.com",
+        "value": 0,
+        "stage": "Booked A Call",
+        "idle": "211d",
+        "oppId": "dJskN0dqt96tqgDTvtyz",
+        "contactId": "RFfoN9b4PEx6LkLrTU30"
+      },
+      {
+        "name": "Max Shaffer - mshaffer@asha-agency.com",
+        "value": 0,
+        "stage": "Booked A Call",
+        "idle": "184d",
+        "oppId": "I6kkl41SKTLGPAVeJCfx",
+        "contactId": "ThvnWnZAQzeOJegFPVID"
+      },
+      {
+        "name": "Scott Williams - scott.williams.aftr@gmail.com",
+        "value": 0,
+        "stage": "Booked A Call",
+        "idle": "171d",
+        "oppId": "uVUqUnrxn4jIllMZQ5U1",
+        "contactId": "lsVtCKBVBYIuVA9MMkBe"
+      },
+      {
+        "name": "J. Em Ang - askjemang@gmail.com",
+        "value": 0,
+        "stage": "Booked A Call",
+        "idle": "94d",
+        "oppId": "eb3UU4z5ArpCGSogQg5y",
+        "contactId": "sX4zhwjK8ydfAnXU2aOO"
+      },
+      {
+        "name": "Gabriel John Fordan - gabrieljohnfordan@gmail.com",
+        "value": 0,
+        "stage": "Booked A Call",
+        "idle": "92d",
+        "oppId": "y96px0ZCfr6n6fnminlj",
+        "contactId": "XU4F6Paeurx6KMlHa7zX"
+      },
+      {
+        "name": "Benjamin David - feetit.insoles@gmail.com",
+        "value": 0,
+        "stage": "Booked A Call",
+        "idle": "89d",
+        "oppId": "gnQUFIwQhMov608aThFS",
+        "contactId": "FNimqvDU6HBgpV3lY9Ur"
+      },
+      {
+        "name": "Todd Holiday - todd@myautomationpros.com",
+        "value": 0,
+        "stage": "Booked A Call",
+        "idle": "63d",
+        "oppId": "BIj6SEs6xemTVJVsyyBP",
+        "contactId": "IyQWb35aRg1n2O8xTNPX"
+      },
+      {
+        "name": "Dacia Woods - dacia@ladiesandluggage.com",
+        "value": 0,
+        "stage": "Booked A Call",
+        "idle": "62d",
+        "oppId": "2FN3I4REcyJrUvTlWhqV",
+        "contactId": "xZQw1E7jx8TTTZ8seIxU"
+      },
+      {
+        "name": "Carl Salamida - carlsalamida+3@gmail.com",
+        "value": 0,
+        "stage": "02 — Audit Engaged",
+        "idle": "40d",
+        "oppId": "33wHQ0MwahaE9d6LLqhB",
+        "contactId": "HJc4u2vRErTlMU1DdkG7"
+      },
+      {
+        "name": "Audit: caveman-test@example.com",
+        "value": 0,
+        "stage": "01 — New Lead",
+        "idle": "30d",
+        "oppId": "9mviYAnvhbAanrPF6Tle",
+        "contactId": "0S2votUIbs8mWjUrAJCN"
+      },
+      {
+        "name": "Joamar Derije - joamarderije@gmail.com",
+        "value": 0,
+        "stage": "01 — New Lead",
+        "idle": "23d",
+        "oppId": "cQm8VgOWs89ySna0HdY7",
+        "contactId": "gpKPJVI5ndh113LverYE"
+      },
+      {
+        "name": "Joamar Derije - joamarderije@gmail.com",
+        "value": 0,
+        "stage": "02 — Audit Engaged",
+        "idle": "23d",
+        "oppId": "uJJphzkUXJnCV3fORdLT",
+        "contactId": "gpKPJVI5ndh113LverYE"
+      }
+    ]
+  },
+  "degraded": false,
+  "warnings": []
+}
