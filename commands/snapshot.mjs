@@ -3,8 +3,10 @@
 // Trust-fix #2: leads() and revenue() paginate to completion.
 // Trust-fix #3: revenue tracks per-currency (never cross-sums).
 // v0.5.0: calendar list from CRM model; location currency from model.
+// v0.6.0 (C2): modelMeta emitted in JSON envelope; TTY staleness note.
 import { paginate } from '../lib/paginate.mjs';
 import { mapLimit } from '../lib/pool.mjs';
+import { ENTITY_SPECS } from '../lib/model.mjs';
 
 export const meta = {
   name: 'snapshot',
@@ -34,15 +36,31 @@ export async function collect(args, ctx) {
 
   // Location currency from CRM model (fallback PHP if model missing/blocked)
   let locationCurrency = 'PHP';
+  let _snapshotModelLoaded = null;
+  let modelMeta = null;
   if (ctx.ensureModel) {
     try {
-      const model = await ctx.ensureModel();
-      const locCur = model?.entities?.location?.item?.business?.currency
-        || model?.entities?.location?.item?.currency;
+      _snapshotModelLoaded = await ctx.ensureModel();
+      const locCur = _snapshotModelLoaded?.entities?.location?.item?.business?.currency
+        || _snapshotModelLoaded?.entities?.location?.item?.currency;
       if (locCur) locationCurrency = locCur.toUpperCase();
     } catch { /* use default */ }
   } else if (ctx.cfg.currency) {
     locationCurrency = ctx.cfg.currency;
+  }
+  // Build modelMeta for the JSON envelope (C2)
+  if (_snapshotModelLoaded) {
+    const specMap = Object.fromEntries(ENTITY_SPECS.map(s => [s.name, s]));
+    // Check calendars staleness (the main model-sourced entity in snapshot)
+    const calEnt = _snapshotModelLoaded.entities?.calendars;
+    const calSpec = specMap.calendars;
+    const calStale = calEnt && calSpec ? (NOW - (calEnt.fetchedAt ?? 0)) > calSpec.ttlMs : false;
+    modelMeta = {
+      syncedAt: _snapshotModelLoaded.syncedAt,
+      ageMs: NOW - _snapshotModelLoaded.syncedAt,
+      stale: calStale,
+      offline: !!(_snapshotModelLoaded.offline),
+    };
   }
 
   // ── LEADS: paginate contacts newest→older, stop past window ──
@@ -93,11 +111,14 @@ export async function collect(args, ctx) {
   const EVENTS_CAP = 100;
   async function bookings() {
     // Get calendar list from the CRM model if available; fall back to live fetch.
+    // Use _snapshotModelLoaded already loaded above — no second ensureModel call.
     let cals = null;
-    if (ctx.ensureModel) {
+    if (_snapshotModelLoaded?.entities?.calendars && !_snapshotModelLoaded.entities.calendars.blocked && !_snapshotModelLoaded.entities.calendars.networkError) {
+      cals = _snapshotModelLoaded.entities.calendars.items ?? [];
+    } else if (!_snapshotModelLoaded && ctx.ensureModel) {
       try {
         const model = await ctx.ensureModel();
-        if (model?.entities?.calendars && !model.entities.calendars.blocked) {
+        if (model?.entities?.calendars && !model.entities.calendars.blocked && !model.entities.calendars.networkError) {
           cals = model.entities.calendars.items ?? [];
         }
       } catch { /* fall through to live fetch */ }
@@ -249,6 +270,7 @@ export async function collect(args, ctx) {
     location: LOC,
     window: { days: DAYS, startISO, endISO: new Date(NOW).toISOString() },
     metrics: rows,
+    ...(modelMeta ? { modelMeta } : {}),
   };
 }
 
@@ -265,6 +287,16 @@ export async function run(args, ctx) {
     const line = (l, v) => '│ ' + l.padEnd(16) + ' ' + String(v).padEnd(W - 20) + '│';
     ctx.out.line('┌' + '─'.repeat(W - 2) + '┐');
     ctx.out.line(line('SNAPSHOT', winLabel.slice(0, W - 20)));
+    // C2: model staleness note
+    if (data.modelMeta) {
+      const mm = data.modelMeta;
+      if (mm.offline) {
+        ctx.out.line(line('· model', 'OFFLINE — calendar list from cache'));
+      } else if (mm.stale) {
+        const ageD = Math.round(mm.ageMs / 86400000);
+        ctx.out.line(line('· model', `${ageD}d old — run sizmo sync`));
+      }
+    }
     ctx.out.line('├' + '─'.repeat(W - 2) + '┤');
     for (const m of data.metrics) {
       if (m.blocked) {

@@ -123,6 +123,85 @@ test('snapshot: positional days arg works (args._[0])', async () => {
   assert.equal(envelope.data.window.days, 14, 'positional days arg should set window.days=14');
 });
 
+// ── C2/C3 model path tests ────────────────────────────────────────────────────
+
+test('C3-snapshot: injected FRESH model → calendar list from model, no /calendars/ re-fetch', async () => {
+  const NOW = 1_700_000_000_000;
+  const freshModel = {
+    schemaVersion: 1,
+    locationId: 'L-TEST',
+    syncedAt: NOW - 1000,
+    offline: false,
+    entities: {
+      pipelines: { fetchedAt: NOW - 1000, items: [] },
+      calendars: {
+        fetchedAt: NOW - 1000,
+        items: [{ id: 'cal-snap', name: 'Snap Calendar' }],
+      },
+      tags: { fetchedAt: NOW - 1000, items: [] },
+      customFields: { fetchedAt: NOW - 1000, items: [] },
+      users: { fetchedAt: NOW - 1000, items: [] },
+      location: { fetchedAt: NOW - 1000, item: { id: 'L-TEST', name: 'T', timezone: 'UTC', business: { currency: 'PHP' } } },
+    },
+  };
+  // No /calendars/ in fixture — the model provides the calendar list.
+  // Events endpoint + standard data endpoints required.
+  const START = NOW - 7 * 24 * 60 * 60 * 1000;
+  const calEventsKey = `GET /calendars/events?locationId=L-TEST&calendarId=cal-snap&startTime=${START}&endTime=${NOW}`;
+  const fixture = {
+    'GET /contacts/?locationId=L-TEST&limit=100': { status: 200, j: { contacts: [] } },
+    [calEventsKey]: { status: 200, j: { events: [] } },
+    'GET /payments/transactions?altId=L-TEST&altType=location&limit=100&offset=0': { status: 200, j: { data: [] } },
+    'GET /opportunities/search?location_id=L-TEST&status=open&limit=100&page=1': { status: 200, j: { opportunities: [] } },
+    'GET /conversations/search?locationId=L-TEST&limit=100': { status: 200, j: { conversations: [] } },
+  };
+  const { ctx, getPrinted, getCalledPaths } = makeFakeCtx({ fixture, now: NOW, model: freshModel });
+  const code = await run({ days: 7 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 0);
+  const envelope = JSON.parse(getPrinted());
+  // /calendars/ must NOT have been fetched (model provided it)
+  const called = getCalledPaths();
+  assert.ok(!called.some(p => p.startsWith('GET /calendars/') && !p.includes('/events')), '/calendars/ must NOT be re-fetched when model present');
+  // modelMeta must be in envelope
+  assert.ok(envelope.data.modelMeta, 'modelMeta must be in snapshot envelope');
+  assert.ok(!envelope.data.modelMeta.stale, 'fresh model must have stale=false');
+});
+
+test('C2-snapshot: STALE model → modelMeta.stale=true in envelope', async () => {
+  const NOW = 1_700_000_000_000;
+  const staleModel = {
+    schemaVersion: 1,
+    locationId: 'L-TEST',
+    syncedAt: NOW - 2 * 86400000,
+    offline: false,
+    entities: {
+      pipelines: { fetchedAt: NOW - 1000, items: [] },
+      calendars: {
+        fetchedAt: NOW - 2 * 86400000, // stale (TTL 24h)
+        items: [],
+      },
+      tags: { fetchedAt: NOW - 1000, items: [] },
+      customFields: { fetchedAt: NOW - 1000, items: [] },
+      users: { fetchedAt: NOW - 1000, items: [] },
+      location: { fetchedAt: NOW - 1000, item: { id: 'L-TEST', name: 'T', timezone: 'UTC', business: { currency: 'PHP' } } },
+    },
+  };
+  const fixture = {
+    'GET /contacts/?locationId=L-TEST&limit=100': { status: 200, j: { contacts: [] } },
+    'GET /payments/transactions?altId=L-TEST&altType=location&limit=100&offset=0': { status: 200, j: { data: [] } },
+    'GET /opportunities/search?location_id=L-TEST&status=open&limit=100&page=1': { status: 200, j: { opportunities: [] } },
+    'GET /conversations/search?locationId=L-TEST&limit=100': { status: 200, j: { conversations: [] } },
+  };
+  const { ctx, getPrinted } = makeFakeCtx({ fixture, now: NOW, model: staleModel });
+  const code = await run({ days: 7 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 0);
+  const envelope = JSON.parse(getPrinted());
+  assert.ok(envelope.data.modelMeta, 'modelMeta must be present');
+  assert.ok(envelope.data.modelMeta.stale === true, 'stale model must set stale=true in modelMeta');
+});
+
 // I-2: calendar returning 100 events → truncation warning + degraded (uses inline http to bypass strict key check)
 test('snapshot: calendar with 100 events → truncation warning + degraded', async () => {
   const NOW = 1_700_000_000_000;

@@ -3,8 +3,10 @@
 // Trust-fix #2: transactions + subscriptions paginate to completion.
 // Trust-fix #3: collected-by-source per currency (never cross-sums).
 // v0.5.0: default currency from CRM model location (not hardcoded PHP).
+// v0.6.0 (C2): modelMeta emitted in JSON envelope; TTY staleness note.
 // READ-ONLY. NEVER charges, refunds, or collects.
 import { paginate } from '../lib/paginate.mjs';
+import { ENTITY_SPECS } from '../lib/model.mjs';
 
 export const meta = {
   name: 'reconcile',
@@ -36,15 +38,30 @@ export async function collect(args, ctx) {
 
   // Location currency from CRM model (fallback PHP if model missing/blocked)
   let locationCurrency = 'PHP';
+  let _reconcileModelLoaded = null;
+  let modelMeta = null;
   if (ctx.ensureModel) {
     try {
-      const model = await ctx.ensureModel();
-      const locCur = model?.entities?.location?.item?.business?.currency
-        || model?.entities?.location?.item?.currency;
+      _reconcileModelLoaded = await ctx.ensureModel();
+      const locCur = _reconcileModelLoaded?.entities?.location?.item?.business?.currency
+        || _reconcileModelLoaded?.entities?.location?.item?.currency;
       if (locCur) locationCurrency = locCur.toUpperCase();
     } catch { /* use default */ }
   } else if (ctx.cfg.currency) {
     locationCurrency = ctx.cfg.currency;
+  }
+  // Build modelMeta for the JSON envelope (C2)
+  if (_reconcileModelLoaded) {
+    const specMap = Object.fromEntries(ENTITY_SPECS.map(s => [s.name, s]));
+    const locEnt = _reconcileModelLoaded.entities?.location;
+    const locSpec = specMap.location;
+    const locStale = locEnt && locSpec ? (NOW - (locEnt.fetchedAt ?? 0)) > locSpec.ttlMs : false;
+    modelMeta = {
+      syncedAt: _reconcileModelLoaded.syncedAt,
+      ageMs: NOW - _reconcileModelLoaded.syncedAt,
+      stale: locStale,
+      offline: !!(_reconcileModelLoaded.offline),
+    };
   }
 
   // transactions paginated to completion (trust-fix #2)
@@ -178,6 +195,7 @@ export async function collect(args, ctx) {
     byStatus,
     flags: { refunds: refunds.length, failed: failed.length, orphans: orphans.length },
     subscriptions: subs,
+    ...(modelMeta ? { modelMeta } : {}),
   };
 }
 
@@ -193,6 +211,16 @@ export async function run(args, ctx) {
 
   ctx.out.card(() => {
     ctx.out.line(`\n  RECONCILE — ${collectedLine} collected · last ${data.days}d · ${data.inWindow} txn in window · loc ${data.location}`);
+    // C2: model staleness note
+    if (data.modelMeta) {
+      const mm = data.modelMeta;
+      if (mm.offline) {
+        ctx.out.line(`  · CRM model OFFLINE — currency from cache`);
+      } else if (mm.stale) {
+        const ageD = Math.round(mm.ageMs / 86400000);
+        ctx.out.line(`  · CRM model ${ageD}d old — run sizmo sync`);
+      }
+    }
     ctx.out.line('  ' + '─'.repeat(64));
     ctx.out.line('  BY SOURCE (succeeded)');
     const srcs = Object.entries(data.bySource).sort((a, b) => b[1].v - a[1].v);

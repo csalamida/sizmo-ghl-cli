@@ -3,6 +3,7 @@
 // reconcile fetches:
 //   GET /payments/transactions?altId=L-TEST&altType=location&limit=100&offset=0   (page 1)
 //   GET /payments/subscriptions?altId=L-TEST&altType=location&limit=100&offset=0  (page 1)
+// C2/C3: modelMeta tests validate staleness signal + model-path routing.
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
@@ -233,4 +234,77 @@ test('reconcile: Infinity transaction amount formats as — not ₱Infinity', as
   out.flush();
   assert.equal(code, 0);
   assert.ok(!printed.includes('Infinity'), 'Infinity must not appear in TTY output — must be formatted as —');
+});
+
+// ── C2/C3 model path tests ────────────────────────────────────────────────────
+
+test('C3-reconcile: injected FRESH model → currency from model, modelMeta in envelope', async () => {
+  const NOW = 1_700_000_000_000;
+  const freshModel = {
+    schemaVersion: 1,
+    locationId: 'L-TEST',
+    syncedAt: NOW - 1000,
+    offline: false,
+    entities: {
+      pipelines: { fetchedAt: NOW - 1000, items: [] },
+      calendars: { fetchedAt: NOW - 1000, items: [] },
+      tags: { fetchedAt: NOW - 1000, items: [] },
+      customFields: { fetchedAt: NOW - 1000, items: [] },
+      users: { fetchedAt: NOW - 1000, items: [] },
+      location: {
+        fetchedAt: NOW - 1000,
+        item: { id: 'L-TEST', name: 'Test', timezone: 'UTC', business: { currency: 'USD' } },
+      },
+    },
+  };
+  const fixture = {
+    [TXN_KEY]:  { status: 200, j: { data: [
+      { id: 't1', status: 'succeeded', amount: 100, currency: 'USD',
+        createdAt: new Date(NOW - 1 * 86400000).toISOString(), paymentProviderType: 'stripe', entityId: 'inv1' },
+    ] } },
+    [SUBS_KEY]: { status: 200, j: { data: [] } },
+  };
+  const { ctx, getPrinted } = makeFakeCtx({ fixture, now: NOW, model: freshModel });
+  const code = await run({ days: 30, top: 20 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 0);
+  const envelope = JSON.parse(getPrinted());
+  // Currency must come from the model (USD), not default PHP
+  assert.equal(envelope.data.currency, 'USD', 'currency must be sourced from model location entity');
+  // modelMeta must be in envelope
+  assert.ok(envelope.data.modelMeta, 'modelMeta must be present in reconcile envelope');
+  assert.ok(!envelope.data.modelMeta.stale, 'fresh model must have stale=false');
+});
+
+test('C2-reconcile: STALE model → modelMeta.stale=true in envelope', async () => {
+  const NOW = 1_700_000_000_000;
+  // Location entity is stale (fetchedAt 2 days ago, TTL=24h)
+  const staleModel = {
+    schemaVersion: 1,
+    locationId: 'L-TEST',
+    syncedAt: NOW - 2 * 86400000,
+    offline: false,
+    entities: {
+      pipelines: { fetchedAt: NOW - 1000, items: [] },
+      calendars: { fetchedAt: NOW - 1000, items: [] },
+      tags: { fetchedAt: NOW - 1000, items: [] },
+      customFields: { fetchedAt: NOW - 1000, items: [] },
+      users: { fetchedAt: NOW - 1000, items: [] },
+      location: {
+        fetchedAt: NOW - 2 * 86400000, // stale
+        item: { id: 'L-TEST', name: 'T', timezone: 'UTC', business: { currency: 'PHP' } },
+      },
+    },
+  };
+  const fixture = {
+    [TXN_KEY]:  { status: 200, j: { data: [] } },
+    [SUBS_KEY]: { status: 200, j: { data: [] } },
+  };
+  const { ctx, getPrinted } = makeFakeCtx({ fixture, now: NOW, model: staleModel });
+  const code = await run({ days: 30, top: 20 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 0);
+  const envelope = JSON.parse(getPrinted());
+  assert.ok(envelope.data.modelMeta, 'modelMeta must be present');
+  assert.ok(envelope.data.modelMeta.stale === true, 'stale model must set stale=true in modelMeta');
 });

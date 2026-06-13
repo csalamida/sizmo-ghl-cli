@@ -1,8 +1,10 @@
 // commands/noshow.mjs — No-show recovery: surfaces who no-showed to re-book.
 // Trust-fix #1: LOC from ctx.cfg.loc (no baked default).
 // v0.5.0: calendar list from CRM model (no per-run /calendars/ re-fetch); events still live.
+// v0.6.0 (C2): modelMeta emitted in JSON envelope; staleness note in TTY.
 // READ-ONLY. Never messages, never books.
 import { mapLimit } from '../lib/pool.mjs';
+import { ENTITY_SPECS } from '../lib/model.mjs';
 export const meta = {
   name: 'noshow',
   summary: 'No-show recovery — who to re-book',
@@ -27,19 +29,34 @@ export async function collect(args, ctx) {
 
   // Get calendar list from the CRM model if available; fall back to live fetch.
   let cals = null;
+  let modelLoaded = null;
+  let modelMeta = null;
   if (ctx.ensureModel) {
     try {
-      const model = await ctx.ensureModel();
-      if (model?.entities?.calendars && !model.entities.calendars.blocked) {
-        cals = model.entities.calendars.items ?? [];
+      modelLoaded = await ctx.ensureModel();
+      if (modelLoaded?.entities?.calendars && !modelLoaded.entities.calendars.blocked && !modelLoaded.entities.calendars.networkError) {
+        cals = modelLoaded.entities.calendars.items ?? [];
       }
     } catch { /* fall through to live fetch */ }
+  }
+  // Build modelMeta for the JSON envelope (C2)
+  if (modelLoaded) {
+    const specMap = Object.fromEntries(ENTITY_SPECS.map(s => [s.name, s]));
+    const calEnt = modelLoaded.entities?.calendars;
+    const calSpec = specMap.calendars;
+    const calStale = calEnt && calSpec ? (NOW - (calEnt.fetchedAt ?? 0)) > calSpec.ttlMs : false;
+    modelMeta = {
+      syncedAt: modelLoaded.syncedAt,
+      ageMs: NOW - modelLoaded.syncedAt,
+      stale: calStale,
+      offline: !!(modelLoaded.offline),
+    };
   }
   if (cals === null) {
     const cr = await ctx.http.get('/calendars/', { query: { locationId: LOC }, version: '2021-04-15' });
     if (!cr.ok) {
       ctx.out.warn(`can't see calendars → HTTP ${cr.code}`, { degraded: true });
-      return { location: LOC, calendars: 0, noshows: 0, shown: 0, list: [] };
+      return { location: LOC, calendars: 0, noshows: 0, shown: 0, list: [], ...(modelMeta ? { modelMeta } : {}) };
     }
     cals = cr.j.calendars || [];
   }
@@ -95,6 +112,7 @@ export async function collect(args, ctx) {
       when: new Date(n.when).toISOString(),
       calendar: n.cal,
     })),
+    ...(modelMeta ? { modelMeta } : {}),
   };
 }
 
@@ -113,6 +131,16 @@ export async function run(args, ctx) {
 
   ctx.out.card(() => {
     ctx.out.line(`\n  NO-SHOW RECOVERY — ${data.noshows} no-show(s) · last ${DAYS}d · ${data.calendars} calendars · loc ${data.location}`);
+    // C2: staleness note when model is old/offline
+    if (data.modelMeta) {
+      const mm = data.modelMeta;
+      if (mm.offline) {
+        ctx.out.line(`  · CRM model OFFLINE — calendar list from cache`);
+      } else if (mm.stale) {
+        const ageD = Math.round(mm.ageMs / 86400000);
+        ctx.out.line(`  · CRM model ${ageD}d old — run sizmo sync`);
+      }
+    }
     ctx.out.line('  ' + '─'.repeat(70));
     if (!data.list.length) {
       ctx.out.line('  No no-shows in window. ✅\n');

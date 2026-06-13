@@ -2,8 +2,11 @@
 // Trust-fix #1: LOC from ctx.cfg.loc.
 // Trust-fix #2: opps paginate to completion.
 // v0.5.0: stage/pipeline names sourced from ctx CRM model (no per-run structure re-fetch).
+// v0.6.0 (C2): names resolved via ctx.resolve (never fabricated); modelMeta emitted with staleness signal.
+//              I1 fix: stage sort uses model position (not undefined .sid).
 // READ-ONLY.
 import { paginate } from '../lib/paginate.mjs';
+import { ENTITY_SPECS } from '../lib/model.mjs';
 
 export const meta = {
   name: 'pipeline',
@@ -32,43 +35,74 @@ export async function collect(args, ctx) {
     return d >= 1 ? d + 'd' : Math.max(1, Math.floor((NOW - t) / 3600000)) + 'h';
   };
 
-  // Build stage/pipeline maps from the CRM model (no per-run structure re-fetch).
-  // Falls back to a live fetch if the model is unavailable.
-  const stageName = {}, pipeName = {}, stageOrder = {};
+  // Build stage/pipeline name resolution from the CRM model (no per-run structure re-fetch).
+  // Falls back to a live fetch only when model is genuinely unavailable.
+  // C2: names go through ctx.resolve when available — miss → '<unknown:id — run sizmo sync>'
+  // I1: stagePosition map keyed by stage-id carries model position (not a discarded .sid).
 
-  // Try model first (injected on ctx for tests, or via ensureModel for live)
-  let modelPipelines = null;
-  if (ctx._modelDir !== undefined) {
-    // Test path: model injected via ctx._modelPipelines or via the model blob in ctx
-    modelPipelines = ctx._modelPipelines ?? null;
-  }
-  if (!modelPipelines && ctx.ensureModel) {
+  let modelLoaded = null; // the raw model blob (for modelMeta)
+  let resolver = null;    // ctx.resolve (makeResolver instance)
+  const stagePosition = {}; // sid → model position (for sort)
+  const stageName = {}, pipeName = {}; // fallback maps (live-fetch path)
+
+  // Try model first (via ctx.ensureModel / ctx.resolve)
+  const usingModelPath = !!(ctx.ensureModel || ctx.resolve);
+  if (usingModelPath) {
     try {
-      const model = await ctx.ensureModel();
-      if (model?.entities?.pipelines && !model.entities.pipelines.blocked) {
-        modelPipelines = model.entities.pipelines.items ?? [];
+      if (ctx.ensureModel) modelLoaded = await ctx.ensureModel();
+      resolver = ctx.resolve ?? null;
+      // Build stagePosition from model for sort (I1 fix)
+      if (modelLoaded?.entities?.pipelines && !modelLoaded.entities.pipelines.blocked && !modelLoaded.entities.pipelines.networkError) {
+        for (const pl of (modelLoaded.entities.pipelines.items ?? [])) {
+          for (const s of (pl.stages || [])) {
+            stagePosition[s.id] = s.position ?? 0;
+          }
+        }
       }
     } catch { /* fall through to live fetch */ }
   }
 
-  if (modelPipelines !== null) {
-    for (const pl of modelPipelines) {
-      pipeName[pl.id] = pl.name;
-      (pl.stages || []).forEach((s, i) => { stageName[s.id] = s.name; stageOrder[s.id] = i; });
-    }
-  } else {
-    // Fallback: live fetch (model missing/blocked)
+  // modelMeta for staleness signal (C2)
+  const specMap = Object.fromEntries(ENTITY_SPECS.map(s => [s.name, s]));
+  let modelMeta = null;
+  if (modelLoaded) {
+    const plEnt = modelLoaded.entities?.pipelines;
+    const plSpec = specMap.pipelines;
+    const plFetchedAt = plEnt?.fetchedAt ?? null;
+    const plAgeMs = plFetchedAt != null ? NOW - plFetchedAt : null;
+    const plStale = plEnt && plSpec ? (NOW - (plEnt.fetchedAt ?? 0)) > plSpec.ttlMs : false;
+    modelMeta = {
+      syncedAt: modelLoaded.syncedAt,
+      ageMs: NOW - modelLoaded.syncedAt,
+      stale: plStale,
+      offline: !!(modelLoaded.offline),
+    };
+  }
+
+  if (!resolver) {
+    // Fallback: live fetch (model genuinely unavailable)
     const p = await ctx.http.get('/opportunities/pipelines', { query: { locationId: LOC } });
     if (!p.ok) {
       ctx.out.warn(`can't see pipelines → HTTP ${p.code}`, { degraded: true });
-      return { location: LOC, totalValue: 0, openCount: 0, pipelines: [], stuck: [] };
+      return { location: LOC, totalValue: 0, openCount: 0, pipelines: [], stuck: [], modelMeta };
     }
     const pipelines = p.j.pipelines || [];
     for (const pl of pipelines) {
       pipeName[pl.id] = pl.name;
-      (pl.stages || []).forEach((s, i) => { stageName[s.id] = s.name; stageOrder[s.id] = i; });
+      (pl.stages || []).forEach((s) => { stageName[s.id] = s.name; stagePosition[s.id] = s.position ?? 0; });
     }
   }
+
+  // Helper: resolve pipeline name (via resolver or fallback map)
+  const resolvePipeName = (pid) => {
+    if (resolver) return resolver.label('pipeline', pid);
+    return pipeName[pid] || pid;
+  };
+  // Helper: resolve stage name (via resolver or fallback map)
+  const resolveStageName = (sid) => {
+    if (resolver) return resolver.label('stage', sid);
+    return stageName[sid] || sid;
+  };
 
   // all open opps paginated to completion (trust-fix #2)
   const opps = [];
@@ -124,19 +158,22 @@ export async function collect(args, ctx) {
     totalValue: total,
     openCount: opps.length,
     pipelines: Object.entries(byPipe).map(([pid, stages]) => ({
-      pipeline: pipeName[pid] || pid,
+      pipeline: resolvePipeName(pid),
+      // I1 fix: carry sid onto mapped object; sort by model stagePosition (never undefined)
       stages: Object.entries(stages)
-        .map(([sid, v]) => ({ stage: stageName[sid] || sid, ...v }))
-        .sort((a, b) => (stageOrder[a.sid] || 0) - (stageOrder[b.sid] || 0)),
+        .map(([sid, v]) => ({ sid, stage: resolveStageName(sid), position: stagePosition[sid] ?? Infinity, ...v }))
+        .sort((a, b) => a.position - b.position)
+        .map(({ sid: _sid, position: _pos, ...rest }) => rest), // strip internal keys from output
     })),
     stuck: stuck.map(x => ({
       name: x.o.name,
       value: x.o.monetaryValue,
-      stage: stageName[x.o.pipelineStageId] || '',
+      stage: resolveStageName(x.o.pipelineStageId || x.o.stageId || ''),
       idle: ago(x.t),
       oppId: x.o.id,
       contactId: x.o.contactId,
     })),
+    ...(modelMeta ? { modelMeta } : {}),
   };
 }
 
@@ -150,6 +187,16 @@ export async function run(args, ctx) {
 
   ctx.out.card(() => {
     ctx.out.line(`\n  PIPELINE HEALTH  ·  ${money2(data.totalValue)} across ${data.openCount} open deal(s)  ·  loc ${data.location}`);
+    // C2: staleness note when model is old/offline
+    if (data.modelMeta) {
+      const mm = data.modelMeta;
+      if (mm.offline) {
+        ctx.out.line(`  · CRM model OFFLINE — stage names from cache`);
+      } else if (mm.stale) {
+        const ageD = Math.round(mm.ageMs / 86400000);
+        ctx.out.line(`  · CRM model ${ageD}d old — run sizmo sync`);
+      }
+    }
     for (const pl of data.pipelines) {
       ctx.out.line(`\n  ${pl.pipeline}`);
       for (const s of pl.stages) {

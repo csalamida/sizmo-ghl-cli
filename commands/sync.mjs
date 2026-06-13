@@ -28,34 +28,55 @@ export async function run(args, ctx) {
     return 1;
   }
 
-  const model = await syncModel({ http: ctx.http, loc, dir, now, only });
+  let model;
+  try {
+    model = await syncModel({ http: ctx.http, loc, dir, now, only });
+  } catch (e) {
+    if (e.offline) {
+      ctx.out.warn("⚠ OFFLINE — can't reach GoHighLevel — check your connection; run `sizmo sync` when online");
+      return 1;
+    }
+    // Write failure (disk full, permissions, etc.)
+    ctx.out.warn(`sync failed — model not written: ${e.message}`);
+    return 1;
+  }
 
   // Count results
-  let synced = 0, blocked = 0;
+  let synced = 0, blocked = 0, networkErrors = 0;
   for (const [, ent] of Object.entries(model.entities)) {
-    if (ent.blocked) blocked++;
+    if (ent.networkError) networkErrors++;
+    else if (ent.blocked) blocked++;
     else synced++;
   }
 
-  ctx.out.data({ synced, blocked, locationId: loc, syncedAt: model.syncedAt, entities: Object.fromEntries(
+  ctx.out.data({ synced, blocked, networkErrors: networkErrors || undefined, offline: model.offline || undefined,
+    locationId: loc, syncedAt: model.syncedAt, entities: Object.fromEntries(
     Object.entries(model.entities).map(([name, ent]) => [
       name,
-      ent.blocked
-        ? { blocked: true, scope: ent.scope }
-        : { fetchedAt: ent.fetchedAt, count: ent.items ? ent.items.length : (ent.item ? 1 : 0) },
+      ent.networkError
+        ? { networkError: true, error: ent.error }
+        : ent.blocked
+          ? { blocked: true, scope: ent.scope }
+          : { fetchedAt: ent.fetchedAt, count: ent.items ? ent.items.length : (ent.item ? 1 : 0) },
     ])
   )});
 
   ctx.out.card(() => {
-    const blockedNote = blocked > 0 ? ` (${blocked} blocked — check sizmo auth check)` : '';
-    ctx.out.line(`synced ${synced} of ${synced + blocked} entities${blockedNote} · loc ${loc}`);
+    const blockedNote = blocked > 0 ? ` (${blocked} scope-blocked)` : '';
+    const netNote = networkErrors > 0 ? ` (${networkErrors} network-error — check connection)` : '';
+    ctx.out.line(`synced ${synced} of ${synced + blocked + networkErrors} entities${blockedNote}${netNote} · loc ${loc}`);
     for (const [name, ent] of Object.entries(model.entities)) {
-      if (ent.blocked) {
+      if (ent.networkError) {
+        ctx.out.line(`  ⚠ ${name.padEnd(14)} couldn't reach GHL`);
+      } else if (ent.blocked) {
         ctx.out.line(`  ✖ ${name.padEnd(14)} needs ${ent.scope}`);
       } else {
         const count = ent.items ? ent.items.length : (ent.item ? 1 : 0);
         ctx.out.line(`  ✔ ${name.padEnd(14)} ${count} item(s)`);
       }
+    }
+    if (model.offline) {
+      ctx.out.line('  ⚠ some entities could not be reached — model may be partially stale');
     }
   });
 

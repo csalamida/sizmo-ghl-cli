@@ -31,9 +31,17 @@ export async function run(args, ctx) {
   // 1. Load model (auto-sync if missing)
   let model = loadModel(loc, dir);
   if (!model) {
-    // First run — auto-sync
+    // First run — auto-sync. syncModel throws if cold+offline.
     ctx.out.warn('model not found — running first-time sync...');
-    model = await syncModel({ http: ctx.http, loc, dir, now: typeof ctx.now === 'function' ? ctx.now : () => ctx.now });
+    try {
+      model = await syncModel({ http: ctx.http, loc, dir, now: typeof ctx.now === 'function' ? ctx.now : () => ctx.now });
+    } catch (e) {
+      if (e.offline) {
+        ctx.out.warn("⚠ OFFLINE — can't reach GoHighLevel — check your connection; run `sizmo sync` when online");
+        return 1;
+      }
+      throw e;
+    }
   }
 
   // 2. Build overall model meta
@@ -42,14 +50,21 @@ export async function run(args, ctx) {
   const specMap = Object.fromEntries(ENTITY_SPECS.map(s => [s.name, s]));
   let anyStale = false;
   for (const [name, ent] of Object.entries(model.entities)) {
-    if (!ent.blocked && specMap[name] && isStale(ent, nowMs, specMap[name].ttlMs)) {
+    if (!ent.blocked && !ent.networkError && specMap[name] && isStale(ent, nowMs, specMap[name].ttlMs)) {
       anyStale = true;
     }
   }
-  const meta = { source: 'cache', syncedAt: model.syncedAt, ageMs: modelAgeMs, stale: anyStale, offline: false };
 
-  // 3. Warn if stale
-  if (anyStale) {
+  // Determine offline: model was last sync'd while offline, OR the model itself has the offline flag.
+  // Also detect if a model exists but a refresh just failed (model.offline = true from the last sync).
+  const offline = !!(model.offline);
+  const meta = { source: 'cache', syncedAt: model.syncedAt, ageMs: modelAgeMs, stale: anyStale, offline };
+
+  // 3. Warn if offline (showing stale/cached data) or just stale
+  if (offline) {
+    const cacheAge = fmtAge(modelAgeMs);
+    ctx.out.warn(`⚠ OFFLINE — showing cache from ${new Date(model.syncedAt).toISOString()} (${cacheAge} old) — run \`sizmo sync\` when online`);
+  } else if (anyStale) {
     ctx.out.warn(`⚠ model is stale (${fmtAge(modelAgeMs)} old) — run sizmo sync to refresh`);
   }
 
@@ -73,10 +88,14 @@ export async function run(args, ctx) {
 function overview(model, modelMeta, nowMs, specMap, ctx) {
   const counts = {};
   const blocked = {};
+  const networkErrors = {};
   for (const spec of ENTITY_SPECS) {
     const ent = model.entities[spec.name];
     if (!ent) { counts[spec.name] = 0; continue; }
-    if (ent.blocked) {
+    if (ent.networkError) {
+      counts[spec.name] = null;
+      networkErrors[spec.name] = ent.error ?? 'network error';
+    } else if (ent.blocked) {
       counts[spec.name] = null;
       blocked[spec.name] = ent.scope;
     } else if (spec.name === 'location') {
@@ -96,24 +115,29 @@ function overview(model, modelMeta, nowMs, specMap, ctx) {
     location: counts.location,
     _meta: modelMeta,
   };
-  // Add blocked flags so agents can branch
+  // Add blocked/networkError flags so agents can branch
   for (const [name, scope] of Object.entries(blocked)) {
     data[`${name}Blocked`] = true;
     data[`${name}Scope`] = scope;
+  }
+  for (const [name] of Object.entries(networkErrors)) {
+    data[`${name}NetworkError`] = true;
   }
 
   ctx.out.data(data);
 
   ctx.out.card(() => {
     const age = fmtAge(modelMeta.ageMs);
-    const staleNote = modelMeta.stale ? ` ⚠ STALE — run sizmo sync` : '';
+    const staleNote = modelMeta.offline ? ` ⚠ OFFLINE` : (modelMeta.stale ? ` ⚠ STALE — run sizmo sync` : '');
     ctx.out.line(`\n  CRM MODEL  ·  loc ${model.locationId}  ·  synced ${age}${staleNote}`);
     ctx.out.line('  ' + '─'.repeat(50));
     for (const spec of ENTITY_SPECS) {
       if (spec.name === 'location') continue; // shown separately
       const ent = model.entities[spec.name];
       if (!ent) { ctx.out.line(`  ${spec.name.padEnd(16)} 0`); continue; }
-      if (ent.blocked) {
+      if (ent.networkError) {
+        ctx.out.line(`  ${spec.name.padEnd(16)} ⚠ couldn't reach GHL`);
+      } else if (ent.blocked) {
         ctx.out.line(`  ${spec.name.padEnd(16)} ✖ needs ${ent.scope}`);
       } else {
         const count = Array.isArray(ent.items) ? ent.items.length : 0;
@@ -142,6 +166,12 @@ function overview(model, modelMeta, nowMs, specMap, ctx) {
 function entityList(entityName, model, modelMeta, nowMs, specMap, showAll, ctx) {
   const ent = model.entities[entityName];
   const spec = specMap[entityName];
+
+  if (ent?.networkError) {
+    ctx.out.warn(`⚠ ${entityName} — couldn't reach GHL during last sync`);
+    ctx.out.data({ entity: entityName, networkError: true, _meta: modelMeta });
+    return 1;
+  }
 
   if (!ent || ent.blocked) {
     const scope = ent?.scope ?? 'unknown';

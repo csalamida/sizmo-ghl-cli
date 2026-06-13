@@ -284,6 +284,121 @@ test('crm users subcommand: lists users', async () => {
   rmSync(dir, { recursive: true });
 });
 
+// ── C1 fixes ─────────────────────────────────────────────────────────────────
+
+test('C1-crm: cold+offline → returns exit 1 + offline warning, no empty model emitted', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'crm-c1-'));
+  // No prior model; all fetches fail (network error)
+  const http = { get: async () => { throw new Error('ECONNREFUSED'); } };
+  let printed = '';
+  let warnings = '';
+  const out = makeOut({ json: true, tty: false, command: 'crm', location: 'L-TEST', write: s => printed += s, writeErr: s => warnings += s });
+  const crmCtx = { http, cfg: { loc: 'L-TEST' }, out, now: NOW, _modelDir: dir };
+  const code = await runCrm({}, crmCtx);
+  out.flush();
+  // Must exit non-zero (exit 1)
+  assert.notEqual(code, 0, 'cold+offline must not return exit 0');
+  // No JSON output containing fresh-looking data (nothing emitted or an error envelope)
+  // The key check: printed output must NOT contain a data object with counts
+  if (printed) {
+    // If anything was printed, it must not look like a fresh model
+    const envelope = JSON.parse(printed);
+    assert.ok(!envelope.data?.pipelines || envelope.data?.pipelines == null, 'cold+offline must not emit fresh pipeline counts');
+  }
+  rmSync(dir, { recursive: true });
+});
+
+test('C1-crm: _meta.offline=true when model has offline=true (refresh failed)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'crm-c1offline-'));
+  // Sync successfully first
+  const http = makeHttp();
+  const { ctx: syncCtx } = makeCtx(dir, http);
+  await runSync({}, syncCtx);
+
+  // Now write a model blob with offline=true to simulate refresh-failed state
+  const { loadModel: lm } = await import('../../lib/model.mjs');
+  const { writeFileSync } = await import('node:fs');
+  const existingModel = lm('L-TEST', dir);
+  existingModel.offline = true;
+  writeFileSync(join(dir, 'L-TEST.json'), JSON.stringify(existingModel, null, 2), { mode: 0o600 });
+
+  let printed = '';
+  const out = makeOut({ json: true, tty: false, command: 'crm', location: 'L-TEST', write: s => printed += s, writeErr: () => {} });
+  const crmCtx = { http, cfg: { loc: 'L-TEST' }, out, now: NOW, _modelDir: dir };
+  const code = await runCrm({}, crmCtx);
+  out.flush();
+  assert.equal(code, 0, 'stale-with-offline-flag model must still return 0 (serving cache)');
+  const envelope = JSON.parse(printed);
+  assert.ok(envelope.data._meta.offline === true, '_meta.offline must be true');
+  rmSync(dir, { recursive: true });
+});
+
+test('C1-crm: network-error entity → networkError flag in output, NOT blocked flag', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'crm-netflag-'));
+  // Build a model with tags having networkError:true (not blocked:true)
+  const modelWithNetErr = {
+    schemaVersion: 1,
+    locationId: 'L-TEST',
+    syncedAt: NOW,
+    offline: true,
+    entities: {
+      pipelines: { fetchedAt: NOW, items: [] },
+      calendars: { fetchedAt: NOW, items: [] },
+      tags: { networkError: true, error: 'ETIMEDOUT', fetchedAt: NOW },
+      customFields: { fetchedAt: NOW, items: [] },
+      users: { fetchedAt: NOW, items: [] },
+      location: { fetchedAt: NOW, item: { id: 'L-TEST', name: 'Test', timezone: 'UTC', business: { currency: 'PHP' } } },
+    },
+  };
+  const { mkdirSync: mkd, writeFileSync: wf } = await import('node:fs');
+  mkd(dir, { recursive: true });
+  wf(join(dir, 'L-TEST.json'), JSON.stringify(modelWithNetErr, null, 2), { mode: 0o600 });
+
+  let printed = '';
+  const out = makeOut({ json: true, tty: false, command: 'crm', location: 'L-TEST', write: s => printed += s, writeErr: () => {} });
+  const crmCtx = { http: makeHttp(), cfg: { loc: 'L-TEST' }, out, now: NOW, _modelDir: dir };
+  await runCrm({}, crmCtx);
+  out.flush();
+  const envelope = JSON.parse(printed);
+  // tags must show networkError, NOT tagsBlocked
+  assert.ok(envelope.data.tagsNetworkError === true, 'tags network error must set tagsNetworkError in output');
+  assert.ok(!envelope.data.tagsBlocked, 'tags network error must NOT set tagsBlocked');
+  rmSync(dir, { recursive: true });
+});
+
+test('C1-crm: 403 scope-blocked entity → blocked line (not networkError line)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'crm-403-'));
+  // Build model with tags having blocked:true (scope error)
+  const modelWith403 = {
+    schemaVersion: 1,
+    locationId: 'L-TEST',
+    syncedAt: NOW,
+    offline: false,
+    entities: {
+      pipelines: { fetchedAt: NOW, items: [] },
+      calendars: { fetchedAt: NOW, items: [] },
+      tags: { blocked: true, scope: 'locations/tags.readonly', fetchedAt: NOW },
+      customFields: { fetchedAt: NOW, items: [] },
+      users: { fetchedAt: NOW, items: [] },
+      location: { fetchedAt: NOW, item: { id: 'L-TEST', name: 'Test', timezone: 'UTC', business: { currency: 'PHP' } } },
+    },
+  };
+  const { mkdirSync: mkd, writeFileSync: wf } = await import('node:fs');
+  mkd(dir, { recursive: true });
+  wf(join(dir, 'L-TEST.json'), JSON.stringify(modelWith403, null, 2), { mode: 0o600 });
+
+  let printed = '';
+  const out = makeOut({ json: true, tty: false, command: 'crm', location: 'L-TEST', write: s => printed += s, writeErr: () => {} });
+  const crmCtx = { http: makeHttp(), cfg: { loc: 'L-TEST' }, out, now: NOW, _modelDir: dir };
+  await runCrm({}, crmCtx);
+  out.flush();
+  const envelope = JSON.parse(printed);
+  // tags must show blocked (scope), NOT networkError
+  assert.ok(envelope.data.tagsBlocked === true, 'blocked tags must set tagsBlocked in output');
+  assert.ok(!envelope.data.tagsNetworkError, 'scope-blocked tags must NOT set tagsNetworkError');
+  rmSync(dir, { recursive: true });
+});
+
 test('sync <entity>: only= syncs one entity', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'crm-'));
   const http = makeHttp();

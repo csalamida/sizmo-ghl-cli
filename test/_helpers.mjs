@@ -5,13 +5,23 @@
 // "GET <path>" fallback exists), this throws Error('unmocked request: <key>').
 // This forces every test to key every page it expects — pagination regressions now fail loudly
 // instead of silently resolving page-2+ as empty.
+//
+// Model injection (C3): pass { model } to wire ctx.ensureModel / ctx.resolve / ctx.model
+// exactly as buildCtx does, so recipe tests can drive the model path.
+//   - model: a valid model blob (or null) to inject. Recipes see ctx.ensureModel() resolve with it.
+//   - When model is provided, the http fixture MUST NOT include structure endpoints
+//     (pipelines, calendars) — the test asserts these are never called.
 import { makeOut } from '../lib/output.mjs';
+import { makeResolver } from '../lib/resolver.mjs';
 
-export function makeFakeCtx({ fixture = {}, loc = 'L-TEST', now = 1_700_000_000_000, json = true } = {}) {
+export function makeFakeCtx({ fixture = {}, loc = 'L-TEST', now = 1_700_000_000_000, json = true, model: injectedModel = undefined } = {}) {
   // fixture: { "GET /contacts/?locationId=L-TEST&limit=100": { status:200, j:{...} }, ... } keyed by method+path+query
+  // Track which paths were actually called (for C3 assertions)
+  const calledPaths = [];
   const http = { get: async (path, { query } = {}) => {
     const qs = query ? '?' + new URLSearchParams(Object.fromEntries(Object.entries(query).filter(([,v])=>v!=null).map(([k,v])=>[k,String(v)]))).toString() : '';
     const key = `GET ${path}${qs}`;
+    calledPaths.push(key);
     // Bare-path fallback only when request carries NO query string — this preserves backward
     // compat for tests that key as "GET /path" but DOES NOT swallow pagination misses:
     // a page-2 request ("GET /path?offset=100") will NOT fall back to "GET /path" and will throw.
@@ -21,5 +31,25 @@ export function makeFakeCtx({ fixture = {}, loc = 'L-TEST', now = 1_700_000_000_
   }};
   let printed = '';
   const out = makeOut({ json, tty: false, command: 'test', location: loc, write: s => printed += s, writeErr: () => {} });
-  return { ctx: { http, cfg: { loc, tz: 'Asia/Manila', currency: null }, out, now }, getPrinted: () => printed };
+
+  // Model wiring (C3): if injectedModel provided, expose ensureModel/resolve/model on ctx
+  // exactly as buildCtx does. This routes recipe tests through the model path, not live-fetch.
+  let modelCtxExtras = {};
+  if (injectedModel !== undefined) {
+    const resolver = makeResolver(injectedModel, { now: typeof now === 'function' ? now : () => now });
+    let _modelResolved = false;
+    const ensureModel = async () => { _modelResolved = true; return injectedModel; };
+    modelCtxExtras = {
+      get model() { return injectedModel; },
+      ensureModel,
+      get resolve() { return resolver; },
+    };
+  }
+
+  return {
+    ctx: { http, cfg: { loc, tz: 'Asia/Manila', currency: null }, out, now, ...modelCtxExtras },
+    getPrinted: () => printed,
+    // C3: expose called paths so tests can assert structure endpoints were NOT called
+    getCalledPaths: () => [...calledPaths],
+  };
 }

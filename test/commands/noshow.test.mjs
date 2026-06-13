@@ -116,3 +116,90 @@ test('noshow: golden data keys present', () => {
     assert.ok(k in data, `golden must have key: ${k}`);
   }
 });
+
+// ── C2/C3 model path tests ────────────────────────────────────────────────────
+
+test('C3-noshow: injected FRESH model → calendar list from model, no /calendars/ re-fetch', async () => {
+  const NOW = 1_700_000_000_000;
+  const DAYS = 30;
+  const START = NOW - DAYS * 24 * 60 * 60 * 1000;
+  const freshModel = {
+    schemaVersion: 1,
+    locationId: 'L-TEST',
+    syncedAt: NOW - 1000,
+    offline: false,
+    entities: {
+      pipelines: { fetchedAt: NOW - 1000, items: [] },
+      calendars: {
+        fetchedAt: NOW - 1000,
+        items: [{ id: 'cal-model', name: 'Model Calendar' }],
+      },
+      tags: { fetchedAt: NOW - 1000, items: [] },
+      customFields: { fetchedAt: NOW - 1000, items: [] },
+      users: { fetchedAt: NOW - 1000, items: [] },
+      location: { fetchedAt: NOW - 1000, item: { id: 'L-TEST', name: 'T', timezone: 'UTC', business: { currency: 'PHP' } } },
+    },
+  };
+  // Fixture only has events for the model-sourced cal — NOT /calendars/ endpoint.
+  // If noshow.mjs re-fetches /calendars/, strict helper throws.
+  const fixture = {
+    [`GET /calendars/events?locationId=L-TEST&calendarId=cal-model&startTime=${START}&endTime=${NOW}`]: {
+      status: 200,
+      j: {
+        events: [
+          { id: 'e1', contactId: 'c1', contactName: 'Jane', appointmentStatus: 'noshow',
+            startTime: new Date(NOW - 5 * 86400000).toISOString() },
+        ],
+      },
+    },
+  };
+  const { ctx, getPrinted, getCalledPaths } = makeFakeCtx({ fixture, now: NOW, model: freshModel });
+  const code = await run({ days: DAYS, top: 15 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 0);
+  const envelope = JSON.parse(getPrinted());
+  assert.equal(envelope.data.noshows, 1, 'must find 1 noshow from model calendar');
+  // /calendars/ must NOT have been called
+  const called = getCalledPaths();
+  assert.ok(!called.some(p => p.includes('/calendars/') && !p.includes('/events')), '/calendars/ must NOT be re-fetched when model is present');
+  // modelMeta must be in envelope
+  assert.ok(envelope.data.modelMeta, 'modelMeta must be in envelope');
+  assert.ok(!envelope.data.modelMeta.stale, 'fresh model must have stale=false');
+});
+
+test('C2-noshow: STALE model → modelMeta.stale=true in envelope', async () => {
+  const NOW = 1_700_000_000_000;
+  const DAYS = 30;
+  const START = NOW - DAYS * 24 * 60 * 60 * 1000;
+  // Calendar entity fetchedAt is 2 days ago (TTL=24h, so stale)
+  const staleModel = {
+    schemaVersion: 1,
+    locationId: 'L-TEST',
+    syncedAt: NOW - 2 * 86400000,
+    offline: false,
+    entities: {
+      pipelines: { fetchedAt: NOW - 1000, items: [] },
+      calendars: {
+        fetchedAt: NOW - 2 * 86400000, // stale
+        items: [{ id: 'cal-stale', name: 'Stale Cal' }],
+      },
+      tags: { fetchedAt: NOW - 1000, items: [] },
+      customFields: { fetchedAt: NOW - 1000, items: [] },
+      users: { fetchedAt: NOW - 1000, items: [] },
+      location: { fetchedAt: NOW - 1000, item: { id: 'L-TEST', name: 'T', timezone: 'UTC', business: { currency: 'PHP' } } },
+    },
+  };
+  const fixture = {
+    [`GET /calendars/events?locationId=L-TEST&calendarId=cal-stale&startTime=${START}&endTime=${NOW}`]: {
+      status: 200,
+      j: { events: [] },
+    },
+  };
+  const { ctx, getPrinted } = makeFakeCtx({ fixture, now: NOW, model: staleModel });
+  const code = await run({ days: DAYS, top: 15 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 0);
+  const envelope = JSON.parse(getPrinted());
+  assert.ok(envelope.data.modelMeta, 'modelMeta must be present');
+  assert.ok(envelope.data.modelMeta.stale === true, 'stale model must set modelMeta.stale=true');
+});

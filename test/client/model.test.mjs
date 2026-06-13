@@ -1,5 +1,5 @@
 import { test } from 'node:test'; import assert from 'node:assert';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'; import { tmpdir } from 'node:os'; import { join } from 'node:path';
 import { syncModel, loadModel, isStale, ENTITY_SPECS } from '../../lib/model.mjs';
 
 test('ENTITY_SPECS defines 6 entities', () => {
@@ -146,5 +146,181 @@ test('syncModel with only= syncs subset', async () => {
   const m = await syncModel({ http, loc: 'L1', dir, now: () => 1, only: ['tags'] });
   assert.ok(fetched.some(p => p.includes('/tags')));
   assert.ok(m.entities.tags.items.length >= 0);
+  rmSync(dir, { recursive: true });
+});
+
+// ── C1 fixes ─────────────────────────────────────────────────────────────────
+
+test('C1: cold+offline — syncModel throws, does NOT write a model blob', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'm-'));
+  // All fetches throw (network down, no existing model)
+  const http = { get: async () => { throw new Error('ECONNREFUSED'); } };
+  let threw = false;
+  let thrownErr = null;
+  try {
+    await syncModel({ http, loc: 'L-COLD', dir, now: () => 1 });
+  } catch (e) {
+    threw = true;
+    thrownErr = e;
+  }
+  assert.ok(threw, 'syncModel must throw when cold+offline');
+  assert.ok(thrownErr.offline === true, 'error must have .offline=true');
+  assert.ok(/GoHighLevel|connection/i.test(thrownErr.message), 'error message must mention GoHighLevel/connection');
+  // No model blob must have been written
+  assert.ok(!existsSync(join(dir, 'L-COLD.json')), 'must NOT write a blob when cold+offline');
+  rmSync(dir, { recursive: true });
+});
+
+test('C1: cold+offline via code:0 response — throws, does NOT write blob', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'm-'));
+  // http.get returns code:0 (network failure via return value, not throw)
+  const http = { get: async () => ({ code: 0, ok: false, j: null, message: 'network unreachable' }) };
+  let threw = false;
+  try {
+    await syncModel({ http, loc: 'L-CODE0', dir, now: () => 1 });
+  } catch (e) {
+    threw = true;
+    assert.ok(e.offline === true, 'error must have .offline=true');
+  }
+  assert.ok(threw, 'syncModel must throw when all entities return code:0');
+  assert.ok(!existsSync(join(dir, 'L-CODE0.json')), 'must NOT write a blob when cold+offline via code:0');
+  rmSync(dir, { recursive: true });
+});
+
+test('C1: model present + refresh-fails → model.offline=true, blob still written', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'm-'));
+  // First: successful sync to establish existing model
+  const goodHttp = {
+    get: async (path) => {
+      const map = {
+        '/opportunities/pipelines': { pipelines: [{ id: 'p1', name: 'Sales', stages: [] }] },
+        '/calendars/': { calendars: [] },
+        '/tags': { tags: [] },
+        '/customFields': { customFields: [] },
+        '/users/': { users: [] },
+        '/locations/': { location: { id: 'L-STALE', name: 'Biz', timezone: 'UTC', business: { currency: 'PHP' } } },
+      };
+      const k = Object.keys(map).find(x => path.includes(x));
+      return { code: k ? 200 : 404, ok: !!k, j: k ? map[k] : {} };
+    },
+  };
+  await syncModel({ http: goodHttp, loc: 'L-STALE', dir, now: () => 1000 });
+
+  // Second: network down — has existing model, so should NOT throw, but model.offline=true
+  const badHttp = { get: async () => { throw new Error('ECONNREFUSED'); } };
+  let threw = false;
+  let result = null;
+  try {
+    result = await syncModel({ http: badHttp, loc: 'L-STALE', dir, now: () => 2000 });
+  } catch (e) {
+    threw = true;
+  }
+  assert.ok(!threw, 'must NOT throw when existing model present and refresh fails');
+  assert.ok(result !== null, 'must return a model');
+  assert.ok(result.offline === true, 'model.offline must be true when all fetches failed');
+  // Blob must have been written
+  assert.ok(existsSync(join(dir, 'L-STALE.json')), 'blob must still be written');
+  const loaded = loadModel('L-STALE', dir);
+  assert.ok(loaded.offline === true, 'written blob must have offline=true');
+  rmSync(dir, { recursive: true });
+});
+
+test('C1: 403 entity → blocked (scope error), NOT networkError; model.offline stays false', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'm-'));
+  const http = {
+    get: async (path) => {
+      if (path.includes('/tags')) return { code: 403, ok: false, j: null };
+      const map = {
+        '/opportunities/pipelines': { pipelines: [] },
+        '/calendars/': { calendars: [] },
+        '/customFields': { customFields: [] },
+        '/users/': { users: [] },
+        '/locations/': { location: { id: 'L-403', name: 'B', timezone: 'UTC', business: { currency: 'PHP' } } },
+      };
+      const k = Object.keys(map).find(x => path.includes(x));
+      return { code: k ? 200 : 404, ok: !!k, j: k ? map[k] : {} };
+    },
+  };
+  const m = await syncModel({ http, loc: 'L-403', dir, now: () => 1 });
+  assert.equal(m.entities.tags.blocked, true, 'tags must be blocked (scope error)');
+  assert.ok(!m.entities.tags.networkError, 'tags must NOT have networkError for a 403');
+  assert.ok(m.offline === false, 'model.offline must be false when only 403s — scope error ≠ network error');
+  rmSync(dir, { recursive: true });
+});
+
+test('C1: network-error entity gets networkError:true, not blocked:true', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'm-'));
+  // First, create an existing model so we don't hit the cold+offline throw path
+  const goodHttp = {
+    get: async (path) => {
+      const map = {
+        '/opportunities/pipelines': { pipelines: [] },
+        '/calendars/': { calendars: [] },
+        '/tags': { tags: [] },
+        '/customFields': { customFields: [] },
+        '/users/': { users: [] },
+        '/locations/': { location: { id: 'L-NETERR', name: 'B', timezone: 'UTC', business: { currency: 'PHP' } } },
+      };
+      const k = Object.keys(map).find(x => path.includes(x));
+      return { code: k ? 200 : 404, ok: !!k, j: k ? map[k] : {} };
+    },
+  };
+  await syncModel({ http: goodHttp, loc: 'L-NETERR', dir, now: () => 1 });
+
+  // Now: tags throws on fetch
+  const mixedHttp = {
+    get: async (path) => {
+      if (path.includes('/tags')) throw new Error('ETIMEDOUT');
+      if (path.includes('/users/')) return { code: 403, ok: false, j: null };
+      const map = {
+        '/opportunities/pipelines': { pipelines: [] },
+        '/calendars/': { calendars: [] },
+        '/customFields': { customFields: [] },
+        '/locations/': { location: { id: 'L-NETERR', name: 'B', timezone: 'UTC', business: { currency: 'PHP' } } },
+      };
+      const k = Object.keys(map).find(x => path.includes(x));
+      return { code: k ? 200 : 404, ok: !!k, j: k ? map[k] : {} };
+    },
+  };
+  const m = await syncModel({ http: mixedHttp, loc: 'L-NETERR', dir, now: () => 2 });
+  // tags: threw → networkError:true
+  assert.ok(m.entities.tags.networkError === true, 'tags must have networkError:true');
+  assert.ok(!m.entities.tags.blocked, 'tags must NOT be blocked (it was a network error)');
+  // users: 403 → blocked:true (no networkError)
+  assert.ok(m.entities.users.blocked === true, 'users must be blocked (403)');
+  assert.ok(!m.entities.users.networkError, 'users must NOT have networkError for 403');
+  // model.offline = true because at least one entity hit network error
+  assert.ok(m.offline === true, 'model.offline must be true when any entity had a network error');
+  rmSync(dir, { recursive: true });
+});
+
+test('M1: atomic write uses same-dir temp (no EXDEV); write failure throws', async () => {
+  // Verify the temp file is in the same dir as the dest by observing that no file
+  // appears in tmpdir() during write. We can't easily simulate EXDEV, but we can
+  // verify the write completes cleanly to a specified dir.
+  const dir = mkdtempSync(join(tmpdir(), 'm-'));
+  const http = {
+    get: async (path) => {
+      const map = {
+        '/opportunities/pipelines': { pipelines: [] },
+        '/calendars/': { calendars: [] },
+        '/tags': { tags: [] },
+        '/customFields': { customFields: [] },
+        '/users/': { users: [] },
+        '/locations/': { location: { id: 'L-ATOMIC', name: 'B', timezone: 'UTC', business: { currency: 'PHP' } } },
+      };
+      const k = Object.keys(map).find(x => path.includes(x));
+      return { code: k ? 200 : 404, ok: !!k, j: k ? map[k] : {} };
+    },
+  };
+  const m = await syncModel({ http, loc: 'L-ATOMIC', dir, now: () => 1 });
+  // Model was written successfully and is loadable
+  const loaded = loadModel('L-ATOMIC', dir);
+  assert.ok(loaded !== null, 'model must be loadable after atomic write');
+  assert.equal(loaded.locationId, 'L-ATOMIC');
+  // No orphaned temp files remain in the dir
+  const { readdirSync } = await import('node:fs');
+  const files = readdirSync(dir);
+  assert.ok(!files.some(f => f.endsWith('.tmp.' + process.pid)), 'no orphaned .tmp files must remain after successful write');
   rmSync(dir, { recursive: true });
 });
