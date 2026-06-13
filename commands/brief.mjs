@@ -2,19 +2,26 @@
 // SAME shared ctx. One http client, one rate budget, zero child-process spawning.
 // NEEDS YOU TODAY uses rankActions from lib/prioritize.mjs — same ranker as ghl focus.
 // READ-ONLY. Never writes, never sends, never charges.
+// Memory: deltas (vs last run, honest baseline) + ack/snooze filtering. All local-only.
 import { collect as snapCollect } from './snapshot.mjs';
 import { collect as triageCollect } from './triage.mjs';
 import { collect as noshowCollect } from './noshow.mjs';
 import { collect as pipeCollect } from './pipeline.mjs';
 import { collect as arCollect } from './receivables.mjs';
 import { rankActions, hasMixedCurrencies } from '../lib/prioritize.mjs';
+import {
+  loadLast, recordRun, diff, filterSnoozed,
+  snapshotFromMetrics, formatDelta,
+} from '../lib/memory.mjs';
 
 export const meta = {
   name: 'brief',
   summary: 'morning brief — numbers + NEEDS YOU TODAY',
   flags: [
-    { name: '--days',    type: 'int',  default: 7,     desc: 'snapshot window in days' },
-    { name: '--verbose', type: 'bool', default: false, desc: 'include raw sources blob in JSON output' },
+    { name: '--days',       type: 'int',  default: 7,     desc: 'snapshot window in days' },
+    { name: '--verbose',    type: 'bool', default: false, desc: 'include raw sources blob in JSON output' },
+    { name: '--no-memory',  type: 'bool', default: false, desc: 'skip memory read+record (pure stateless run)' },
+    { name: '--show-acked', type: 'bool', default: false, desc: 'include snoozed/acked items in output' },
   ],
   readOnly: true,
 };
@@ -111,6 +118,9 @@ function buildEmitData(data, ctx) {
         age:    a.age ?? undefined,
       })),
       ...(rest.sources && { sources: rest.sources }),
+      // delta + snoozedCount stay even in concise mode — agents need them for branching
+      ...(rest.delta !== undefined && { delta: rest.delta }),
+      ...(rest.snoozedCount !== undefined && { snoozedCount: rest.snoozedCount }),
     };
   }
 
@@ -120,6 +130,14 @@ function buildEmitData(data, ctx) {
 // ── collect: the composable data layer ───────────────────────────────────────
 export async function collect(args, ctx) {
   const DAYS = args.days != null ? args.days : 7;
+  const noMemory = !!(args['no-memory'] || ctx.noMemory);
+  const showAcked = !!(args['show-acked'] || ctx.showAcked);
+  const loc = ctx.cfg.loc;
+  const memDir = ctx.memoryDir; // injectable for tests; undefined → default
+
+  // ── Memory: load last run BEFORE collecting (so we can diff after) ────────
+  // HONESTY: null → firstRun. Never treat as "no change".
+  const lastRun = noMemory ? null : loadLast(loc, memDir);
 
   // Fan-out all 5 sub-collects in parallel on the same ctx.
   // Each uses ctx.cfg.loc / ctx.http / ctx.now — no creds duplication.
@@ -131,7 +149,7 @@ export async function collect(args, ctx) {
     safe('receivables',() => arCollect({ top: 100 }, ctx), ctx),
   ]);
 
-  const loc = snap.location || triage.location || ctx.cfg.loc;
+  const resolvedLoc = snap.location || triage.location || loc;
 
   // Build the prioritised action list using rankActions (same ranker as ghl focus).
   // Additive: keep count + recipe for backward compat; add money + age fields.
@@ -140,10 +158,10 @@ export async function collect(args, ctx) {
 
   // Build the actions array: ranked items first (money-ordered), then unknownValue items.
   // Keep backward-compat fields (count, kind, recipe) — add money + age.
-  const actions = [];
+  const allActions = [];
   for (const item of ranked) {
     const recipeMap = { deal: 'pipeline', invoice: 'receivables', 'never-billed': 'booked-not-paid' };
-    actions.push({
+    allActions.push({
       count: 1,
       kind:  item.kind === 'deal' ? 'stuck-deals' : item.kind === 'invoice' ? 'receivables' : item.kind,
       recipe: recipeMap[item.kind] || item.action.replace('ghl ', ''),
@@ -157,7 +175,7 @@ export async function collect(args, ctx) {
   }
   for (const item of unknownValue) {
     const recipeMap = { 'waiting-reply': 'triage', noshow: 'noshow', 'never-billed': 'booked-not-paid' };
-    actions.push({
+    allActions.push({
       count: 1,
       kind:  item.kind,
       recipe: recipeMap[item.kind] || item.action.replace('ghl ', ''),
@@ -169,11 +187,33 @@ export async function collect(args, ctx) {
     });
   }
 
+  // ── Memory: compute delta vs last run ──────────────────────────────────────
+  let delta = null;
+  if (!noMemory) {
+    const currSnapshot = snapshotFromMetrics(snap?.metrics);
+    delta = diff(lastRun, currSnapshot, allActions, ctx.now);
+    // Record new baseline AFTER computing diff (so diff sees the OLD baseline)
+    try {
+      recordRun(resolvedLoc, { snapshot: currSnapshot, actions: allActions }, ctx.now, memDir);
+    } catch { /* non-fatal — never crash brief for a memory write failure */ }
+  }
+
+  // ── Ack/snooze: filter out snoozed items unless --show-acked ──────────────
+  let actions = allActions;
+  let snoozedCount = 0;
+  if (!noMemory && !showAcked) {
+    const filtered = filterSnoozed(resolvedLoc, allActions, ctx.now, memDir);
+    actions = filtered.visible;
+    snoozedCount = filtered.snoozedCount;
+  }
+
   const base = {
-    location: loc,
+    location: resolvedLoc,
     days: DAYS,
     snapshot: snap,
     actions,
+    ...(snoozedCount > 0 && { snoozedCount }),
+    ...(delta !== null && { delta }),
   };
 
   // sources is always computed (TTY render reads _sources below).
@@ -209,6 +249,12 @@ export async function run(args, ctx) {
     ctx.out.line('║' + pad('  loc ' + data.location + '  ·  read-only') + '║');
     ctx.out.line('╚' + bar('═') + '╝');
 
+    // ── DELTA LINE — honest baseline summary ────────────────────────────────
+    if (data.delta) {
+      const deltaLine = formatDelta(data.delta);
+      if (deltaLine) ctx.out.line('\n  ' + deltaLine);
+    }
+
     // THE NUMBERS
     ctx.out.line('\n  THE NUMBERS (last ' + DAYS + 'd)');
     ctx.out.line('  ' + bar());
@@ -242,6 +288,11 @@ export async function run(args, ctx) {
         const recipe = `ghl ${action.recipe}`;
         ctx.out.line(`  ${i + 1}. ${label.padEnd(48)} → ${recipe}`);
       });
+    }
+
+    // ── Snoozed footer — signaled, never silent ──────────────────────────────
+    if (data.snoozedCount > 0) {
+      ctx.out.line(`\n  ${data.snoozedCount} snoozed (sizmo ack --list · --show-acked to reveal)`);
     }
 
     ctx.out.line('  ' + bar());

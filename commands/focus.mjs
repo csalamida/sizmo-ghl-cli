@@ -2,19 +2,23 @@
 // Reuses the 5 existing collect()s on the shared cached ctx — inherits A's speed + cache.
 // Ranks via lib/prioritize.mjs (single source of truth shared with brief).
 // READ-ONLY. Never sends, charges, or writes.
+// Memory: ack/snooze filtering — handled items stay hidden until snooze expires.
 import { collect as pipeCollect }   from './pipeline.mjs';
 import { collect as arCollect }     from './receivables.mjs';
 import { collect as triageCollect } from './triage.mjs';
 import { collect as noshowCollect } from './noshow.mjs';
 import { collect as bnpCollect }    from './booked-not-paid.mjs';
 import { rankActions, hasMixedCurrencies } from '../lib/prioritize.mjs';
+import { filterSnoozed } from '../lib/memory.mjs';
 
 export const meta = {
   name: 'focus',
   summary: 'one ranked to-do queue by money at stake',
   flags: [
-    { name: '--top',       type: 'int', default: 15, desc: 'max items to display' },
-    { name: '--stuck-days',type: 'int', default: 7,  desc: 'idle threshold for stuck deals' },
+    { name: '--top',        type: 'int',  default: 15,   desc: 'max items to display' },
+    { name: '--stuck-days', type: 'int',  default: 7,    desc: 'idle threshold for stuck deals' },
+    { name: '--no-memory',  type: 'bool', default: false, desc: 'skip snooze filtering (pure stateless run)' },
+    { name: '--show-acked', type: 'bool', default: false, desc: 'include snoozed/acked items in output' },
   ],
   readOnly: true,
 };
@@ -101,10 +105,27 @@ export async function collect(args, ctx) {
     ageDays:   Math.floor((NOW - (b.lastSessionTs || 0)) / 86400000),
   }));
 
-  const { ranked, unknownValue } = rankActions({ deals, invoices, threads, noshows, neverBilled });
-  const mixedCurrencies = hasMixedCurrencies(ranked);
+  const { ranked: allRanked, unknownValue: allUnknown } = rankActions({ deals, invoices, threads, noshows, neverBilled });
+  const mixedCurrencies = hasMixedCurrencies(allRanked);
 
-  return { location: loc, ranked, unknownValue, mixedCurrencies };
+  // ── Ack/snooze filtering ──────────────────────────────────────────────────
+  const noMemory = !!(args['no-memory'] || ctx.noMemory);
+  const showAcked = !!(args['show-acked'] || ctx.showAcked);
+  const memDir = ctx.memoryDir; // injectable for tests
+
+  let ranked = allRanked;
+  let unknownValue = allUnknown;
+  let snoozedCount = 0;
+
+  if (!noMemory && !showAcked) {
+    const filteredRanked = filterSnoozed(loc, allRanked, NOW, memDir);
+    const filteredUnknown = filterSnoozed(loc, allUnknown, NOW, memDir);
+    ranked = filteredRanked.visible;
+    unknownValue = filteredUnknown.visible;
+    snoozedCount = filteredRanked.snoozedCount + filteredUnknown.snoozedCount;
+  }
+
+  return { location: loc, ranked, unknownValue, mixedCurrencies, snoozedCount };
 }
 
 // ── run: bimodal output (JSON envelope OR TTY card) ───────────────────────────
@@ -149,6 +170,11 @@ export async function run(args, ctx) {
       });
       if (data.unknownValue.length > TOP) ctx.out.line(`  … +${data.unknownValue.length - TOP} more unknown-value items`);
       ctx.out.line('');
+    }
+
+    // ── Snoozed footer — signaled, never silent ──────────────────────────────
+    if (data.snoozedCount > 0) {
+      ctx.out.line(`  ${data.snoozedCount} snoozed (sizmo ack --list · --show-acked to reveal)`);
     }
 
     ctx.out.line('  ' + bar());
