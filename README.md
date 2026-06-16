@@ -36,7 +36,19 @@ git clone https://github.com/csalamida07-cyber/sizmo-ghl-cli && cd sizmo-ghl-cli
 node bin/sizmo.mjs brief
 ```
 
-Then configure a profile:
+Then set up a profile. **Easiest — guided:**
+
+```sh
+sizmo init
+```
+
+`sizmo init` walks you through it: it prints the exact GoHighLevel path + the scope copy-block, takes your token from stdin (never argv), writes the profile, and runs `sizmo doctor` to confirm you're green — all in one run. Agent-drivable too: pipe the token in non-interactively.
+
+```sh
+echo "pit-yourtoken..." | sizmo init --profile myclient --loc YOUR_LOCATION_ID
+```
+
+**Manual alternative:**
 
 ```sh
 echo "pit-yourtoken..." | sizmo config set --profile myclient --loc YOUR_LOCATION_ID --pit-stdin
@@ -61,12 +73,15 @@ Granting fewer is fine — missing scopes show as ⚠ in affected metrics rather
 
 **Auth: PIT vs MCP** — `sizmo` uses a Private Integration Token (PIT), not the GoHighLevel MCP server. See [`docs/how-to/auth-pit-vs-mcp.md`](docs/how-to/auth-pit-vs-mcp.md) for the comparison and when you'd want each.
 
-Verify auth:
+Verify auth — or just run the one-shot health check:
 
 ```sh
+sizmo doctor            # scopes + location + CRM model + version, one screen
 sizmo auth status
 sizmo auth check
 ```
+
+`sizmo doctor` is the "is it me or the tool?" answer: it reports each scope (✓/⚠/✖ with the exact fix line for any blocked one), location reachability + latency, CRM-model freshness, and whether a newer `sizmo` is available — and it never reports green when a lane is blocked.
 
 ## Commands
 
@@ -121,6 +136,8 @@ Pipeline/calendar names are resolved to IDs from the local CRM model. Run `sizmo
 ### Utility commands
 
 ```sh
+sizmo init              # guided setup: scopes → token (stdin) → profile → doctor
+sizmo doctor            # one-shot health: scopes, location, model, version
 sizmo schema            # machine-readable command tree (JSON)
 sizmo auth status       # show credential source, location, masked PIT, rotation age
 sizmo auth check        # probe live API to verify PIT scopes
@@ -134,10 +151,11 @@ sizmo api /path         # raw GET escape hatch (--paginate --max-pages N)
 ### Global flags (work with every command)
 
 ```
---profile <name>   use a named credential profile
---json             machine-readable output (stable JSON envelope)
---fresh            bypass 60-second read cache — re-fetches live data
---no-cache         alias for --fresh
+--profile <name>     use a named credential profile
+--json               machine-readable output (stable JSON envelope)
+--fresh              bypass 60-second read cache — re-fetches live data
+--no-cache           alias for --fresh
+--no-update-check    skip the once-a-day "newer version available" check for this run
 ```
 
 ## JSON envelope
@@ -157,6 +175,18 @@ Every command supports `--json`. The envelope shape is stable:
 ```
 
 `degraded: true` means at least one data source was blocked (scope or auth). Read `warnings`. A blocked source is not zero — treat it as unknown.
+
+**Router verbs differ.** `init`, `auth`, and `config` are setup verbs, not data commands — their `--json` output is a purpose-specific object (e.g. `auth check` → `{ lanes, usable }`, `init` → `{ profile, location, ok, doctor }`), not the `data`/`degraded`/`warnings` envelope above. The data commands (brief, snapshot, doctor, …) all use the envelope.
+
+## Staying up to date
+
+`npx sizmo` always runs the latest published version. If you installed globally (`npm i -g sizmo`), the CLI checks npm **at most once a day** and prints a one-line nudge to stderr when a newer version exists:
+
+```
+⚠ sizmo 0.9.0 available (you have 0.8.0) — update: npm i -g sizmo@latest
+```
+
+`sizmo doctor` also shows a CLI VERSION line. The check is privacy-clean: a single GET of the public npm registry, cached 24h, never blocking, nothing sent about you. Turn it off with `--no-update-check` (per run) or the `NO_UPDATE_NOTIFIER` / `SIZMO_NO_UPDATE_CHECK` env vars. It never runs under `--json` or when output is piped.
 
 ## Your CRM model
 
@@ -202,6 +232,8 @@ The JSON `_meta` block in every `crm` response lets agents branch on staleness w
 - **`--dry-run` available on all writes.** Shows the change description without executing. Exits 0.
 - **PIT never in argv.** Credentials are passed via stdin (`--pit-stdin`) or env var (`--pit-env VAR`). Never logged, never echoed raw.
 - **60-second read cache.** Repeated calls within 60s return cached data. `cacheAgeMs` in the envelope tells you how old. Use `--fresh` to bypass.
+
+Every claim above is verifiable — see [`SECURITY.md`](SECURITY.md) for the threat model, the self-audit recipes, and how to report a vulnerability. Zero runtime dependencies: what you read is what runs.
 
 ## Honest limitations
 

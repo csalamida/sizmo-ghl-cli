@@ -4,6 +4,7 @@
 //   where single-page limit:100 missed paid contacts → now exhausts all pages.
 // READ-ONLY. Never messages, invoices, or charges.
 import { paginate } from '../lib/paginate.mjs';
+import { fmtMoney as money } from '../lib/money.mjs';
 
 export const meta = {
   name: 'booked-not-paid',
@@ -15,8 +16,6 @@ export const meta = {
   readOnly: true,
 };
 
-const SYM = { PHP: '₱', USD: '$', EUR: '€', GBP: '£' };
-const money = (n, c = 'PHP') => (SYM[c] || c + ' ') + Number(n || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 });
 const UNPAID = new Set(['sent', 'overdue', 'partially_paid', 'partially paid', 'payment_processing', 'viewed', 'due']);
 // Must match reconcile.mjs SUCCESS set exactly — any status in this set means the contact paid.
 const SUCCESS = new Set(['succeeded', 'success', 'paid', 'completed', 'captured']);

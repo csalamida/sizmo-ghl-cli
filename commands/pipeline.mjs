@@ -7,6 +7,7 @@
 // READ-ONLY.
 import { paginate } from '../lib/paginate.mjs';
 import { ENTITY_SPECS } from '../lib/model.mjs';
+import { fmtMoney } from '../lib/money.mjs';
 
 export const meta = {
   name: 'pipeline',
@@ -18,9 +19,10 @@ export const meta = {
   readOnly: true,
 };
 
-// NOTE: GHL opportunity monetaryValue carries no currency field — it inherits pipeline config.
-// Hardcoding ₱ here is a known GHL API limitation; no currency param available per-opportunity.
-const money = (n) => !Number.isFinite(Number(n)) ? '—' : '₱' + Number(n || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 });
+// NOTE: GHL opportunity monetaryValue carries no currency field — it inherits pipeline config,
+// which the API does not expose per-opportunity. Formatting deals as PHP is a documented GHL
+// limitation, not a drift bug — so pipeline passes 'PHP' explicitly through the shared formatter.
+const money = (n) => fmtMoney(n, 'PHP');
 const touchedAt = (o) =>
   Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || o.dateUpdated || o.dateAdded || 0) || 0;
 
@@ -183,10 +185,9 @@ export async function run(args, ctx) {
 
   const STUCK_DAYS = args['stuck-days'] ?? 7;
   const TOP = args.top ?? 100;
-  const money2 = (n) => '₱' + Number(n || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 });
 
   ctx.out.card(() => {
-    ctx.out.line(`\n  PIPELINE HEALTH  ·  ${money2(data.totalValue)} across ${data.openCount} open deal(s)  ·  loc ${data.location}`);
+    ctx.out.line(`\n  PIPELINE HEALTH  ·  ${money(data.totalValue)} across ${data.openCount} open deal(s)  ·  loc ${data.location}`);
     // C2: staleness note when model is old/offline
     if (data.modelMeta) {
       const mm = data.modelMeta;
@@ -200,7 +201,7 @@ export async function run(args, ctx) {
     for (const pl of data.pipelines) {
       ctx.out.line(`\n  ${pl.pipeline}`);
       for (const s of pl.stages) {
-        ctx.out.line(`    ${(s.stage || '').slice(0, 28).padEnd(28)} ${String(s.count).padStart(3)} deal  ${money2(s.value).padStart(12)}`);
+        ctx.out.line(`    ${(s.stage || '').slice(0, 28).padEnd(28)} ${String(s.count).padStart(3)} deal  ${money(s.value).padStart(12)}`);
       }
     }
     ctx.out.line(`\n  STUCK — open + untouched ≥ ${STUCK_DAYS}d (oldest first, top ${TOP})`);
@@ -209,7 +210,7 @@ export async function run(args, ctx) {
       ctx.out.line('  Nothing stuck. Pipeline moving. ✅');
     } else {
       data.stuck.forEach((x, i) => {
-        ctx.out.line(`  ${String(i + 1).padStart(2)}. ${(x.name || '(no name)').slice(0, 26).padEnd(26)} ${money2(x.value).padStart(11)}  idle ${(x.idle || '?').padEnd(5)} ${x.stage}`);
+        ctx.out.line(`  ${String(i + 1).padStart(2)}. ${(x.name || '(no name)').slice(0, 26).padEnd(26)} ${money(x.value).padStart(11)}  idle ${(x.idle || '?').padEnd(5)} ${x.stage}`);
         ctx.out.line(`      opp ${x.oppId} · contact ${x.contactId}`);
       });
     }

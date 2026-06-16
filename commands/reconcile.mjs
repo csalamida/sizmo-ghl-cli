@@ -7,6 +7,7 @@
 // READ-ONLY. NEVER charges, refunds, or collects.
 import { paginate } from '../lib/paginate.mjs';
 import { ENTITY_SPECS } from '../lib/model.mjs';
+import { fmtMoney as m } from '../lib/money.mjs';
 
 export const meta = {
   name: 'reconcile',
@@ -18,8 +19,6 @@ export const meta = {
   readOnly: true,
 };
 
-const SYM = { PHP: '₱', USD: '$', EUR: '€', GBP: '£' };
-const m = (n, c = 'PHP') => !Number.isFinite(Number(n)) ? '—' : (SYM[c] || c + ' ') + Number(n || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 });
 const SUCCESS = new Set(['succeeded', 'success', 'paid', 'completed', 'captured']);
 const srcOf = (t) =>
   (t.paymentProviderType || t.providerType || t.source || t.chargeSnapshot?.provider || t.entitySourceType || 'unknown').toString();

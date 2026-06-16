@@ -1,6 +1,6 @@
 {
   "name": "sizmo",
-  "version": "0.6.0",
+  "version": "0.9.0",
   "description": "Unofficial GoHighLevel CLI — read your CRM + make confirm-gated operational changes from the terminal. Money never moves through it. Not affiliated with HighLevel.",
   "type": "module",
   "bin": {
@@ -37,6 +37,8 @@
     "commands/",
     "SKILL.md",
     "INSTALL.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
     "docs/"
   ],
   "publishConfig": {

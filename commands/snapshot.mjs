@@ -7,6 +7,7 @@
 import { paginate } from '../lib/paginate.mjs';
 import { mapLimit } from '../lib/pool.mjs';
 import { ENTITY_SPECS } from '../lib/model.mjs';
+import { fmtMoney as money } from '../lib/money.mjs';
 
 export const meta = {
   name: 'snapshot',
@@ -15,9 +16,6 @@ export const meta = {
   readOnly: true,
 };
 
-const SYM = { PHP: '₱', USD: '$', EUR: '€', GBP: '£', AUD: 'A$', CAD: 'C$' };
-const money = (n, cur = 'PHP') =>
-  (n == null || !Number.isFinite(Number(n))) ? '—' : (SYM[cur] || cur + ' ') + Number(n).toLocaleString('en-PH', { maximumFractionDigits: 0 });
 const fmtManila = (ms) =>
   new Date(ms).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' });
 const metric = (label, value, { note = '', blocked = false, blocker = '' } = {}) =>

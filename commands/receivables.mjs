@@ -4,6 +4,7 @@
 // Trust-fix #3: per-currency totals (never cross-sum).
 // READ-ONLY. Invoices and payments are read-only — no charges, no voids, no sends from this command.
 import { paginate } from '../lib/paginate.mjs';
+import { fmtMoney as money } from '../lib/money.mjs';
 
 export const meta = {
   name: 'receivables',
@@ -14,8 +15,6 @@ export const meta = {
   readOnly: true,
 };
 
-const SYM = { PHP: '₱', USD: '$', EUR: '€', GBP: '£' };
-const money = (n, c = 'PHP') => (SYM[c] || c + ' ') + Number(n || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 });
 const UNPAID = new Set(['sent', 'overdue', 'partially_paid', 'partially paid', 'payment_processing', 'viewed', 'due']);
 
 export async function collect(args, ctx) {
