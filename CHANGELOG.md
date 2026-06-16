@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   let 0.7.0–0.9.0 ship while git was stuck at 0.6.0. No bypass flag.
 - `CONTRIBUTING.md` — documented the release ritual; corrected the stale "never writes" claim
   (confirm-gated operational writes exist since 0.6.0; money still never moves).
+- CI — GitHub Actions (`.github/workflows/ci.yml`): runs `node --test` on Node 20 + 22 on every
+  push/PR, plus a generic gitleaks secret scan. CI / npm / zero-deps badges in the README.
 
 ## [0.9.0] — 2026-06-15
 

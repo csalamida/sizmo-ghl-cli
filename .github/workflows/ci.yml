@@ -1,0 +1,44 @@
+name: CI
+
+# Runs on every push to main and every PR. Proves the suite passes on a CLEAN machine
+# across supported Node versions — not just on a maintainer's laptop.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: node --test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']   # 20 = the engines floor; 22 = current LTS
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # Zero runtime dependencies — no `npm install` needed. What you read is what runs.
+      - name: Run tests
+        run: node --test --test-concurrency=1
+
+  secret-scan:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so gitleaks scans every commit, not just the tip
+      # Generic secret scanner. NOTE: the maintainer's moat/secret gate is intentionally NOT
+      # here — its denylist names the private patterns it hides, so it stays out-of-tree.
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"

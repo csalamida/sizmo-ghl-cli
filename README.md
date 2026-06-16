@@ -1,5 +1,9 @@
 # sizmo
 
+[![CI](https://github.com/csalamida07-cyber/sizmo-ghl-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/csalamida07-cyber/sizmo-ghl-cli/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/sizmo)](https://www.npmjs.com/package/sizmo)
+[![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)](package.json)
+
 **Unofficial GoHighLevel CLI — read your CRM + make confirm-gated operational changes from the terminal. Money never moves through it.** Not affiliated with HighLevel.
 
 > Not affiliated with, endorsed by, or supported by HighLevel. This is an independent open-source tool.
