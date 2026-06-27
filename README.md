@@ -167,22 +167,41 @@ sizmo api /path         # raw GET escape hatch (--paginate --max-pages N)
 ### Global flags (work with every command)
 
 ```
---profile <name>     use a named credential profile
+--profile <name>     use a named credential profile (or set SIZMO_PROFILE)
 --json               machine-readable output (stable JSON envelope)
---fields a,b,c       (with --json) keep only these keys on each list item — trims the payload
+--ndjson             machine-readable, streamed: one meta line + one JSON object per list item
+--fields a,b,c       (with --json/--ndjson) keep only these keys on each list item — trims the payload
 --concise            (with --json) leaner payload — currently trims `brief` only
 --fresh              bypass 60-second read cache — re-fetches live data
 --no-cache           alias for --fresh
 --no-update-check    skip the once-a-day "newer version available" check for this run
 ```
 
+**Profile via env.** `SIZMO_PROFILE=<name>` selects a saved profile without passing `--profile` on
+every call (precedence: an explicit `--profile` flag > `SIZMO_PROFILE` > the saved default). Mirrors
+`AWS_PROFILE` — handy for a per-client shell or a CI lane.
+
 **Token-lean for agents.** `--fields` and `--concise` exist so an LLM driving sizmo pays for only
 the data it needs. `sizmo receivables --json --fields name,due` returns just those two keys per row
 instead of the full record — often an ~80–90% smaller payload. `--fields` projects the list in
-`receivables`, `segment`, `triage`, `noshow`, `focus`, and `crm` (the list-bearing recipes);
+`receivables`, `segment`, `triage`, `noshow`, `focus`, `crm`, `brief`, and `pipeline`;
 `--concise` currently trims `brief` only. Both are read-from-the-shelf, pay-per-call ergonomics:
 an agent that shells out to `sizmo … --json --fields …` carries one command, not a whole tool's
 schema.
+
+**`--ndjson` for streaming/agents.** Instead of one big JSON array, `--ndjson` emits a leading
+**meta line** (carrying `command`, `location`, `degraded`, `warnings`, `count`, and every non-list
+field under `data`) followed by **one JSON object per list item** — so an agent can process rows
+line-by-line without buffering thousands of records, and the "this source was blocked / unknown"
+signal is never dropped (it rides the meta line). A payload with no list (e.g. `doctor`) emits a
+single envelope line. Combine with `--fields` to trim each row.
+
+```sh
+sizmo receivables --ndjson --fields name,due
+# {"_meta":true,"schemaVersion":1,"command":"receivables","location":"L1","listKey":"list","count":2,"degraded":false,"warnings":[],"data":{...}}
+# {"name":"Acme Co","due":5000}
+# {"name":"Beta LLC","due":3000}
+```
 
 ## JSON envelope
 

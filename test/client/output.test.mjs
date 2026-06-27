@@ -1,6 +1,98 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { makeOut, project } from '../../lib/output.mjs';
+import { makeOut, project, LIST_KEYS } from '../../lib/output.mjs';
+
+// ── ndjson (1.1.0) ───────────────────────────────────────────────────────────
+const ndjsonLines = (s) => s.split('\n').filter(Boolean).map(l => JSON.parse(l));
+
+test('ndjson: leading meta line + one line per list item', () => {
+  let printed = '';
+  const out = makeOut({ ndjson: true, tty: false, command: 'receivables', location: 'L1', write: s => printed += s });
+  out.data({ outstanding: 2, list: [{ id: 'c1', due: 5000 }, { id: 'c2', due: 3000 }] });
+  out.flush();
+  const lines = ndjsonLines(printed);
+  assert.equal(lines.length, 3, 'meta line + 2 rows');
+  assert.equal(lines[0]._meta, true);
+  assert.equal(lines[0].command, 'receivables');
+  assert.equal(lines[0].listKey, 'list');
+  assert.equal(lines[0].count, 2);
+  assert.equal(lines[0].data.outstanding, 2, 'non-list fields ride on the meta line');
+  assert.equal(lines[1].id, 'c1');
+  assert.equal(lines[2].id, 'c2');
+});
+
+test('ndjson HONESTY: a blocked source keeps degraded:true on the meta line (never dropped like CSV)', () => {
+  let printed = ''; let warned = '';
+  const out = makeOut({ ndjson: true, tty: false, command: 'receivables', location: 'L1',
+    write: s => printed += s, writeErr: s => warned += s });
+  out.warn('receivables blocked (403)', { degraded: true });
+  out.data({ list: [] });   // empty because the source was blocked — NOT because there are no leaks
+  out.flush();
+  const meta = ndjsonLines(printed)[0];
+  assert.equal(meta.degraded, true, 'degraded must survive into ndjson — the whole point vs CSV');
+  assert.deepEqual(meta.warnings, ['receivables blocked (403)']);
+  assert.equal(meta.count, 0);
+});
+
+test('ndjson: payload with no list → single envelope line, still carries degraded', () => {
+  let printed = '';
+  const out = makeOut({ ndjson: true, tty: false, command: 'doctor', location: 'L1', write: s => printed += s });
+  out.warn('scope blocked', { degraded: true });
+  out.data({ ok: false, scopes: { contacts: true } });   // object, no list key
+  out.flush();
+  const lines = ndjsonLines(printed);
+  assert.equal(lines.length, 1, 'no streamable list → one line');
+  assert.equal(lines[0].degraded, true);
+  assert.equal(lines[0].data.ok, false);
+});
+
+test('ndjson respects --fields (rows projected)', () => {
+  let printed = '';
+  const out = makeOut({ ndjson: true, tty: false, command: 'segment', location: 'L1',
+    fields: ['name'], write: s => printed += s });
+  out.data({ sample: [{ name: 'Acme', phone: '123', email: 'a@b.co' }] });
+  out.flush();
+  const rows = ndjsonLines(printed).slice(1);
+  assert.equal(rows[0].name, 'Acme');
+  assert.ok(!('phone' in rows[0]) && !('email' in rows[0]), 'non-listed fields stripped');
+});
+
+test('ndjson suppresses the human card (machine mode)', () => {
+  let printed = '';
+  const out = makeOut({ ndjson: true, tty: false, command: 'brief', location: 'L1', write: s => printed += s });
+  out.data({ actions: [] });
+  out.card(() => out.line('HUMAN CARD SHOULD NOT APPEAR'));
+  out.flush();
+  assert.ok(!printed.includes('HUMAN CARD'), 'card is a no-op under ndjson');
+});
+
+test('LIST_KEYS covers every list-bearing recipe key (guard: --fields must not silently no-op)', () => {
+  // The primary list key each list-bearing recipe emits. A new recipe with a new list key
+  // MUST be added here AND to LIST_KEYS — this test fails loudly if they drift apart, which
+  // is how the 1.0.x brief/pipeline gap (--fields silently doing nothing) is prevented.
+  const recipeListKeys = {
+    receivables: 'list', segment: 'sample', triage: 'threads', noshow: 'list',
+    focus: 'ranked', crm: 'items', brief: 'actions', pipeline: 'stuck',
+  };
+  for (const [recipe, key] of Object.entries(recipeListKeys)) {
+    assert.ok(LIST_KEYS.includes(key),
+      `--fields will silently no-op on '${recipe}': key '${key}' missing from LIST_KEYS`);
+  }
+});
+
+test('--fields projects brief.actions + pipeline.stuck (the 1.0.x gap, now closed)', () => {
+  for (const [command, key] of [['brief', 'actions'], ['pipeline', 'stuck']]) {
+    let printed = '';
+    const out = makeOut({ json: true, tty: false, command, location: 'L1',
+      fields: ['name'], write: s => printed += s });
+    out.data({ [key]: [{ name: 'Acme', contactId: 'c9', money: 5000 }] });
+    out.flush();
+    const env = JSON.parse(printed);
+    assert.equal(env.data[key][0].name, 'Acme', `${command}.${key} item kept name`);
+    assert.ok(!('contactId' in env.data[key][0]), `${command}.${key} projected — contactId stripped`);
+    assert.ok(!('money' in env.data[key][0]), `${command}.${key} projected — money stripped`);
+  }
+});
 
 test('json mode emits frozen envelope', () => {
   let printed = ''; const out = makeOut({ json:true, tty:false, command:'snapshot', location:'L1', write:s=>printed+=s });

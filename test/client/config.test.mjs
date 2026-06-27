@@ -1,6 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { resolveCreds } from '../../lib/config.mjs';
+import { resolveCreds, pickProfileName } from '../../lib/config.mjs';
+
+test('pickProfileName: flag > SIZMO_PROFILE env > default', () => {
+  const db = { default: 'def', profiles: {} };
+  // explicit flag wins over everything
+  assert.equal(pickProfileName('flagp', { SIZMO_PROFILE: 'envp' }, db), 'flagp');
+  // no flag → SIZMO_PROFILE env beats the saved default
+  assert.equal(pickProfileName(null, { SIZMO_PROFILE: 'envp' }, db), 'envp');
+  // no flag, no env → saved default
+  assert.equal(pickProfileName(null, {}, db), 'def');
+  // nothing anywhere → null (no baked default)
+  assert.equal(pickProfileName(null, {}, { default: null }), null);
+  assert.equal(pickProfileName(null, {}, undefined), null);
+});
 
 test('env wins over profile', () => {
   const r = resolveCreds(

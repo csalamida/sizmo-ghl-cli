@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-06-26
+
+First feature minor since 1.0. Additive only — the frozen 1.x contract (exit codes, the `--json`
+envelope, command/flag names) is unchanged. Includes everything from 1.0.1 below.
+
+### Added
+- **`--ndjson`** — streamed machine output: a leading meta line (carrying `command`, `location`,
+  `degraded`, `warnings`, `count`, and every non-list field) then one JSON object per list item.
+  Lets an agent process large lists line-by-line without buffering, and — unlike a bare CSV — the
+  meta line means a blocked/`degraded` source is never silently dropped. No-list payloads (e.g.
+  `doctor`) emit a single envelope line. Honors `--fields`. Shape frozen for `1.x` (see
+  `API-STABILITY.md`).
+- **`SIZMO_PROFILE` env var** — select a saved profile without `--profile` on every call
+  (precedence: `--profile` flag > `SIZMO_PROFILE` > saved default). Mirrors `AWS_PROFILE`.
+
+### Fixed
+- **`--fields` now actually projects `brief` and `pipeline`.** Their list keys (`actions`, `stuck`)
+  were missing from the projection set, so `--fields` silently did nothing on them. Now covered,
+  plus a guard test that fails if any list-bearing recipe's key drifts out of the set (so the
+  silent no-op can't return).
+
 ## [1.0.1] — 2026-06-26
 
 ### Fixed
@@ -159,7 +180,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.1.0
 [1.0.1]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.0.1
 [1.0.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.0.0
 [0.9.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v0.9.0

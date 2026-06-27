@@ -12,11 +12,11 @@ const argv = rawArgv.filter(a => a !== '--no-update-check');
 const code = await run(argv);
 
 // Update check — runs AFTER the command, NEVER affects the exit code. Skipped when:
-//   · --json is present (the machine path must stay byte-clean)
+//   · --json or --ndjson is present (the machine path must stay byte-clean)
 //   · stderr is not a TTY (don't pollute piped logs)
 //   · --no-update-check was passed (env opt-outs are handled inside checkForUpdate)
 try {
-  if (!noUpdateFlag && !argv.includes('--json') && process.stderr.isTTY) {
+  if (!noUpdateFlag && !argv.includes('--json') && !argv.includes('--ndjson') && process.stderr.isTTY) {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     const notice = updateNotice(await checkForUpdate({ current: pkg.version }));
     if (notice) process.stderr.write(notice);

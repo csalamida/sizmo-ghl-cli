@@ -48,6 +48,16 @@ Every `--json` response carries `schemaVersion` (currently `1`).
   a leaner payload (currently `brief` only). Both are token-lean affordances for agents and are
   stable within `1.x`. `cacheAgeMs` appears when served from cache.
 
+#### a2) `--ndjson` — streamed envelope (stable in `1.x`)
+
+`--ndjson` emits newline-delimited JSON instead of the single `--json` object:
+
+- **Line 1 — the meta record:** `{ "_meta": true, "schemaVersion": 1, "command", "location", "listKey", "count", "degraded", "warnings", "data": <payload minus the list>, "cacheAgeMs"? }`. `degraded`/`warnings` live here, so a blocked source is never silently dropped (the reason ndjson is honest where a bare CSV is not).
+- **Lines 2..N — one JSON object per item** of the primary list (`listKey` names which). `--fields` projects these rows.
+- **No-list payloads** (e.g. `doctor`) emit a single envelope line carrying the same `degraded`/`warnings`.
+
+The `_meta` marker, the meta field names, and the one-object-per-row contract are frozen for `1.x`.
+
 ### b) Router verbs → per-verb objects
 
 `auth`, `config`, and `init` are **setup/diagnostic verbs, not data queries** — so they emit a
@@ -82,7 +92,8 @@ bump; adding new commands/flags is additive.
 ## 5. Credential store
 
 `~/.config/sizmo/profiles.json` — location and shape are stable, written `0600`.
-`XDG_CONFIG_HOME` is respected.
+`XDG_CONFIG_HOME` is respected. `SIZMO_PROFILE` selects a saved profile (precedence: `--profile`
+flag > `SIZMO_PROFILE` > saved default) and is stable within `1.x`.
 
 ## What is NOT covered by this promise
 
