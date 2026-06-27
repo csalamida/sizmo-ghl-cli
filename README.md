@@ -8,7 +8,20 @@
 
 > Not affiliated with, endorsed by, or supported by HighLevel. This is an independent open-source tool.
 
-`sizmo` reads your GoHighLevel location — leads, bookings, pipeline, A/R, money leaks — from the terminal, and writes to it: operational changes (tag, note, opp, appointment, send), scaffolding (create/delete contacts, custom fields, custom values), and invoices (draft, send). **Every write requires explicit `--confirm`**; without it the CLI prints the exact change + a rerun command, then exits 5. Nothing fires silently. **The PIT scope is the gate** — sizmo does only what your token's scopes allow, and there is **no public card-charge endpoint**, so it cannot pull money off a card.
+A full terminal interface to one GoHighLevel location — **read it, build it, bill it, safely tear it down.** Every write is **confirm-gated** (preview → `--confirm` → fire) and **scope-gated** (your PIT's scopes decide what's allowed). It never fabricates a number, and it can't pull money off a card — GoHighLevel exposes no such endpoint.
+
+## What it does
+
+| | Commands |
+|---|---|
+| **See** (read-only) | `brief` · `snapshot` · `triage` · `pipeline` · `receivables` · `reconcile` · `booked-not-paid` · `noshow` · `focus` · `segment` · `crm` |
+| **Act** | `tag` · `note` · `opp` (create/move/update) · `appointment` (book/cancel) · `send` (SMS/email) |
+| **Build** | `contact create` · `field create` · `value create` |
+| **Delete** (single-target, accident-proof) | `contact delete` · `field delete` · `value delete` |
+| **Bill** (scope-gated) | `invoice draft` · `invoice send` (pay-link — *not* a card charge) |
+| **Operate** | `init` · `doctor` · `open` · `completions` · `api` · multi-client profiles |
+
+A human reads the pretty output; an agent consumes the stable `--json` / `--ndjson` underneath.
 
 ## Why sizmo
 
@@ -262,14 +275,14 @@ Every command supports `--json`. The envelope shape is stable:
 
 **Router verbs differ.** `init`, `auth`, and `config` are setup verbs, not data commands — their `--json` output is a purpose-specific object (e.g. `auth check` → `{ lanes, usable }`, `init` → `{ profile, location, ok, doctor }`), not the `data`/`degraded`/`warnings` envelope above. The data commands (brief, snapshot, doctor, …) all use the envelope.
 
-Both contracts are frozen under semver — see [`API-STABILITY.md`](API-STABILITY.md) for exactly what you can depend on across `1.x` (exit codes, JSON shapes, `schemaVersion` policy, flag names) and what you can't (human output, stderr text, internal modules).
+Both contracts are frozen under semver — see [`API-STABILITY.md`](API-STABILITY.md) for exactly what you can depend on (exit codes, JSON shapes, `schemaVersion` policy, flag names) and what you can't (human output, stderr text, internal modules). The contract has held since 1.0 and is unchanged through 2.x — the 2.0 major bump was the money-policy guarantee, not the API.
 
 ## Staying up to date
 
 `npx sizmo` always runs the latest published version. If you installed globally (`npm i -g sizmo`), the CLI checks npm **at most once a day** and prints a one-line nudge to stderr when a newer version exists:
 
 ```
-⚠ sizmo 0.9.0 available (you have 0.8.0) — update: npm i -g sizmo@latest
+⚠ sizmo 2.1.0 available (you have 2.0.0) — update: npm i -g sizmo@latest
 ```
 
 `sizmo doctor` also shows a CLI VERSION line. The check is privacy-clean: a single GET of the public npm registry, cached 24h, never blocking, nothing sent about you. Turn it off with `--no-update-check` (per run) or the `NO_UPDATE_NOTIFIER` / `SIZMO_NO_UPDATE_CHECK` env vars. It never runs under `--json` or when output is piped.
