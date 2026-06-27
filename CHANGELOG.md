@@ -7,10 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-06-27
+
+**Breaking (security posture, not the API contract).** The "**money never moves**" guarantee is
+removed. sizmo now follows **scope-is-the-gate**: it exposes whatever your PIT's scopes + GoHighLevel's
+*public* API allow — including money-side writes (draft/send an invoice). It still **cannot charge a
+card** (GHL exposes no public endpoint for that). The CLI contract — exit codes, the `--json`
+envelope, command/flag names — is **unchanged and backward-compatible**; the major bump signals that
+`SECURITY.md` no longer promises money can't move. Grant money scopes deliberately.
+
+### Added
+- **`sizmo invoice draft --contact <id> --item "Name:amount[:qty]"`** — create a **draft** invoice
+  (a document — not sent, no charge). Pulls the contact + business name to assemble the body.
+  **Verified live.** Scope: `invoices.write`.
+- **`sizmo invoice send <invoiceId>`** — send an invoice; delivers a **pay-link / text-to-pay** the
+  customer acts on (not a card charge). Scope: `invoices.write`.
+
 ### Changed
-- `sizmo crm <fields|tags|calendars|pipelines|users>` now shows each item's **id inline** in the
-  human listing (it was only in `--json`). Completes the delete loop: `crm fields` → copy the id →
-  `field delete <id>`.
+- **Money policy → scope-is-the-gate** (the breaking note above). `init`'s scope copy-block and
+  `auth check` now include `invoices.write`. SECURITY.md + README rewritten accordingly.
+- `sizmo crm <fields|tags|calendars|pipelines|users>` shows each item's **id inline** in the human
+  listing (was only in `--json`) — completes the loop: `crm fields` → copy id → `field delete <id>`.
 
 ## [1.4.0] — 2026-06-27
 
@@ -240,7 +257,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v2.0.0
 [1.4.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.4.0
 [1.3.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.3.0
 [1.2.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.2.0

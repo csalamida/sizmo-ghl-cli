@@ -4,11 +4,11 @@
 [![npm](https://img.shields.io/npm/v/sizmo)](https://www.npmjs.com/package/sizmo)
 [![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)](package.json)
 
-**Unofficial GoHighLevel CLI — read your CRM + make confirm-gated operational changes from the terminal. Money never moves through it.** Not affiliated with HighLevel.
+**Unofficial GoHighLevel CLI — read your CRM and make confirm-gated, scope-gated changes from the terminal: only what your token allows.** Not affiliated with HighLevel.
 
 > Not affiliated with, endorsed by, or supported by HighLevel. This is an independent open-source tool.
 
-`sizmo` reads your GoHighLevel location — leads, bookings, pipeline, A/R, money leaks — from the terminal. Write operations (tag, note, opp, appointment, send) require explicit `--confirm`; without it the CLI prints the exact change and a rerun command, then exits 5. Nothing fires silently. Money stays out — no charges, collections, refunds, or invoice-issuing; payments and invoices are read-only.
+`sizmo` reads your GoHighLevel location — leads, bookings, pipeline, A/R, money leaks — from the terminal, and writes to it: operational changes (tag, note, opp, appointment, send), scaffolding (create/delete contacts, custom fields, custom values), and invoices (draft, send). **Every write requires explicit `--confirm`**; without it the CLI prints the exact change + a rerun command, then exits 5. Nothing fires silently. **The PIT scope is the gate** — sizmo does only what your token's scopes allow, and there is **no public card-charge endpoint**, so it cannot pull money off a card.
 
 ## Why sizmo
 
@@ -120,7 +120,7 @@ Command list generated from `sizmo schema` (authoritative — pulled directly fr
 
 ### Writes (confirm-gated)
 
-These commands change data in GoHighLevel. Every write requires `--confirm`; without it the CLI prints the exact change + a rerun command and exits 5. Nothing fires silently. Money never moves — no charge, collect, refund, or invoice-issue.
+These commands change data in GoHighLevel. Every write requires `--confirm`; without it the CLI prints the exact change + a rerun command and exits 5. Nothing fires silently. **The PIT scope is the gate** — a command only works if your token carries the scope; otherwise it fails with `AUTH` + the exact scope to add. sizmo cannot charge a card (GoHighLevel exposes no public endpoint for it); the money-side writes are draft/send an invoice.
 
 | Command | Summary | Required flags | Scope needed |
 |---------|---------|----------------|--------------|
@@ -150,6 +150,17 @@ wildcard, no batch. Before it deletes, it **fetches the resource and shows you i
 confirm preview (a wrong/nonexistent id → `NOTFOUND`, nothing touched), then deletes that one
 resource by its id path. It is structurally incapable of the "I deleted one and it wiped them all"
 accident.
+
+**Money writes (scope-gated, since 2.0)** — only what the public API + your scope allow:
+
+| Command | Summary | Scope needed |
+|---------|---------|--------------|
+| `sizmo invoice draft --contact <id> --item "Name:amount"` | Create a **draft** invoice (a document — not sent, no charge) | `invoices.write` |
+| `sizmo invoice send <invoiceId>` | Send an invoice — delivers a **pay-link / text-to-pay** the customer acts on | `invoices.write` |
+
+There is **no card-charging command** because GoHighLevel exposes no public endpoint for it. `draft`
+creates a document; `send` requests payment. Both are confirm-gated. (Prior to 2.0 sizmo excluded all
+money endpoints; 2.0 moved to "the PIT scope is the gate" — see `SECURITY.md` + `CHANGELOG.md`.)
 
 **How writes work:**
 
@@ -190,7 +201,7 @@ command tree, so it stays correct across upgrades.
 
 **Act without retyping** — the people-focused recipes (`receivables`, `triage`, `noshow`,
 `booked-not-paid`) print a ready-to-run `→ sizmo send …` / `→ sizmo open …` line under each row with
-the real contact id. Copy, run. (Sends still require `--confirm`; money never moves through sizmo.)
+the real contact id. Copy, run. (Sends still require `--confirm`; sizmo can't charge a card — no public endpoint.)
 
 ### Global flags (work with every command)
 
@@ -303,7 +314,7 @@ The JSON `_meta` block in every `crm` response lets agents branch on staleness w
 
 - **Reads are always free.** Read commands never change anything in GoHighLevel.
 - **Writes require explicit `--confirm`.** Tag, note, opp, appointment, and send commands print the exact change + a rerun command and exit 5 (confirmation-required) without `--confirm`. Nothing fires silently — safe for agent use.
-- **Money stays out.** No charge, collect, refund, or invoice-issue — ever. Payments and invoices are read-only in every path. The only writes are operational: tags, notes, opportunities, appointments, and messages.
+- **The PIT scope is the gate (since 2.0).** sizmo exposes only what your token's scopes + GoHighLevel's public API allow — a missing scope fails with `AUTH` + the fix. There is **no card-charging command** (no public endpoint exists); the money-side writes are draft/send an invoice, both confirm-gated. Reads never change anything.
 - **`--dry-run` available on all writes.** Shows the change description without executing. Exits 0.
 - **PIT never in argv.** Credentials are passed via stdin (`--pit-stdin`) or env var (`--pit-env VAR`). Never logged, never echoed raw.
 - **60-second read cache.** Repeated calls within 60s return cached data. `cacheAgeMs` in the envelope tells you how old. Use `--fresh` to bypass.

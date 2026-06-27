@@ -42,7 +42,7 @@ That's the entire boundary. The tool stores nothing in the cloud and runs nowher
 |-----------|---------------|
 | **The PIT is read from stdin or env only — never argv.** There is no `--pit` flag, so your token never lands in shell history, `ps`, or process args. | `grep -rn "'--pit'" lib/ commands/` — you'll find only `--pit-stdin` / `--pit-env`. |
 | **The profile file is written 0600, atomically.** The PIT is stored owner-only, via a temp file created at mode `0600` then renamed — no window where it's world-readable, no half-written file on a crash. | Read `lib/config.mjs` (`saveProfiles`); check perms: `ls -l ~/.config/sizmo/profiles.json`. |
-| **Money never moves.** No code path charges, collects, refunds, or issues an invoice. Payments and invoices are read-only. The only writes are operational — tag, note, opportunity, appointment, message — and **every write requires `--confirm`** (without it the CLI prints the change and exits 5). | `grep -rni "charge\|collect\|refund" commands/` — the hits are read/report fields, never a POST. See README "Safety model". |
+| **The PIT scope is the gate — and there is no card-charging path.** sizmo exposes only what your token's scopes + GoHighLevel's *public* API allow; a missing scope fails with `AUTH` + the exact scope to add. Money-side, the public API offers create-**draft**-invoice, **send** an invoice (a pay-link the customer acts on), and recording a manual payment — there is **no public "charge a card" endpoint**, so sizmo cannot pull money off a card on its own. **Every write — operational *or* money — requires `--confirm`** (without it the CLI prints the change and exits 5). | `grep -rn "ctx.http.post\|ctx.http.put\|ctx.http.delete" commands/` — every write is scope-gated + confirm-gated; there is no charge/capture/refund call. |
 | **No telemetry.** sizmo makes exactly two kinds of outbound request: the GoHighLevel API, and a once-a-day npm-registry check for a newer version (a plain `GET`, sending nothing about you). | Read `lib/update-notify.mjs`; opt out with `--no-update-check` or `NO_UPDATE_NOTIFIER=1`. |
 | **Zero runtime dependencies.** No transitive supply chain to trust. | `cat package.json` → `"dependencies": {}`. |
 
@@ -58,8 +58,12 @@ That's the entire boundary. The tool stores nothing in the cloud and runs nowher
 - **A leaked PIT is your GHL exposure, not sizmo's.** If your token is stolen (from anywhere), rotate
   it immediately in GoHighLevel → Settings → Integrations → Private Integrations. `sizmo doctor`
   surfaces your token's age so you can rotate before the 90-day limit.
-- **Writes are real.** `--confirm` fires an actual change in your CRM. The confirm gate prevents
-  *accidental* writes; it does not prevent *intended* ones. Money endpoints are excluded entirely.
+- **Writes are real — including money-side ones (changed in 2.0).** `--confirm` fires an actual
+  change in your CRM, and if your PIT carries `invoices.write` that includes creating or **sending**
+  an invoice. The confirm gate prevents *accidental* writes, not *intended* ones. sizmo still cannot
+  charge a card (GoHighLevel exposes no public endpoint for that), but a *sent* invoice is a real
+  request for payment to your customer — grant money scopes deliberately. Prior to 2.0, sizmo
+  excluded all money endpoints; 2.0 moved to "the PIT scope is the gate."
 
 ## Audit it yourself
 
