@@ -68,6 +68,7 @@ purpose-fit object (each with `schemaVersion` + a clear success signal), not the
 | `auth check` | `{ schemaVersion, location, lanes:[{name,scope,ok,httpCode}], summary, usable }` | `usable` |
 | `config list` | `{ schemaVersion, profiles:[{name,locationId,label,default,pitAgeDays}] }` | — (PIT never included) |
 | `init` | `{ schemaVersion, command, profile, location, pit (masked), created, doctor, doctorExit, ok }` | `ok` |
+| `open` | `{ schemaVersion, command:'open', kind, id, url, opened }` | `opened` (false under `--url`) |
 
 **Why two shapes:** data commands answer "what's in my CRM" — one uniform envelope. Router verbs
 answer "is my setup healthy" — their shapes are fit to that job. Both are frozen for `1.x`. (A

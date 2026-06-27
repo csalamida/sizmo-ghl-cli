@@ -151,6 +151,7 @@ export async function run(args, ctx) {
       const ts = new Date(n.when).getTime();
       ctx.out.line(`  ${String(i + 1).padStart(2)}. ${(n.name || '(unknown)').slice(0, 24).padEnd(24)} ${fmt(ts).padEnd(20)} (${ago(ts)} ago)`);
       ctx.out.line(`      ${n.calendar} · contact ${n.contactId || '—'} · appt ${n.apptId}`);
+      if (n.contactId) ctx.out.line(`      → sizmo send ${n.contactId} --channel sms --message "..."   ·   sizmo open ${n.contactId}`);
     });
     ctx.out.line('  ' + '─'.repeat(70));
     ctx.out.line('  → hand to ghl-conversations: draft a warm re-book message per contact; you approve each send (L2).\n');

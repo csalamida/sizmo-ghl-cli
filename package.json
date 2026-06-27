@@ -1,6 +1,6 @@
 {
   "name": "sizmo",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Unofficial GoHighLevel CLI — read your CRM + make confirm-gated operational changes from the terminal. Money never moves through it. Not affiliated with HighLevel.",
   "type": "module",
   "bin": {

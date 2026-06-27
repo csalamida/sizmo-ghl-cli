@@ -154,6 +154,9 @@ Pipeline/calendar names are resolved to IDs from the local CRM model. Run `sizmo
 ```sh
 sizmo init              # guided setup: scopes → token (stdin) → profile → doctor
 sizmo doctor            # one-shot health: scopes, location, model, version
+sizmo help <command>    # per-command help with runnable examples (also: sizmo <command> --help)
+sizmo open <contactId>  # open a contact in the GoHighLevel web app (--opp · --url to just print)
+sizmo completions zsh   # print a tab-completion script (bash too) — eval "$(sizmo completions zsh)"
 sizmo schema            # machine-readable command tree (JSON)
 sizmo auth status       # show credential source, location, masked PIT, rotation age
 sizmo auth check        # probe live API to verify PIT scopes
@@ -163,6 +166,14 @@ sizmo config set --profile <name> --loc <id> --pit-stdin
 sizmo config rm <name>  # remove a profile
 sizmo api /path         # raw GET escape hatch (--paginate --max-pages N)
 ```
+
+**Tab-completion** — add `eval "$(sizmo completions zsh)"` to your `~/.zshrc` (or `bash` → `~/.bashrc`)
+and `sizmo <TAB>` completes commands; `sizmo brief --<TAB>` completes flags. Generated from the live
+command tree, so it stays correct across upgrades.
+
+**Act without retyping** — the people-focused recipes (`receivables`, `triage`, `noshow`,
+`booked-not-paid`) print a ready-to-run `→ sizmo send …` / `→ sizmo open …` line under each row with
+the real contact id. Copy, run. (Sends still require `--confirm`; money never moves through sizmo.)
 
 ### Global flags (work with every command)
 

@@ -1,7 +1,132 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { route, parseArgs } from '../../lib/cli.mjs';
+import { route, parseArgs, ghlAppUrl } from '../../lib/cli.mjs';
 import { EXIT } from '../../lib/errors.mjs';
+
+// ── open verb (1.2.0) ────────────────────────────────────────────────────────
+
+function withLoc(loc, fn) {
+  const sp = process.env.GHL_PIT, sl = process.env.GHL_LOCATION_ID, sprof = process.env.SIZMO_PROFILE;
+  process.env.GHL_LOCATION_ID = loc; delete process.env.SIZMO_PROFILE;
+  try { return fn(); }
+  finally {
+    if (sp !== undefined) process.env.GHL_PIT = sp; else delete process.env.GHL_PIT;
+    if (sl !== undefined) process.env.GHL_LOCATION_ID = sl; else delete process.env.GHL_LOCATION_ID;
+    if (sprof !== undefined) process.env.SIZMO_PROFILE = sprof;
+  }
+}
+
+test('ghlAppUrl: contact + opportunity paths, encodes loc/id, honors SIZMO_APP_URL', () => {
+  assert.equal(ghlAppUrl('contact', 'L1', 'c1', {}),
+    'https://app.gohighlevel.com/v2/location/L1/contacts/detail/c1');
+  assert.equal(ghlAppUrl('opportunity', 'L1', 'c1', {}),
+    'https://app.gohighlevel.com/v2/location/L1/opportunities/list?contactId=c1');
+  assert.equal(ghlAppUrl('contact', 'L1', 'c1', { SIZMO_APP_URL: 'https://crm.acme.com/' }),
+    'https://crm.acme.com/v2/location/L1/contacts/detail/c1');
+  assert.ok(ghlAppUrl('contact', 'L1', 'a/b', {}).endsWith('/contacts/detail/a%2Fb'));
+});
+
+test('open --url: prints the contact URL, no browser launch', async () => {
+  let out = '';
+  const code = await withLoc('LOC1', () => route(['open', 'cid-9', '--url'], { write: s => out += s }));
+  assert.equal(code, EXIT.OK);
+  assert.equal(out.trim(), 'https://app.gohighlevel.com/v2/location/LOC1/contacts/detail/cid-9');
+});
+
+test('open --json --url: structured, opened:false', async () => {
+  let out = '';
+  await withLoc('LOC1', () => route(['open', 'cid-9', '--url', '--json'], { write: s => out += s }));
+  const o = JSON.parse(out);
+  assert.equal(o.command, 'open'); assert.equal(o.kind, 'contact'); assert.equal(o.id, 'cid-9');
+  assert.equal(o.opened, false);
+  assert.match(o.url, /contacts\/detail\/cid-9$/);
+});
+
+test('open --opp --url: opportunity URL', async () => {
+  let out = '';
+  await withLoc('LOC1', () => route(['open', 'cid-9', '--opp', '--url'], { write: s => out += s }));
+  assert.match(out, /opportunities\/list\?contactId=cid-9/);
+});
+
+test('open: no id → USAGE', async () => {
+  let err = '';
+  const code = await withLoc('LOC1', () => route(['open'], { writeErr: s => err += s }));
+  assert.equal(code, EXIT.USAGE);
+  assert.match(err, /usage:.*open/i);
+});
+
+test('help <command>: shows summary + flags + runnable examples', async () => {
+  let out = '';
+  const code = await route(['help', 'receivables'], { write: s => out += s });
+  assert.equal(code, EXIT.OK);
+  assert.match(out, /sizmo receivables —/);
+  assert.match(out, /Flags:/);
+  assert.match(out, /--top/);
+  assert.match(out, /Examples:/);
+  assert.match(out, /sizmo receivables --ndjson/);
+});
+
+test('<command> --help: intercepts before the parser (no "unknown flag" error)', async () => {
+  let out = '';
+  const code = await route(['receivables', '--help'], { write: s => out += s });
+  assert.equal(code, EXIT.OK);
+  assert.match(out, /sizmo receivables —/);
+  assert.match(out, /Examples:/);
+});
+
+test('help <router-verb>: works for open (not a registry command)', async () => {
+  let out = '';
+  const code = await route(['help', 'open'], { write: s => out += s });
+  assert.equal(code, EXIT.OK);
+  assert.match(out, /GoHighLevel web app/);
+  assert.match(out, /sizmo open <contactId> --url/);
+});
+
+test('help <bogus>: USAGE + unknown-command message', async () => {
+  let err = '';
+  const code = await route(['help', 'frobnicate'], { writeErr: s => err += s });
+  assert.equal(code, EXIT.USAGE);
+  assert.match(err, /unknown command/i);
+});
+
+test('completions zsh: emits a #compdef script with the command list + a flag', async () => {
+  let out = '';
+  const code = await route(['completions', 'zsh'], { write: s => out += s });
+  assert.equal(code, EXIT.OK);
+  assert.match(out, /^#compdef sizmo/);
+  assert.ok(out.includes('receivables') && out.includes('open') && out.includes('brief'), 'commands present');
+  assert.ok(out.includes('--json'), 'global flags present');
+  assert.ok(out.includes('_describe'), 'is a real zsh completion function');
+});
+
+test('completions bash: emits a complete -F script with the command list', async () => {
+  let out = '';
+  const code = await route(['completions', 'bash'], { write: s => out += s });
+  assert.equal(code, EXIT.OK);
+  assert.ok(out.includes('complete -F _sizmo sizmo'), 'registers the completion');
+  assert.ok(out.includes('receivables') && out.includes('compgen'), 'commands + compgen present');
+});
+
+test('completions: missing/unknown shell → USAGE', async () => {
+  let err = '';
+  assert.equal(await route(['completions'], { writeErr: s => err += s }), EXIT.USAGE);
+  assert.equal(await route(['completions', 'fish'], { writeErr: s => err += s }), EXIT.USAGE);
+  assert.match(err, /usage:.*completions/i);
+});
+
+test('open: no location resolved → AUTH', async () => {
+  const sl = process.env.GHL_LOCATION_ID, sprof = process.env.SIZMO_PROFILE;
+  delete process.env.GHL_LOCATION_ID; delete process.env.SIZMO_PROFILE;
+  let err = '';
+  try {
+    const code = await route(['open', 'cid-9', '--url'], { writeErr: s => err += s });
+    assert.equal(code, EXIT.AUTH);
+    assert.match(err, /no location/i);
+  } finally {
+    if (sl !== undefined) process.env.GHL_LOCATION_ID = sl;
+    if (sprof !== undefined) process.env.SIZMO_PROFILE = sprof;
+  }
+});
 
 test('version returns 0', async () => {
   let out=''; const code = await route(['version'], { write:s=>out+=s });

@@ -134,6 +134,7 @@ export async function run(args, ctx) {
       ctx.out.line(`  ${String(i + 1).padStart(2)}. ${name.padEnd(22)} ${chan.padEnd(7)} waiting ${(t.waiting || '?').padEnd(4)} · ${t.unread} unread`);
       if (t.snippet) ctx.out.line(`      "${t.snippet}"`);
       ctx.out.line(`      conv ${t.conversationId} · contact ${t.contactId}`);
+      if (t.contactId) ctx.out.line(`      → sizmo send ${t.contactId} --channel sms --message "..."   ·   sizmo open ${t.contactId}`);
     });
     ctx.out.line('  ' + '─'.repeat(72));
     ctx.out.line('  → I draft a reply per thread; you approve each before it sends (L2, human-gated).\n');

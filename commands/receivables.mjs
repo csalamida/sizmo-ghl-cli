@@ -67,6 +67,7 @@ export async function collect(args, ctx) {
         status: i.status,
         age: ageDays(dt),
         id: i._id || i.id,
+        contactId: i.contactDetails?.id || i.contactDetails?._id || i.contactId || null,
       };
     })
     .filter(x => x.due > 0.0001)
@@ -109,10 +110,11 @@ export async function run(args, ctx) {
       const aged = x.age == null ? '—' : (x.age >= 30 ? `${x.age}d ⚠` : `${x.age}d`);
       ctx.out.line(`  ${String(i + 1).padStart(2)}. ${(x.name || '?').slice(0, 24).padEnd(24)} ${money(x.due, x.cur).padStart(11)}  ${String(x.status).padEnd(14)} aged ${aged}`);
       ctx.out.line(`      invoice ${x.num} · id ${x.id}`);
+      if (x.contactId) ctx.out.line(`      → sizmo send ${x.contactId} --channel email --message "..."   ·   sizmo open ${x.contactId}`);
     });
     if (data.outstanding > TOP) ctx.out.line(`  … +${data.outstanding - TOP} more`);
     ctx.out.line('  ' + '─'.repeat(72));
-    ctx.out.line('  → This command is read-only. To send a message about an invoice, use: sizmo send <contactId> --channel sms --message "..." --confirm\n');
+    ctx.out.line('  → Read-only. Per-row commands above are ready to run (send needs --confirm; money never moves through sizmo).\n');
   });
   return 0;
 }

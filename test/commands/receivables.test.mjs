@@ -79,6 +79,27 @@ test('receivables: --top limits list rows but outstanding count is full', async 
   assert.equal(envelope.data.totalOwed, 5000, 'totalOwed includes all 5 invoices');
 });
 
+test('receivables: human output prints a ready-to-run per-row action when contactId is known', async () => {
+  const NOW = 1_700_000_000_000;
+  const fixture = {
+    'GET /invoices/?altId=L-TEST&altType=location&limit=100&offset=0': {
+      status: 200,
+      j: { invoices: [
+        { _id: 'inv1', invoiceNumber: 'INV-001', status: 'sent', currency: 'PHP',
+          total: 9000, amountPaid: 0, contactDetails: { name: 'Acme Co', id: 'cid-acme' },
+          dueDate: new Date(NOW - 30 * 86400000).toISOString() },
+      ] },
+    },
+  };
+  // json:false → human card renders into getPrinted()
+  const { ctx, getPrinted } = makeFakeCtx({ fixture, now: NOW, json: false });
+  await run({ top: 20 }, ctx);
+  ctx.out.flush();
+  const out = getPrinted();
+  assert.match(out, /→ sizmo send cid-acme --channel email --message/, 'per-row send command with the real contactId');
+  assert.match(out, /sizmo open cid-acme/, 'per-row open command too');
+});
+
 test('receivables: golden data keys present', () => {
   const golden = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8'));
   const data = golden.data ?? golden;

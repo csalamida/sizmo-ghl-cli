@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-06-26
+
+Convenience minor — make sizmo nicer to use day-to-day. Additive only; the frozen 1.x contract is
+unchanged. No new capability (still reads the same CRM, money never moves) — purely usability.
+
+### Added
+- **`sizmo open <id>`** — open a contact (or `--opp` for their opportunities) in the GoHighLevel web
+  app from the terminal; `--url` just prints the link. No API call, no write — a convenience bridge
+  from "found it in the terminal" to "act on it in GHL". White-label host via `SIZMO_APP_URL`.
+- **`sizmo completions zsh|bash`** — tab-completion for commands + flags, generated from the live
+  schema so it never goes stale. Install: `eval "$(sizmo completions zsh)"` in your shell rc.
+- **`sizmo help <command>`** (and `sizmo <command> --help`) — per-command help with real, runnable
+  examples, not just a flag list. `<command> --help` no longer errors as an unknown flag.
+- **Per-row next-step commands** on the people-recipes (`receivables`, `triage`, `noshow`,
+  `booked-not-paid`) — each row prints the ready-to-run `sizmo send …` / `sizmo open …` line with the
+  real contact id, so you act without retyping. (Writes still require `--confirm`; money never moves.)
+
 ### Fixed
 - Ranker hardening (found by an adversarial sweep of the money core): a non-finite money value
   (e.g. `Infinity` from bad upstream data) no longer ranks #1 or turns the headline total into `—`
@@ -187,7 +204,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.2.0
 [1.1.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.1.0
 [1.0.1]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.0.1
 [1.0.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.0.0

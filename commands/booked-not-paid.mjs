@@ -223,6 +223,7 @@ export async function run(args, ctx) {
       data.neverBilled.slice(0, TOP).forEach((x, i) => {
         ctx.out.line(`  ${String(i + 1).padStart(2)}. ${(x.name || '?').slice(0, 26).padEnd(26)} ${String(x.sessions) + ' session(s)'} · last ${fmt(x.lastSessionTs)} · ${x.attended}`);
         ctx.out.line(`      contact ${x.contactId}`);
+        if (x.contactId) ctx.out.line(`      → sizmo open ${x.contactId}   (review + invoice in GoHighLevel — money stays manual)`);
       });
       if (data.neverBilled.length > TOP) ctx.out.line(`  … +${data.neverBilled.length - TOP} more`);
       ctx.out.line('');
@@ -232,6 +233,7 @@ export async function run(args, ctx) {
       data.billedUnpaid.slice(0, TOP).forEach((x, i) => {
         ctx.out.line(`  ${String(i + 1).padStart(2)}. ${(x.name || '?').slice(0, 26).padEnd(26)} ${money(x.due, x.cur).padStart(11)} · ${x.sessions} session(s) · last ${fmt(x.lastSessionTs)}`);
         ctx.out.line(`      contact ${x.contactId}`);
+        if (x.contactId) ctx.out.line(`      → sizmo send ${x.contactId} --channel sms --message "..."   ·   sizmo open ${x.contactId}`);
       });
       if (data.billedUnpaid.length > TOP) ctx.out.line(`  … +${data.billedUnpaid.length - TOP} more`);
       ctx.out.line('');
