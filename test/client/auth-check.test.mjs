@@ -3,8 +3,23 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { route } from '../../lib/cli.mjs';
 import { EXIT } from '../../lib/errors.mjs';
+
+// Point config resolution at an empty temp dir so the machine's real saved profiles (a default
+// profile) can't leak into "no creds" assertions. Returns a restore fn.
+function isolateConfig() {
+  const sX = process.env.XDG_CONFIG_HOME, sP = process.env.SIZMO_PROFILE;
+  process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), 'sz-cfg-'));
+  delete process.env.SIZMO_PROFILE;
+  return () => {
+    if (sX !== undefined) process.env.XDG_CONFIG_HOME = sX; else delete process.env.XDG_CONFIG_HOME;
+    if (sP !== undefined) process.env.SIZMO_PROFILE = sP; else delete process.env.SIZMO_PROFILE;
+  };
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -56,6 +71,7 @@ function withCreds(pit, loc, fn) {
 // ── no creds guard ────────────────────────────────────────────────────────────
 
 test('auth check: no PIT → exit AUTH (3)', async () => {
+  const restore = isolateConfig();
   const savedPit = process.env.GHL_PIT;
   const savedLoc = process.env.GHL_LOCATION_ID;
   delete process.env.GHL_PIT;
@@ -67,12 +83,14 @@ test('auth check: no PIT → exit AUTH (3)', async () => {
   } finally {
     if (savedPit !== undefined) process.env.GHL_PIT = savedPit;
     if (savedLoc !== undefined) process.env.GHL_LOCATION_ID = savedLoc;
+    restore();
   }
   assert.equal(code, EXIT.AUTH, 'no PIT → AUTH exit');
   assert.match(cap.err, /no credentials/i);
 });
 
 test('auth check: PIT present but no location → exit AUTH (3)', async () => {
+  const restore = isolateConfig();
   const savedPit = process.env.GHL_PIT;
   const savedLoc = process.env.GHL_LOCATION_ID;
   process.env.GHL_PIT = 'pit-NOLOC1234';
@@ -84,6 +102,7 @@ test('auth check: PIT present but no location → exit AUTH (3)', async () => {
   } finally {
     if (savedPit !== undefined) process.env.GHL_PIT = savedPit; else delete process.env.GHL_PIT;
     if (savedLoc !== undefined) process.env.GHL_LOCATION_ID = savedLoc;
+    restore();
   }
   assert.equal(code, EXIT.AUTH, 'no location → AUTH exit');
   assert.match(cap.err, /no location/i);

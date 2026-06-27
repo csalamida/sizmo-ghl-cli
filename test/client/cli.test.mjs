@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { route, parseArgs, ghlAppUrl } from '../../lib/cli.mjs';
 import { EXIT } from '../../lib/errors.mjs';
 
@@ -115,7 +118,9 @@ test('completions: missing/unknown shell → USAGE', async () => {
 });
 
 test('open: no location resolved → AUTH', async () => {
-  const sl = process.env.GHL_LOCATION_ID, sprof = process.env.SIZMO_PROFILE;
+  // Isolate from the machine's real ~/.config/sizmo (a saved default profile would resolve a loc).
+  const sX = process.env.XDG_CONFIG_HOME, sl = process.env.GHL_LOCATION_ID, sprof = process.env.SIZMO_PROFILE;
+  process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), 'sz-cfg-'));
   delete process.env.GHL_LOCATION_ID; delete process.env.SIZMO_PROFILE;
   let err = '';
   try {
@@ -123,6 +128,7 @@ test('open: no location resolved → AUTH', async () => {
     assert.equal(code, EXIT.AUTH);
     assert.match(err, /no location/i);
   } finally {
+    if (sX !== undefined) process.env.XDG_CONFIG_HOME = sX; else delete process.env.XDG_CONFIG_HOME;
     if (sl !== undefined) process.env.GHL_LOCATION_ID = sl;
     if (sprof !== undefined) process.env.SIZMO_PROFILE = sprof;
   }

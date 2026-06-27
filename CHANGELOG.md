@@ -23,6 +23,11 @@ round below).
   > Verified live against a real GoHighLevel location — contact/field/value create all returned ids,
   > and the confirm-gate previews then fires correctly.
 
+### Fixed
+- The profiles-config path is now resolved lazily (at call time, not import time), so a machine that
+  has a saved default profile no longer fails `npm test` / `npm publish` — the three "no creds"
+  tests now isolate to a temp config dir instead of depending on a pristine `~/.config/sizmo`.
+
 ## [1.2.0] — 2026-06-26
 
 Convenience minor — make sizmo nicer to use day-to-day. Additive only; the frozen 1.x contract is
