@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-06-28
+
+### Changed
+- README: added a **"What it does"** capability map (See / Act / Build / Delete / Bill / Operate) so
+  the full 2.x shape reads at a glance, refreshed the positioning, and fixed a stale update-notifier
+  example + the contract reference. Docs-only patch — published so npm's package page reflects it
+  (npm READMEs only update on publish). No code change.
+
 ## [2.0.0] — 2026-06-27
 
 **Breaking (security posture, not the API contract).** The "**money never moves**" guarantee is
@@ -257,7 +265,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v2.0.1
 [2.0.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v2.0.0
 [1.4.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.4.0
 [1.3.0]: https://github.com/csalamida07-cyber/sizmo-ghl-cli/releases/tag/v1.3.0
