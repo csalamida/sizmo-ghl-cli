@@ -7,14 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-07-02
+
+**Location-as-file.** Your GoHighLevel location becomes a file you can save, read, and diff. Two
+read-only commands, zero writes — the foundation for seeing exactly what changed (and, later,
+`apply`).
+
 ### Added
 - **`sizmo export`** (Phase 1 of location-as-file) — dump a location's structure (pipelines+stages,
   calendars, custom fields, custom values, tags, users, location settings) to one **deterministic,
   diffable JSON document** (`--out <file>` or stdout). No timestamps → two exports of an unchanged
-  location are byte-identical (the basis for the upcoming `sizmo diff`). Blocked/unreachable
-  resources are written as `{ blocked: <scope> }` markers **inside** the document, never as empty
-  lists — so a later `apply` can't mistake "blocked" for "empty". Secret-free (ids/names/structure
-  only; user API keys never exported). Read-only. Verified live.
+  location are byte-identical (the basis for `sizmo diff`). Blocked/unreachable resources are
+  written as `{ blocked: <scope> }` markers **inside** the document, never as empty lists — so a
+  later `apply` can't mistake "blocked" for "empty". Secret-free (ids/names/structure only; user
+  API keys never exported). Read-only. Verified live.
+- **`sizmo diff`** (Phase 2 of location-as-file) — `sizmo diff <file>` compares a saved export
+  against the **live** location; `sizmo diff <a> <b>` compares two exports. Reports added / removed
+  / changed per resource with field-level detail, plus a stable `--json` envelope. Answers the one
+  question a snapshot structurally can't: **"what actually changed?"** Both sides are canonicalized
+  before comparing, so key order is never mistaken for a change. A resource that's `blocked` on
+  either side is reported `not comparable` — the diff never invents a delta on data it couldn't
+  read. Read-only. Verified live against a real location (self-diff = identical; a mutated file
+  correctly surfaces every add/remove/change).
 
 ### Fixed
 - The cache-age note (`· cached Ns ago`) now prints to **stderr**, not stdout — it's a diagnostic,
@@ -286,7 +300,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.1.0
 [2.0.2]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.0.2
 [2.0.1]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.0.1
 [2.0.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.0.0

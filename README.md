@@ -15,6 +15,7 @@ A full terminal interface to one GoHighLevel location — **read it, build it, b
 | | Commands |
 |---|---|
 | **See** (read-only) | `brief` · `snapshot` · `triage` · `pipeline` · `receivables` · `reconcile` · `booked-not-paid` · `noshow` · `focus` · `segment` · `crm` |
+| **Version** (read-only) | `export` (location → one diffable file) · `diff` (file vs live, or file vs file — *what changed?*) |
 | **Act** | `tag` · `note` · `opp` (create/move/update) · `appointment` (book/cancel) · `send` (SMS/email) |
 | **Build** | `contact create` · `field create` · `value create` |
 | **Delete** (single-target, accident-proof) | `contact delete` · `field delete` · `value delete` |
@@ -130,6 +131,8 @@ Command list generated from `sizmo schema` (authoritative — pulled directly fr
 | `sizmo segment` | Find contacts by criteria — tag, phone, age, etc. | `--tag X`, `--without-tag X`, `--no-tags`, `--created-days N`, `--has-phone`, `--no-phone`, `--top N` (default 20) |
 | `sizmo crm` | Query the local CRM model — counts, lists, staleness | `--all` (show all items) |
 | `sizmo sync` | Refresh the local CRM model (pipelines, calendars, tags, fields, users, location) | `[entity]` (sync one) |
+| `sizmo export` | Dump the location's structure to one deterministic, diffable file | `--out <file>` (else stdout) |
+| `sizmo diff` | Compare an export against live, or two exports — what changed | `sizmo diff <file>` \| `sizmo diff <a> <b>` |
 
 ### Writes (confirm-gated)
 
