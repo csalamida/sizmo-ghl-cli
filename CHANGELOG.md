@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`sizmo export`** (Phase 1 of location-as-file) — dump a location's structure (pipelines+stages,
+  calendars, custom fields, custom values, tags, users, location settings) to one **deterministic,
+  diffable JSON document** (`--out <file>` or stdout). No timestamps → two exports of an unchanged
+  location are byte-identical (the basis for the upcoming `sizmo diff`). Blocked/unreachable
+  resources are written as `{ blocked: <scope> }` markers **inside** the document, never as empty
+  lists — so a later `apply` can't mistake "blocked" for "empty". Secret-free (ids/names/structure
+  only; user API keys never exported). Read-only. Verified live.
+
+### Fixed
+- The cache-age note (`· cached Ns ago`) now prints to **stderr**, not stdout — it's a diagnostic,
+  not data, so it no longer corrupts a redirected/piped document (e.g. `sizmo export > loc.json`).
+
 ## [2.0.2] — 2026-07-02
 
 ### Changed
