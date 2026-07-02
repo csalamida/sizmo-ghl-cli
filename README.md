@@ -375,6 +375,32 @@ sizmo brief --profile clientB
 
 See `docs/how-to/multi-client.md` for full workflow.
 
+## Claude Skill
+
+`SKILL.md` in this repo is a ready-to-load Claude Code skill. It gives any Claude agent the full command reference, safety rules, and agent-use patterns in one file — no manual briefing needed.
+
+**Install it globally (one machine, all projects):**
+
+```sh
+cp SKILL.md ~/.claude/skills/sizmo-cli.md
+```
+
+**Or project-local:**
+
+```sh
+cp SKILL.md /your-project/.claude/skills/sizmo-cli.md
+```
+
+Once installed, load it in any Claude session:
+
+```
+/sizmo-cli
+```
+
+Claude will know every command, every flag, the confirm-gate pattern, how to read the JSON envelope, and when to stop and ask the human before firing a write. No extra prompting required.
+
+If you update sizmo (new commands, changed flags), pull the repo and re-copy `SKILL.md` — the skill tracks the CLI version.
+
 ## License
 
 MIT. See LICENSE.

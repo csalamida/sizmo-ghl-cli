@@ -15,6 +15,7 @@ export const meta = {
 };
 
 const GROUPS = ['pipelines', 'calendars', 'customFields', 'customValues', 'tags', 'users'];
+const GROUP_LABELS = { pipelines: 'Pipelines', calendars: 'Calendars', customFields: 'Custom Fields', customValues: 'Custom Values', tags: 'Tags', users: 'Users' };
 const keyOf = (item) => item.id ?? item.name ?? JSON.stringify(item);
 
 function fieldDiffs(a = {}, b = {}) {
@@ -106,19 +107,28 @@ export async function run(args, ctx) {
     const s = result.summary;
     ctx.out.line(`  ${s.added} added · ${s.removed} removed · ${s.changed} changed${s.notComparable ? ` · ${s.notComparable} not comparable` : ''}`);
     if (result.location.fields.length) {
-      ctx.out.line('\n  location');
-      for (const f of result.location.fields) ctx.out.line(`    ~ ${f.field}: ${JSON.stringify(f.from)} → ${JSON.stringify(f.to)}`);
+      ctx.out.line('\n  Location');
+      for (const f of result.location.fields) {
+        const desc = f.field === 'name' ? `renamed to "${f.to}"` : `${f.field} updated`;
+        ctx.out.line(`    ~ ${desc}`);
+      }
     }
     for (const g of GROUPS) {
       const r = result.groups[g];
-      if (!r.comparable) { ctx.out.line(`\n  ${g}\n    · ${r.reason}`); continue; }
+      const label = GROUP_LABELS[g] ?? g;
+      if (!r.comparable) { ctx.out.line(`\n  ${label}\n    · ${r.reason}`); continue; }
       if (!r.added.length && !r.removed.length && !r.changed.length) continue;
-      ctx.out.line(`\n  ${g}  (+${r.added.length} −${r.removed.length} ~${r.changed.length})`);
-      for (const x of r.added)   ctx.out.line(`    + ${x.name ?? '(unnamed)'}  ${x.id ?? ''}`);
-      for (const x of r.removed) ctx.out.line(`    − ${x.name ?? '(unnamed)'}  ${x.id ?? ''}`);
+      ctx.out.line(`\n  ${label}`);
+      for (const x of r.added)   ctx.out.line(`    + ${x.name ?? '(unnamed)'}`);
+      for (const x of r.removed) ctx.out.line(`    − ${x.name ?? '(unnamed)'}`);
       for (const x of r.changed) {
-        ctx.out.line(`    ~ ${x.name ?? x.id}`);
-        for (const f of x.fields) ctx.out.line(`        ${f.field}: ${JSON.stringify(f.from)} → ${JSON.stringify(f.to)}`);
+        const desc = x.fields.map(f => {
+          if (f.field === 'name') return 'renamed';
+          if (f.field === 'value') return 'value updated';
+          if (f.field === 'stages') return 'stages updated';
+          return `${f.field} updated`;
+        }).join(', ') || 'changed';
+        ctx.out.line(`    ~ ${x.name ?? x.id}  —  ${desc}`);
       }
     }
     ctx.out.line('');
