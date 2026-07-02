@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-07-02
+
+**Builder completions.** Two confirm-gated writes that finish the "scaffold a location" story,
+each verified live against a real location.
+
+### Added
+- **`sizmo contact upsert`** — create-or-update a contact, de-duped on `--email` / `--phone`. Matches
+  an existing contact and updates it, or creates one if none matches — so a **retrying agent can't
+  spawn duplicate people** (the whole point). Reports created vs updated. Confirm-gated;
+  `contacts.write`. Live-verified: same email twice → same id, no duplicate.
+- **`sizmo calendar create`** — create a calendar with just `--name` (GHL fills sensible defaults;
+  `--type` / `--slot-min` optional). Confirm-gated; `calendars.write`.
+- **`sizmo calendar delete <id>`** — single-target, accident-proof delete (same pattern as contact/
+  field/value delete: fetch-and-name-in-preview, `NOTFOUND` on a wrong id, one-record `DELETE`, never
+  bulk). Confirm-gated. Live create→delete round-trip verified.
+
+### Notes
+- **Pipeline create/delete is NOT shipped — GoHighLevel's public API blocks it.** With
+  `opportunities.write` on the token, `POST /opportunities/` validates (scope live) but
+  `POST /opportunities/pipelines` returns **401 "not authorized for this scope"** — it needs a scope
+  the Private Integration Token catalog doesn't offer. This is a platform gap, not a sizmo
+  limitation; the CLI won't pretend to a capability the API won't grant.
+
 ## [2.1.0] — 2026-07-02
 
 **Location-as-file.** Your GoHighLevel location becomes a file you can save, read, and diff. Two
@@ -300,7 +323,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.2.0
 [2.1.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.1.0
 [2.0.2]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.0.2
 [2.0.1]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.0.1

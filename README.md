@@ -17,8 +17,8 @@ A full terminal interface to one GoHighLevel location — **read it, build it, b
 | **See** (read-only) | `brief` · `snapshot` · `triage` · `pipeline` · `receivables` · `reconcile` · `booked-not-paid` · `noshow` · `focus` · `segment` · `crm` |
 | **Version** (read-only) | `export` (location → one diffable file) · `diff` (file vs live, or file vs file — *what changed?*) |
 | **Act** | `tag` · `note` · `opp` (create/move/update) · `appointment` (book/cancel) · `send` (SMS/email) |
-| **Build** | `contact create` · `field create` · `value create` |
-| **Delete** (single-target, accident-proof) | `contact delete` · `field delete` · `value delete` |
+| **Build** | `contact create` · `contact upsert` (de-dupe) · `field create` · `value create` · `calendar create` |
+| **Delete** (single-target, accident-proof) | `contact delete` · `field delete` · `value delete` · `calendar delete` |
 | **Bill** (scope-gated) | `invoice draft` · `invoice send` (pay-link — *not* a card charge) |
 | **Operate** | `init` · `doctor` · `open` · `completions` · `api` · multi-client profiles |
 
@@ -155,11 +155,14 @@ These commands change data in GoHighLevel. Every write requires `--confirm`; wit
 | Command | Summary | Scope needed |
 |---------|---------|--------------|
 | `sizmo contact create [--email --phone --name --first --last --tag]` | Create a contact | `contacts.write` |
+| `sizmo contact upsert --email\|--phone … [--name --tag]` | Create-or-update, de-duped on email/phone | `contacts.write` |
 | `sizmo contact delete <contactId>` | Delete **one** contact by id | `contacts.write` |
 | `sizmo field create --name "..." [--type TEXT --model contact]` | Create a custom field | `locations/customFields.write` |
 | `sizmo field delete <fieldId>` | Delete **one** custom field by id | `locations/customFields.write` |
 | `sizmo value create --name "..." --value "..."` | Create a custom value | `locations/customValues.write` |
 | `sizmo value delete <valueId>` | Delete **one** custom value by id | `locations/customValues.write` |
+| `sizmo calendar create --name "..." [--type --slot-min]` | Create a calendar | `calendars.write` |
+| `sizmo calendar delete <calendarId>` | Delete **one** calendar by id | `calendars.write` |
 
 **Deletion is single-target by design.** `delete` takes exactly **one id** — there is no `--all`, no
 wildcard, no batch. Before it deletes, it **fetches the resource and shows you its name** in the

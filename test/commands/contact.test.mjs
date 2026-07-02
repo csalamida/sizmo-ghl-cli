@@ -81,3 +81,45 @@ test('contact delete: --confirm → names contact then one DELETE, exit 0', asyn
   assert.deepEqual(getCalledWrites().filter(w => w.startsWith('DELETE')), ['DELETE /contacts/cid-1']);
   assert.equal(JSON.parse(getPrinted()).data.name, 'Acme Co');
 });
+
+// ── upsert (de-dupe on email/phone) ─────────────────────────────────────────────
+test('contact upsert: no --confirm → CONFIRM (5), no write fired', async () => {
+  const { ctx, getPrinted, getCalledWrites } = makeFakeCtx({ confirmed: false });
+  const code = await run({ _: ['upsert'], email: 'a@b.co', name: 'Acme Co' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  assert.equal(getCalledWrites().length, 0);
+  assert.ok(JSON.parse(getPrinted()).data.changes.some(c => /Upsert contact on email/.test(c)));
+});
+
+test('contact upsert: needs --email or --phone (the de-dupe key) → USAGE', async () => {
+  const { ctx } = makeFakeCtx({ confirmed: true });
+  await assert.rejects(() => run({ _: ['upsert'], name: 'Acme Co' }, ctx), /de-dupe key/i);
+});
+
+test('contact upsert: new:true → created, POST /contacts/upsert fires once', async () => {
+  const fixture = { 'POST /contacts/upsert': { status: 200, j: { contact: { id: 'up-1' }, new: true } } };
+  const { ctx, getPrinted, getCalledWrites } = makeFakeCtx({ confirmed: true, fixture });
+  const code = await run({ _: ['upsert'], email: 'a@b.co' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.OK);
+  assert.equal(getCalledWrites().filter(w => w.startsWith('POST /contacts/upsert')).length, 1);
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.created, true); assert.equal(d.updated, false); assert.equal(d.contactId, 'up-1');
+});
+
+test('contact upsert: new:false → updated (de-dupe, no duplicate)', async () => {
+  const fixture = { 'POST /contacts/upsert': { status: 200, j: { contact: { id: 'up-1' }, new: false } } };
+  const { ctx, getPrinted } = makeFakeCtx({ confirmed: true, fixture });
+  await run({ _: ['upsert'], email: 'a@b.co' }, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.created, false); assert.equal(d.updated, true);
+});
+
+test('contact upsert: 401 → AUTH + contacts.write guidance', async () => {
+  const fixture = { 'POST /contacts/upsert': { status: 401, j: {} } };
+  const { ctx } = makeFakeCtx({ confirmed: true, fixture });
+  await assert.rejects(() => run({ _: ['upsert'], email: 'a@b.co' }, ctx),
+    (e) => { assert.equal(e.code, EXIT.AUTH); assert.match(e.message, /contacts\.write/); return true; });
+});
