@@ -1,0 +1,41 @@
+{
+  "specVersion": 1,
+  "location": {
+    "id": "DEMO_LOC",
+    "name": "Bright Coaching Co",
+    "timezone": "Asia/Manila",
+    "currency": "PHP",
+    "country": "PH"
+  },
+  "pipelines": [
+    { "id": "pl_disco", "name": "Discovery", "stages": [
+      { "id": "st_new", "name": "New Lead", "position": 0 },
+      { "id": "st_call", "name": "Call Booked", "position": 1 }
+    ] },
+    { "id": "pl_sales", "name": "Sales", "stages": [
+      { "id": "st_prop", "name": "Proposal Sent", "position": 0 },
+      { "id": "st_neg", "name": "Negotiation", "position": 1 },
+      { "id": "st_won", "name": "Won", "position": 2 }
+    ] },
+    { "id": "pl_renew", "name": "Renewals", "stages": [
+      { "id": "st_due", "name": "Renewal Due", "position": 0 },
+      { "id": "st_kept", "name": "Renewed", "position": 1 }
+    ] }
+  ],
+  "calendars": [
+    { "id": "cal_disco", "name": "Discovery Calls" }
+  ],
+  "customFields": [
+    { "id": "cf_source", "name": "Lead Source", "dataType": "TEXT" },
+    { "id": "cf_goal", "name": "Primary Coaching Goal", "dataType": "TEXT" }
+  ],
+  "customValues": [
+    { "id": "cv_book", "name": "Booking Link", "value": "https://cal.brightcoaching.co/book" }
+  ],
+  "tags": [
+    { "id": "tg_vip", "name": "vip" }
+  ],
+  "users": [
+    { "id": "u_ana", "name": "Ana Cruz", "role": "admin" }
+  ]
+}

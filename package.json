@@ -35,6 +35,7 @@
     "bin/",
     "lib/",
     "commands/",
+    "examples/",
     "SKILL.md",
     "INSTALL.md",
     "SECURITY.md",

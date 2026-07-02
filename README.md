@@ -26,7 +26,12 @@ A human reads the pretty output; an agent consumes the stable `--json` / `--ndjs
 
 ## Why sizmo
 
-One command answers the only two questions that matter on a Monday — **where is money leaking, and who needs me today** — and it never invents a number to do it. A blocked data source is reported as *unknown*, never as zero.
+**sizmo is the CLI your AI agents drive GoHighLevel with — and the operator who supervises them.** Every command emits stable, token-lean JSON, so an agent calls **one command for one answer** instead of loading a whole MCP toolshelf to read a single field. A human gets the exact same data as a clean card.
+
+Two things it does that nothing else in the ecosystem does:
+
+- **Diff a location.** `sizmo export` turns a GoHighLevel location into one deterministic file; `sizmo diff` shows exactly what changed — or what a push *would* change. GHL snapshots are structurally incapable of this (the single loudest voted GHL fear is push-overwrite anxiety); a file is not. [See the 30-second demo →](examples/demo/)
+- **Answer the Monday questions.** `sizmo brief` prints where money is leaking and who needs a reply today — and never invents a number to do it. A blocked data source is reported as *unknown*, never as zero.
 
 Why not the tools you already have:
 

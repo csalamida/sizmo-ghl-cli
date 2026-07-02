@@ -1,0 +1,13 @@
+{"version":3,"term":{"cols":80,"rows":24},"timestamp":1782998781,"title":"sizmo diff — location-as-file demo","env":{"TERM":"xterm-256color"}}
+[0.019, "o", "\u001b[38;5;71m# Monday — snapshot your GoHighLevel location to a file:\u001b[0m\r\n"]
+[0.000, "o", "\u001b[1m$ sizmo export --out monday.json\u001b[0m\r\n"]
+[1.118, "o", "\u001b[38;5;71m# Friday — a teammate \"tidied up\" the location. What changed?\u001b[0m\r\n\u001b[1m$ sizmo diff monday.json friday.json\u001b[0m\r\n"]
+[1.054, "o", "\r\n  DIFF · monday.json  →  friday.json\r\n"]
+[0.000, "o", "  ────────────────────────────────────────────────────────────\r\n"]
+[0.000, "o", "  1 added · 1 removed · 3 changed\r\n"]
+[0.001, "o", "\r\n  pipelines  (+1 −0 ~1)\r\n    + Renewals  pl_renew\r\n    ~ Sales\r\n        stages: [{\"id\":\"st_prop\",\"name\":\"Proposal Sent\",\"position\":0},{\"id\":\"st_won\",\"name\":\"Won\",\"position\":1}] → [{\"id\":\"st_prop\",\"name\":\"Proposal Sent\",\"position\":0},{\"id\":\"st_neg\",\"name\":\"Negotiation\",\"position\":1},{\"id\":\"st_won\",\"name\":\"Won\",\"position\":2}]\r\n\r\n  customFields  (+0 −0 ~1)\r\n    ~ Primary Coaching Goal\r\n"]
+[0.000, "o", "        name: \"Coaching Goal\" → \"Primary Coaching Goal\"\r\n"]
+[0.000, "o", "\r\n  customValues  (+0 −0 ~1)\r\n    ~ Booking Link\r\n        value: \"https://cal.brightcoaching.co/intro\" → \"https://cal.brightcoaching.co/book\"\r\n"]
+[0.000, "o", "\r\n  tags  (+0 −1 ~0)\r\n    − cold-lead  tg_cold\r\n\r\n"]
+[0.306, "o", "\u001b[38;5;71m# Exactly what changed. No guessing. Snapshots cannot do this.\u001b[0m\r\n"]
+[0.003, "x", "0"]
