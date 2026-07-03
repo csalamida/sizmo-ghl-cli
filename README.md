@@ -14,11 +14,12 @@ A full terminal interface to one GoHighLevel location — **read it, build it, b
 
 | | Commands |
 |---|---|
-| **See** (read-only) | `brief` · `snapshot` · `triage` · `pipeline` · `receivables` · `reconcile` · `booked-not-paid` · `noshow` · `focus` · `segment` · `crm` |
+| **Ask** (natural language, opt-in AI key) | `ask "who hasn't replied in 3 days"` · `ask "tag Ana as follow-up"` — resolves to the exact command |
+| **See** (read-only) | `brief` · `snapshot` · `triage` · `pipeline` · `receivables` · `reconcile` · `booked-not-paid` · `noshow` · `focus` · `segment` · `crm` · `list` (12 entities) · `forms` · `surveys` · `transactions` |
 | **Version** (read-only) | `export` (location → one diffable file) · `diff` (file vs live, or file vs file — *what changed?*) |
 | **Act** | `tag` · `note` · `opp` (create/move/update) · `appointment` (book/cancel) · `send` (SMS/email) |
-| **Build** | `contact create` · `contact upsert` (de-dupe) · `field create` · `value create` · `calendar create` |
-| **Delete** (single-target, accident-proof) | `contact delete` · `field delete` · `value delete` · `calendar delete` |
+| **Build** | `contact create` · `contact upsert` (de-dupe) · `field create` · `value create` · `calendar create` · `business create` |
+| **Delete** (single-target, accident-proof) | `contact delete` · `field delete` · `value delete` · `calendar delete` · `business delete` |
 | **Bill** (scope-gated) | `invoice draft` · `invoice send` (pay-link — *not* a card charge) |
 | **Operate** | `init` · `doctor` · `open` · `completions` · `api` · multi-client profiles |
 
@@ -28,10 +29,11 @@ A human reads the pretty output; an agent consumes the stable `--json` / `--ndjs
 
 **sizmo is the CLI your AI agents drive GoHighLevel with — and the operator who supervises them.** Every command emits stable, token-lean JSON, so an agent calls **one command for one answer** instead of loading a whole MCP toolshelf to read a single field. A human gets the exact same data as a clean card.
 
-Two things it does that nothing else in the ecosystem does:
+Three things it does that nothing else in the ecosystem does:
 
 - **Diff a location.** `sizmo export` turns a GoHighLevel location into one deterministic file; `sizmo diff` shows exactly what changed — or what a push *would* change. GHL snapshots are structurally incapable of this (the single loudest voted GHL fear is push-overwrite anxiety); a file is not. [See the 30-second demo →](examples/demo/)
 - **Answer the Monday questions.** `sizmo brief` prints where money is leaking and who needs a reply today — and never invents a number to do it. A blocked data source is reported as *unknown*, never as zero.
+- **Speak plain English to your CRM.** `sizmo ask "tag Ana as follow-up"` resolves to the exact command — reads run immediately, writes still show a preview and need `--confirm`. Opt-in only (needs an AI key); zero LLM calls without one, and your PIT/contacts/money never leave the machine (see `SECURITY.md`).
 
 Why not the tools you already have:
 
@@ -135,7 +137,12 @@ Command list generated from `sizmo schema` (authoritative — pulled directly fr
 | `sizmo focus` | One ranked to-do queue by money at stake | `--top N` (default 15), `--stuck-days N` (default 7) |
 | `sizmo segment` | Find contacts by criteria — tag, phone, age, etc. | `--tag X`, `--without-tag X`, `--no-tags`, `--created-days N`, `--has-phone`, `--no-phone`, `--top N` (default 20) |
 | `sizmo crm` | Query the local CRM model — counts, lists, staleness | `--all` (show all items) |
-| `sizmo sync` | Refresh the local CRM model (pipelines, calendars, tags, fields, users, location) | `[entity]` (sync one) |
+| `sizmo list [entity]` | List any of 12 cached entities (pipelines, calendars, tags, fields, users, forms, surveys, products, links, businesses, objects) or an overview | `[entity]` (else 3-group overview) |
+| `sizmo forms [formId]` | List forms, or view a form's recent submissions | `--top N` (default 20, max 100) |
+| `sizmo surveys [surveyId]` | List surveys, or view a survey's recent submissions | `--top N` (default 20, max 100) |
+| `sizmo transactions` | Payment transaction history (read-only) | `--top N`, `--type <entityType>` |
+| `sizmo ask "<intent>"` | Resolve a plain-English request to the exact sizmo command | needs `sizmo config set --ai-key <key>` |
+| `sizmo sync` | Refresh the local CRM model (all 12 entities) | `[entity]` (sync one) |
 | `sizmo export` | Dump the location's structure to one deterministic, diffable file | `--out <file>` (else stdout) |
 | `sizmo diff` | Compare an export against live, or two exports — what changed | `sizmo diff <file>` \| `sizmo diff <a> <b>` |
 
@@ -168,6 +175,8 @@ These commands change data in GoHighLevel. Every write requires `--confirm`; wit
 | `sizmo value delete <valueId>` | Delete **one** custom value by id | `locations/customValues.write` |
 | `sizmo calendar create --name "..." [--type --slot-min]` | Create a calendar | `calendars.write` |
 | `sizmo calendar delete <calendarId>` | Delete **one** calendar by id | `calendars.write` |
+| `sizmo business create --name "..." [--email --phone --website]` | Create a B2B company record | `businesses.write` |
+| `sizmo business delete <id>` | Delete **one** business by id | `businesses.write` |
 
 **Deletion is single-target by design.** `delete` takes exactly **one id** — there is no `--all`, no
 wildcard, no batch. Before it deletes, it **fetches the resource and shows you its name** in the
@@ -215,6 +224,7 @@ sizmo auth check        # probe live API to verify PIT scopes
 sizmo config list       # list all saved profiles
 sizmo config use <name> # switch default profile
 sizmo config set --profile <name> --loc <id> --pit-stdin
+sizmo config set --ai-key "sk-…" --ai-provider anthropic  # enables `sizmo ask` (optional)
 sizmo config rm <name>  # remove a profile
 sizmo api /path         # raw GET escape hatch (--paginate --max-pages N)
 ```
@@ -342,6 +352,7 @@ The JSON `_meta` block in every `crm` response lets agents branch on staleness w
 - **`--dry-run` available on all writes.** Shows the change description without executing. Exits 0.
 - **PIT never in argv.** Credentials are passed via stdin (`--pit-stdin`) or env var (`--pit-env VAR`). Never logged, never echoed raw.
 - **60-second read cache.** Repeated calls within 60s return cached data. `cacheAgeMs` in the envelope tells you how old. Use `--fresh` to bypass.
+- **`sizmo ask` is opt-in and scoped.** With no `--ai-key` set, sizmo makes zero LLM calls. With one set, only your typed request text and CRM *structure* (pipeline/calendar/tag/form/survey/business names + ids) reach your chosen provider — never your PIT, contacts, conversations, or money data.
 
 Every claim above is verifiable — see [`SECURITY.md`](SECURITY.md) for the threat model, the self-audit recipes, and how to report a vulnerability. Zero runtime dependencies: what you read is what runs.
 
@@ -352,6 +363,7 @@ Every claim above is verifiable — see [`SECURITY.md`](SECURITY.md) for the thr
 - **No-show / booked-not-paid calendar truncation.** GHL's `/calendars/events` endpoint has no pagination cursor. If a calendar returns >= 100 events the result may be silently truncated. A `degraded: true` warning is emitted in that case.
 - **Pipeline currency.** GHL opportunity monetary values carry no currency field — they inherit pipeline config. The CLI renders them as-is; cross-currency totals are never summed.
 - **No workflow writes.** This tool has no workflow-authoring capability. Workflow creation stays in GoHighLevel's UI.
+- **`sizmo ask` accuracy depends on your CRM model being synced** (`sizmo sync`) and on the LLM provider you configure — a low-confidence resolution says so and asks you to rephrase rather than guessing at a command.
 
 ## Exit codes
 

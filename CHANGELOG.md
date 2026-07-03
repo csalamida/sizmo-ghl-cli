@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] — 2026-07-03
+
+### Changed
+- README: v2.3.0 shipped without a README pass — the "What it does" map, Commands table, "Why
+  sizmo" differentiators, Safety model, and Honest limitations sections didn't mention `ask`,
+  `list`, `forms`, `surveys`, `business`, or `transactions` at all. Caught before this reached npm's
+  package page (which only updates on publish). Docs-only patch — no code change.
+
 ## [2.3.0] — 2026-07-03
 
 **Natural language + the rest of the readable API surface.** Two things landed together: a
@@ -369,7 +377,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.3.1
 [2.3.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.3.0
 [2.2.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.2.0
 [2.1.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.1.0
