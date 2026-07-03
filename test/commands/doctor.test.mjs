@@ -79,7 +79,7 @@ test('doctor: one scope 403 → named + traced + EXACTLY one blocked lane + exit
   assert.doesNotMatch(out, /ALL GREEN/, 'must NOT report all-green with a blocked lane');
   // tighten: precisely ONE lane blocked (catches a probe regression that over-blocks)
   assert.equal(payload.scopes.filter(s => !s.granted).length, 1, 'exactly one scope blocked');
-  assert.equal(payload.scopes.filter(s => s.granted).length, 5, 'the other five granted');
+  assert.ok(payload.scopes.filter(s => s.granted).length >= 11, 'the rest granted (≥11 with extended scopes)');
   assert.equal(payload.scopes.find(s => !s.granted).scope, 'payments/transactions.readonly', 'and it is payments');
 });
 
@@ -153,12 +153,20 @@ test('doctor --json: full shape — profile, location, scopes[], model, rate, ok
   const freshModel = {
     schemaVersion: SCHEMA_VERSION, locationId: LOC, syncedAt: NOW,
     entities: {
-      pipelines: { fetchedAt: NOW, items: [] },
-      calendars: { fetchedAt: NOW, items: [] },
-      tags: { fetchedAt: NOW, items: [] },
+      // core 6
+      pipelines:    { fetchedAt: NOW, items: [] },
+      calendars:    { fetchedAt: NOW, items: [] },
+      tags:         { fetchedAt: NOW, items: [] },
       customFields: { fetchedAt: NOW, items: [] },
-      users: { fetchedAt: NOW, items: [] },
-      location: { fetchedAt: NOW, item: { currency: 'PHP' } },
+      users:        { fetchedAt: NOW, items: [] },
+      location:     { fetchedAt: NOW, item: { currency: 'PHP' } },
+      // extended 6 (v2.4) — blocked is fine; absent → stale
+      forms:        { fetchedAt: NOW, blocked: true, scope: 'forms.readonly' },
+      surveys:      { fetchedAt: NOW, blocked: true, scope: 'surveys.readonly' },
+      products:     { fetchedAt: NOW, blocked: true, scope: 'products.readonly' },
+      links:        { fetchedAt: NOW, blocked: true, scope: 'links.readonly' },
+      businesses:   { fetchedAt: NOW, blocked: true, scope: 'businesses.readonly' },
+      objects:      { fetchedAt: NOW, blocked: true, scope: 'objects.readonly' },
     },
     offline: false,
   };
@@ -173,7 +181,7 @@ test('doctor --json: full shape — profile, location, scopes[], model, rate, ok
   const d = payload;
   assert.equal(d.profile, 'main', 'profile name surfaced');
   assert.ok(d.location && 'reachable' in d.location && 'latencyMs' in d.location, 'location shape');
-  assert.ok(Array.isArray(d.scopes) && d.scopes.length === 6, '6 scopes');
+  assert.ok(Array.isArray(d.scopes) && d.scopes.length >= 12, `≥12 scopes (got ${d.scopes?.length})`);
   for (const s of d.scopes) {
     assert.ok('scope' in s && 'granted' in s && Array.isArray(s.affects), 'each scope shape');
   }

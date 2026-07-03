@@ -34,11 +34,37 @@ test('tzLabel: trailing city, underscores → spaces', () => {
   assert.equal(tzLabel(undefined), '');
 });
 
-test('ENTITY_SPECS defines 6 entities', () => {
-  assert.equal(ENTITY_SPECS.length, 6);
+test('ENTITY_SPECS contains core + extended entities', () => {
   const names = ENTITY_SPECS.map(s => s.name);
+  // core 6 must always be present
   for (const n of ['pipelines', 'calendars', 'tags', 'customFields', 'users', 'location']) {
-    assert.ok(names.includes(n), `ENTITY_SPECS missing: ${n}`);
+    assert.ok(names.includes(n), `ENTITY_SPECS missing core: ${n}`);
+  }
+  // extended entities added in v2.4
+  for (const n of ['forms', 'surveys', 'products', 'links', 'businesses', 'objects']) {
+    assert.ok(names.includes(n), `ENTITY_SPECS missing extended: ${n}`);
+  }
+  assert.ok(ENTITY_SPECS.length >= 12, `expected ≥12 entity specs, got ${ENTITY_SPECS.length}`);
+});
+
+test('products extract reads _id — GHL products API is the one entity that has no top-level id field', () => {
+  const spec = ENTITY_SPECS.find(s => s.name === 'products');
+  const raw = { products: [{ _id: '69b97eae95ebdbad5a2a5c24', name: 'TRrest', productType: 'DIGITAL' }] };
+  const { items } = spec.extract(raw);
+  assert.equal(items[0].id, '69b97eae95ebdbad5a2a5c24');
+  assert.equal(items[0].name, 'TRrest');
+});
+
+test('forms/surveys/businesses/objects extract reads id — confirmed against live GHL response shape', () => {
+  const cases = [
+    ['forms', { forms: [{ id: 'f1', name: 'Form' }] }],
+    ['surveys', { surveys: [{ id: 's1', name: 'Survey' }] }],
+    ['businesses', { businesses: [{ id: 'b1', name: 'Biz' }] }],
+  ];
+  for (const [name, raw] of cases) {
+    const spec = ENTITY_SPECS.find(s => s.name === name);
+    const { items } = spec.extract(raw);
+    assert.equal(items[0].id, raw[name][0].id, `${name} extract should read .id`);
   }
 });
 

@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-07-03
+
+**Natural language + the rest of the readable API surface.** Two things landed together: a
+natural-language front door (`sizmo ask`), and six previously-unused PIT scopes turned into real
+commands. Both were run through a full adversarial-QA pass and a live-verification pass against a
+real location before release — the live pass caught a real bug (below).
+
+### Added
+- **`sizmo ask "<intent>"`** — translates a plain-English request into the exact sizmo command.
+  Reads show the resolved command directly; writes show a preview and require a separate
+  `--confirm` run, same confirm-gate as every other write. Resolves a typed person's name to a
+  contact id via a live search (disambiguates on multiple matches, never guesses). Needs an AI key
+  in your profile — `sizmo config set --ai-key <key> --ai-provider anthropic|openai` — sizmo makes
+  zero LLM calls without one. **New trust boundary, see `SECURITY.md`:** your request text and a
+  structural excerpt of your CRM (pipeline/calendar/tag/form/survey/business **names and ids only —
+  never contacts, conversations, or money data**) are sent to whichever provider you configure.
+  `lib/llm.mjs` adds zero new runtime dependencies (raw `fetch`, Node 22+).
+- **6 new readable entities**, synced into the same local model cache as the original 6:
+  `forms`, `surveys`, `products`, `links`, `businesses`, `objects`. Cache extracts are deliberately
+  slim (id + name, occasionally one more display field) — the cache is a lookup table for command
+  resolution, not a content mirror.
+- **`sizmo list`** — now surfaces all 12 entities in three groups (CRM / Content & Commerce / B2B &
+  Structure), plus per-entity subcommands (`list forms`, `list businesses`, …). A never-synced
+  entity now says so explicitly instead of showing `(0)` indistinguishably from "synced but empty."
+- **`sizmo forms`** / **`sizmo surveys`** — list from cache; `sizmo forms <id>` / `sizmo surveys
+  <id>` fetch that form/survey's recent submissions live (`--top`, default 20, max 100). Verified
+  live against a real location (correct response key, clean zero-submissions render).
+- **`sizmo business list|create|delete`** — B2B company records. `create`/`delete` confirm-gated;
+  `businesses.write`. Live-verified full create→delete round trip.
+- **`sizmo transactions`** — read-only payment transaction history (`--top`, `--type`). Uses GHL's
+  `altId`/`altType` payments convention, not `locationId`.
+
+### Fixed
+- **`sizmo list products` showed a blank Product ID for every row.** GHL's `/products/` endpoint is
+  the one entity here that returns Mongo-style `_id` instead of `id` — every sibling entity
+  (forms/surveys/businesses/objects) uses `id`. Caught during live verification (mocks all used a
+  synthetic `id` field, so this was invisible to the test suite); fixed, and now regression-tested
+  against the real response shape.
+- `sizmo list businesses` pointed to a `business update` subcommand that was never built (only
+  `list`/`create`/`delete` exist) — corrected the hint.
+- Transaction amount formatting no longer guesses currency units from magnitude. The old
+  `>1000 = cents` heuristic misformatted a real ₱1,500 transaction as `PHP 15.00`; GHL's payments
+  API already returns floats in currency units, so the raw value is shown directly.
+- A form/survey submissions response in an unrecognized shape now surfaces a visible warning with
+  the actual response keys, instead of silently rendering as "no submissions."
+
 ## [2.2.0] — 2026-07-02
 
 **Builder completions.** Two confirm-gated writes that finish the "scaffold a location" story,
@@ -323,7 +369,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.3.0
 [2.2.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.2.0
 [2.1.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.1.0
 [2.0.2]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.0.2

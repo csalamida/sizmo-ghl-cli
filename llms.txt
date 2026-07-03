@@ -44,6 +44,27 @@ sizmo brief --profile clientB
 
 Profile env: `SIZMO_PROFILE=<name>` — mirrors `AWS_PROFILE`. Precedence: `--profile` flag > env > saved default.
 
+## ID Lookup — Find Names and IDs Before Running a Write
+
+```
+sizmo list                     # overview: all entity types + counts (grouped)
+sizmo list calendars           # Name | Calendar ID | Staff | Type
+sizmo list pipelines           # Name | Pipeline ID — then stages with Stage ID
+sizmo list tags                # all tag names (used by name in sizmo tag)
+sizmo list fields              # Name | Field ID | Type | Model
+sizmo list values              # Name | Value ID | current value (live fetch)
+sizmo list users               # Name | Email | User ID
+sizmo list forms               # Name | Form ID
+sizmo list surveys             # Name | Survey ID
+sizmo list products            # Name | Product ID | Type
+sizmo list links               # Name | Trigger Link ID
+sizmo list businesses          # Name | Business ID | Website
+sizmo list objects             # Label | Object Key | Field count
+```
+
+Uses local model cache (0 API calls except `sizmo list values` which is always live).
+Run `sizmo sync` to refresh cache after making changes in GHL.
+
 ## Read Commands (no confirmation, no risk)
 
 ```
@@ -79,6 +100,36 @@ Custom Values
 
 Tags
   − cold-lead
+```
+
+## Forms & Surveys (read-only)
+
+```
+sizmo forms                        # list all forms (from cache)
+sizmo forms <formId>               # recent submissions for this form
+sizmo forms <formId> --top 50      # show up to 50 submissions
+
+sizmo surveys                      # list all surveys (from cache)
+sizmo surveys <surveyId>           # recent submissions for this survey
+```
+
+## Transactions (read-only, money never moves)
+
+```
+sizmo transactions                 # payment transaction history (last 25)
+sizmo transactions --top 50        # show up to 50
+sizmo transactions --type subscription  # filter by entityType
+sizmo transactions --json          # machine-readable envelope
+```
+
+Uses `altId`/`altType` params (GHL payments API convention). Requires `payments/transactions.readonly` scope.
+
+## B2B Companies
+
+```
+sizmo business list                                              # list (from cache)
+sizmo business create --name "Acme Corp" --website "https://acme.com" --confirm
+sizmo business delete <id> --confirm
 ```
 
 ## Write Commands (all require --confirm)
@@ -126,6 +177,25 @@ sizmo invoice send <invoiceId> --confirm                              # sends pa
 Delete commands are single-target by design. No `--all`, no wildcard. The CLI fetches and names the resource before deleting — a wrong ID returns NOTFOUND, nothing touched.
 
 Money never moves automatically. No card-charging command exists (GoHighLevel exposes no public endpoint for it).
+
+## Natural Language Interface (optional)
+
+Requires an AI key stored in the profile. Returns the resolved command — writes still need `--confirm`.
+
+```
+# Setup (once)
+sizmo config set --profile myaccount --ai-key "sk-ant-..." --ai-provider anthropic
+
+# Use
+sizmo ask "who hasn't replied in 3 days"
+sizmo ask "tag Ana Cruz as follow-up"              # resolves contact name → ID → shows preview
+sizmo ask "move Website Package to Proposal Sent"  # shows command → exits 5
+sizmo ask "move Website Package to Proposal Sent" --confirm  # fires the move
+```
+
+Providers: `anthropic` (default, claude-haiku-4-5-20251001) · `openai` (gpt-4o-mini).
+Zero new dependencies — uses Node 22 built-in fetch.
+Low confidence (< 70%) → explains and exits USAGE, never guesses wrong.
 
 ## Confirm Gate Pattern (for agents)
 

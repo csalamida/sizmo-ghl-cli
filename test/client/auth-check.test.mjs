@@ -130,10 +130,10 @@ test('auth check: all 6 lanes return 200 → exit 0, all ✅', async () => {
     )
   );
   assert.equal(code2, EXIT.OK, 'all 200 → exit 0');
-  // Should have 6 ✅ lines in stdout
+  // All lanes should show ✅ (12 core+extended)
   const checkmarks = (cap2.out.match(/✅/g) || []).length;
-  assert.equal(checkmarks, 6, 'should show 6 ✅ lines');
-  assert.match(cap2.out, /6\/6 lanes readable/);
+  assert.ok(checkmarks >= 12, `expected ≥12 ✅ lines, got ${checkmarks}`);
+  assert.match(cap2.out, /12\/12 lanes readable/);
 });
 
 // ── one lane blocked ──────────────────────────────────────────────────────────
@@ -152,8 +152,8 @@ test('auth check: conversations returns 403 → flagged missing, exit 0 (contact
   assert.match(cap.err, /✖ conversations/i, 'should flag conversations missing');
   // scope name in the error line
   assert.match(cap.err, /conversations\.readonly/, 'should name the missing scope');
-  // summary shows 5/6
-  assert.match(cap.err, /5\/6 lanes/, 'summary should show 5/6');
+  // summary shows 11/12 (1 of 12 lanes blocked)
+  assert.match(cap.err, /11\/12 lanes/, 'summary should show 11/12');
 });
 
 test('auth check: payments returns 401 → flagged missing, exit 0 (contacts ok)', async () => {
@@ -218,7 +218,7 @@ test('auth check: conversations + opportunities + payments blocked → exit 0, 3
   assert.equal(code, EXIT.OK, 'contacts ok → exit 0 despite 3 blocked lanes');
   const xmarks = (cap.err.match(/✖/g) || []).length;
   assert.ok(xmarks >= 3, `should have ≥3 ✖ lines, got ${xmarks}`);
-  assert.match(cap.err, /3\/6 lanes/i, 'summary should show 3/6');
+  assert.match(cap.err, /9\/12 lanes/i, 'summary should show 9/12 (3 of 12 blocked)');
 });
 
 // ── --json mode ───────────────────────────────────────────────────────────────
@@ -240,7 +240,7 @@ test('auth check --json: returns lanes array with per-lane ok flags', async () =
   let parsed;
   assert.doesNotThrow(() => { parsed = JSON.parse(cap.out); }, 'output must be valid JSON');
   assert.ok(Array.isArray(parsed.lanes), 'lanes must be an array');
-  assert.equal(parsed.lanes.length, 6, 'must have 6 lanes');
+  assert.ok(parsed.lanes.length >= 12, `must have ≥12 lanes, got ${parsed.lanes.length}`);
   const conv = parsed.lanes.find(l => l.name === 'conversations');
   assert.ok(conv, 'conversations lane must be present');
   assert.equal(conv.ok, false, 'conversations should be ok:false');
@@ -278,7 +278,7 @@ test('auth check --json: all lanes present, summary shows 6/6', async () => {
   );
   assert.equal(code, EXIT.OK);
   const parsed = JSON.parse(cap.out);
-  assert.match(parsed.summary, /6\/6/);
+  assert.match(parsed.summary, /12\/12/);
   assert.equal(parsed.usable, true);
   assert.ok(parsed.lanes.every(l => l.ok), 'all lanes ok');
 });

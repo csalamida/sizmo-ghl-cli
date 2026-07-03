@@ -27,14 +27,19 @@ Expect a first response within **72 hours**. Please include repro steps and the 
 
 ## What sizmo touches (trust boundaries)
 
-Only two things:
-
 1. **Your PIT** — a GoHighLevel Private Integration Token you create and paste in.
 2. **A local CRM model cache** — slow-changing structure (pipeline/stage names, calendars, tags,
-   custom fields, users, location) under `~/.config/sizmo/`. No contacts, conversations, or payments
-   are cached.
+   custom fields, users, location, plus forms/surveys/products/links/businesses/custom-objects —
+   **names and ids only**) under `~/.config/sizmo/`. No contacts, conversations, or payments are
+   cached.
+3. **(Opt-in) an LLM provider — only if you configure `sizmo ask`.** Setting `--ai-key` turns on a
+   third boundary: your typed request text, plus a structural CRM excerpt (pipeline/calendar/tag/
+   form/survey/business **names and ids**) is sent to whichever provider you chose (Anthropic or
+   OpenAI) to resolve a command. **Never sent:** your PIT, contact records, conversations, or money
+   data. If you don't set an AI key, sizmo makes zero calls to any LLM, ever — `ask` fails with
+   setup instructions instead.
 
-That's the entire boundary. The tool stores nothing in the cloud and runs nowhere but your machine.
+Everything else the tool stores stays on your machine.
 
 ## Security guarantees — and how to verify each yourself
 
@@ -45,6 +50,7 @@ That's the entire boundary. The tool stores nothing in the cloud and runs nowher
 | **The PIT scope is the gate — and there is no card-charging path.** sizmo exposes only what your token's scopes + GoHighLevel's *public* API allow; a missing scope fails with `AUTH` + the exact scope to add. Money-side, the public API offers create-**draft**-invoice, **send** an invoice (a pay-link the customer acts on), and recording a manual payment — there is **no public "charge a card" endpoint**, so sizmo cannot pull money off a card on its own. **Every write — operational *or* money — requires `--confirm`** (without it the CLI prints the change and exits 5). | `grep -rn "ctx.http.post\|ctx.http.put\|ctx.http.delete" commands/` — every write is scope-gated + confirm-gated; there is no charge/capture/refund call. |
 | **No telemetry.** sizmo makes exactly two kinds of outbound request: the GoHighLevel API, and a once-a-day npm-registry check for a newer version (a plain `GET`, sending nothing about you). | Read `lib/update-notify.mjs`; opt out with `--no-update-check` or `NO_UPDATE_NOTIFIER=1`. |
 | **Zero runtime dependencies.** No transitive supply chain to trust. | `cat package.json` → `"dependencies": {}`. |
+| **`sizmo ask` never sends your PIT, contacts, conversations, or money data to the LLM provider.** Only your typed request text and CRM structure names/ids (pipelines, calendars, tags, forms, surveys, businesses) leave the machine — and only if you've set an `--ai-key`. | Read `lib/llm.mjs` (the only place an LLM is called) and `buildCrmExcerpt()` in `commands/ask.mjs` (the only data assembled for it). |
 
 ## Limitations (read this — a strengths-only security doc is a false-confidence trap)
 
@@ -58,6 +64,11 @@ That's the entire boundary. The tool stores nothing in the cloud and runs nowher
 - **A leaked PIT is your GHL exposure, not sizmo's.** If your token is stolen (from anywhere), rotate
   it immediately in GoHighLevel → Settings → Integrations → Private Integrations. `sizmo doctor`
   surfaces your token's age so you can rotate before the 90-day limit.
+- **`sizmo ask` is a third-party data flow, opt-in only.** Your AI key is stored the same way your
+  PIT is (0600, atomic write) but it authenticates you to Anthropic or OpenAI, not GoHighLevel —
+  their own data-handling policies apply to whatever request text and CRM-structure excerpt you
+  send them. Don't type sensitive free text into `sizmo ask` if you wouldn't want it seen by your
+  chosen AI provider. Leave `--ai-key` unset to disable the feature entirely.
 - **Writes are real — including money-side ones (changed in 2.0).** `--confirm` fires an actual
   change in your CRM, and if your PIT carries `invoices.write` that includes creating or **sending**
   an invoice. The confirm gate prevents *accidental* writes, not *intended* ones. sizmo still cannot

@@ -300,14 +300,14 @@ Both contracts are frozen under semver — see [`API-STABILITY.md`](API-STABILIT
 
 ## Your CRM model
 
-`sizmo` caches the slow-changing structure of your CRM — pipelines + stages, calendars, tags, custom fields, users, and location — in a local file (`~/.config/sizmo/model/<locationId>.json`). Recipes read from this cache instead of re-fetching structure on every run.
+`sizmo` caches the slow-changing structure of your CRM — pipelines + stages, calendars, tags, custom fields, users, location, plus forms, surveys, products, links, businesses, and custom objects — in a local file (`~/.config/sizmo/model/<locationId>.json`). Recipes read from this cache instead of re-fetching structure on every run.
 
-**What it stores:** pipeline/stage names + IDs, calendar list, tag list, custom fields, user roster, and location info (timezone, currency, country). Structure only — no contacts, no conversations, no payments.
+**What it stores:** names + IDs only (pipeline/stage, calendars, tags, custom fields, forms, surveys, products, businesses, custom objects), plus user roster and location info (timezone, currency, country). Structure only — no contacts, no conversations, no payments.
 
 **Sync once, read fast.** The model is synced automatically on first use. After that, recipes use the cached copy. Run `sizmo sync` after you change your pipeline stages or add calendars:
 
 ```sh
-sizmo sync                # full refresh (all 6 entities)
+sizmo sync                # full refresh (all 12 entities)
 sizmo sync tags           # refresh one entity only
 ```
 

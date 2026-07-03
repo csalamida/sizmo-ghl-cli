@@ -13,10 +13,10 @@ const LOC = 'LOC_TEST_000';
 test('probeLanes: code:0 (transport error) → ok:false for EVERY lane (no fake-green offline)', async () => {
   // http.get returns {code:0} on a network failure — it never throws, so probeLanes must
   // treat code:0 as "could not verify" = not ok. This is the bug that let `auth check`
-  // report "6/6 readable" while genuinely offline.
+  // report "N/N readable" while genuinely offline.
   const http = { get: async () => ({ code: 0, ok: false, j: null, txt: 'ECONNREFUSED' }) };
   const lanes = await probeLanes(http, LOC);
-  assert.equal(lanes.length, 6);
+  assert.equal(lanes.length, buildLanes(LOC).length);
   for (const l of lanes) {
     assert.equal(l.ok, false, `lane ${l.name} must be ok:false on code:0`);
     assert.equal(l.code, 0);
@@ -50,11 +50,17 @@ test('probeLanes: 401/403 → ok:false (scope missing); 200/400/404 → ok:true 
   assert.equal(ok.payments, true);
 });
 
-test('buildLanes: 6 lanes, scope strings verbatim, loc encoded', () => {
+test('buildLanes: core + extended lanes present, scope strings verbatim, loc encoded', () => {
   const lanes = buildLanes('a/b?c');
-  assert.equal(lanes.length, 6);
+  assert.ok(lanes.length >= 6, `expected ≥6 lanes, got ${lanes.length}`);
   // loc must be URL-encoded into the probe path (no raw &/?/ leaking into the request)
   for (const l of lanes) assert.ok(l.path.includes('a%2Fb%3Fc'), `lane ${l.name} must encode loc`);
   const scopes = lanes.map(l => l.scope);
+  // core brief scopes must be present
   assert.ok(scopes.includes('payments/transactions.readonly'));
+  assert.ok(scopes.includes('contacts.readonly'));
+  assert.ok(scopes.includes('conversations.readonly'));
+  // extended scopes must be present
+  assert.ok(scopes.includes('forms.readonly'));
+  assert.ok(scopes.includes('businesses.readonly'));
 });
