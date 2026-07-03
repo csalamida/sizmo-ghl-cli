@@ -1,0 +1,233 @@
+# sizmo
+
+> Unofficial GoHighLevel CLI for humans and AI agents. Read your CRM, snapshot your location, diff what changed, and make confirm-gated writes — all from the terminal. Zero runtime dependencies. MIT.
+
+Not affiliated with HighLevel. Requires Node.js 22+.
+
+## Install
+
+```
+npx sizmo brief              # run without installing
+npm install -g sizmo         # install globally
+```
+
+First-time setup (guided):
+
+```
+sizmo init
+```
+
+Or manually:
+
+```
+echo "pit-yourtoken..." | sizmo config set --profile myaccount --loc YOUR_LOCATION_ID --pit-stdin
+```
+
+PIT = Private Integration Token. Found in GoHighLevel → Settings → Integrations → Private Integrations. Never pass the token as a CLI argument — always pipe via stdin.
+
+## Auth
+
+```
+sizmo doctor                 # full health check: scopes, location, version
+sizmo auth status            # credential source, location, PIT age
+sizmo auth check             # probe live API — verify scopes per lane
+```
+
+Multi-client (agency/subaccount use):
+
+```
+sizmo config set --profile clientA --loc LOC_A --pit-stdin
+sizmo config set --profile clientB --loc LOC_B --pit-stdin
+sizmo brief --profile clientA
+sizmo brief --profile clientB
+```
+
+Profile env: `SIZMO_PROFILE=<name>` — mirrors `AWS_PROFILE`. Precedence: `--profile` flag > env > saved default.
+
+## Read Commands (no confirmation, no risk)
+
+```
+sizmo brief                  # morning readout: revenue, unpaid invoices, waiting contacts, stuck deals, action items
+sizmo snapshot               # 6-metric card: leads, bookings, show-rate, collected, reply-rate, pipeline value
+sizmo triage                 # who's waiting on a reply, longest first
+sizmo pipeline               # pipeline health: value by stage + stuck deal sweep
+sizmo receivables            # A/R: who owes, how much, how old
+sizmo reconcile              # money collected by source + flags
+sizmo booked-not-paid        # sessions with no invoice or payment (the money leak)
+sizmo noshow                 # no-shows to rebook
+sizmo focus                  # one ranked to-do queue by money at stake
+sizmo segment                # find contacts by criteria (tag, phone, age, etc.)
+sizmo crm                    # query local CRM model: pipelines, calendars, tags, fields, users
+sizmo sync                   # refresh local CRM model (run after changing stages or calendars)
+sizmo export --out file.json # dump full location structure to one deterministic, diffable JSON file
+sizmo diff file.json         # compare saved file vs live — what changed?
+sizmo diff a.json b.json     # compare two saved exports
+```
+
+`sizmo brief` never invents a number. A blocked data source is reported as unknown, never as zero.
+
+`sizmo export` captures: pipelines + stages, calendars, custom fields, custom values, tags, users, location settings. Deterministic (key-sorted) — byte-identical re-exports unless something actually changed.
+
+`sizmo diff` output is plain English — no IDs, no JSON arrows:
+```
+Pipelines
+  + Renewals
+  ~ Sales  —  stages updated
+
+Custom Values
+  ~ Booking Link  —  value updated
+
+Tags
+  − cold-lead
+```
+
+## Write Commands (all require --confirm)
+
+Every write prints a preview and exits 5 without `--confirm`. Nothing fires silently. The PIT scope is the gate — a missing scope fails with AUTH + the exact setting to add.
+
+```
+# Contacts
+sizmo contact create --email a@b.co --name "Name" --confirm
+sizmo contact upsert --email a@b.co --name "Name" --confirm    # de-dupes on email or phone
+sizmo contact delete <contactId> --confirm
+
+# Tags and notes
+sizmo tag <contactId> --add vip --confirm
+sizmo tag <contactId> --remove vip --confirm
+sizmo note <contactId> --text "Called, interested" --confirm
+
+# Opportunities
+sizmo opp create --name "Deal" --pipeline "Sales" --stage "New Lead" --contact <id> --confirm
+sizmo opp move <oppId> --stage "Proposal Sent" --confirm
+sizmo opp update <oppId> --value 50000 --confirm
+
+# Appointments
+sizmo appointment book --calendar "Discovery Calls" --contact <id> --start "2026-07-10T09:00" --confirm
+sizmo appointment cancel <apptId> --confirm
+
+# Messaging
+sizmo send <contactId> --channel sms --message "Hi Ana, checking in" --confirm
+sizmo send <contactId> --channel email --message "Hi Ana" --confirm
+
+# Build / scaffold
+sizmo field create --name "Coaching Goal" --type TEXT --confirm
+sizmo field delete <fieldId> --confirm
+sizmo value create --name "Booking Link" --value "https://..." --confirm
+sizmo value update <valueId> --value "https://..." --confirm
+sizmo value delete <valueId> --confirm
+sizmo calendar create --name "Discovery Calls" --confirm
+sizmo calendar delete <calendarId> --confirm
+
+# Invoices (scope-gated)
+sizmo invoice draft --contact <id> --item "Session:5000" --confirm   # creates document, no charge
+sizmo invoice send <invoiceId> --confirm                              # sends pay-link, not a card charge
+```
+
+Delete commands are single-target by design. No `--all`, no wildcard. The CLI fetches and names the resource before deleting — a wrong ID returns NOTFOUND, nothing touched.
+
+Money never moves automatically. No card-charging command exists (GoHighLevel exposes no public endpoint for it).
+
+## Confirm Gate Pattern (for agents)
+
+```
+# Step 1 — preview (no --confirm): prints change + rerun command, exits 5
+sizmo tag ct-001 --add vip --json
+
+# Step 2 — execute (with --confirm): fires the write, exits 0
+sizmo tag ct-001 --add vip --confirm
+
+# --dry-run: shows change description without executing, exits 0
+sizmo tag ct-001 --add vip --dry-run
+```
+
+Agent pattern: call without `--confirm` first. Show the preview to the human. Only call with `--confirm` after explicit human approval.
+
+## JSON Envelope (stable contract)
+
+Every command supports `--json`. Shape is frozen under semver:
+
+```json
+{
+  "schemaVersion": 1,
+  "command": "brief",
+  "location": "LOC_ID",
+  "data": {},
+  "degraded": false,
+  "warnings": [],
+  "cacheAgeMs": 0
+}
+```
+
+`degraded: true` = at least one source was blocked. Read `warnings[]`. A blocked source is never zero — treat as unknown.
+
+`--ndjson`: one meta line + one JSON object per list item. Process rows without buffering. Combine with `--fields` to trim payload.
+
+Token-lean flags for agents:
+- `--fields a,b,c` — keep only these keys per list item (~80-90% smaller payload)
+- `--concise` — leaner brief payload
+- `--fresh` — bypass 60-second read cache
+
+```
+sizmo receivables --json --fields name,due    # minimal payload
+sizmo brief --json --concise                  # trimmed brief
+```
+
+## CRM Model (local cache)
+
+sizmo caches slow-changing structure: pipelines + stages, calendars, tags, custom fields, users, location. Recipes resolve names to IDs from this cache without a live fetch.
+
+```
+sizmo crm                    # overview: counts + age per entity
+sizmo crm pipelines          # list pipelines + stages
+sizmo crm tags               # list tags
+sizmo sync                   # full refresh
+sizmo sync tags              # refresh one entity
+```
+
+Staleness is always visible. The model never auto-syncs silently.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | OK |
+| 1 | API error |
+| 2 | Usage error |
+| 3 | Auth error / no location |
+| 4 | Not found |
+| 5 | Confirmation required — rerun with --confirm |
+
+Branch on exit codes, not on output parsing.
+
+## Safety Model
+
+- Reads never change GoHighLevel data
+- Writes require explicit `--confirm` — nothing fires silently
+- PIT never in argv — stdin or env var only
+- Zero runtime dependencies — auditable in an afternoon
+- 60-second read cache — use `--fresh` to bypass
+- No card-charging command (no public endpoint exists)
+
+## Honest Limitations
+
+- No workflow writes — workflow authoring stays in the GHL UI
+- Calendar events truncate at 100 (GHL API has no cursor) — `degraded: true` emitted when hit
+- Pipeline monetary values carry no currency field — cross-currency totals are never summed
+- Rate limit: 5 concurrent requests max
+
+## Key Files
+
+- [README.md](README.md) — full documentation
+- [SKILL.md](SKILL.md) — Claude Code skill (copy to ~/.claude/skills/sizmo-cli.md, load with /sizmo-cli)
+- [API-STABILITY.md](API-STABILITY.md) — frozen contract: exit codes, JSON shapes, flag names
+- [SECURITY.md](SECURITY.md) — threat model, self-audit recipes, vulnerability reporting
+- [CHANGELOG.md](CHANGELOG.md) — version history
+- [examples/demo/](examples/demo/) — synthetic demo: before.json, after.json, showcase.gif
+
+## Machine-readable command tree
+
+```
+sizmo schema --json
+```
+
+Returns the full command tree with flags, types, and descriptions. Feed this to any LLM to understand the complete API surface without reading prose.
