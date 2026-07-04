@@ -97,7 +97,9 @@ function overview(model, modelMeta, nowMs, specMap, ctx) {
       networkErrors[spec.name] = ent.error ?? 'network error';
     } else if (ent.blocked) {
       counts[spec.name] = null;
-      blocked[spec.name] = ent.scope;
+      // httpCode present = a real (non-401/403) API error, not a scope block — carried through
+      // so the envelope/display below can tell an operator apart from an actual missing scope.
+      blocked[spec.name] = { scope: ent.scope, httpCode: ent.httpCode };
     } else if (spec.name === 'location') {
       counts[spec.name] = ent.item ? 1 : 0;
     } else {
@@ -116,9 +118,10 @@ function overview(model, modelMeta, nowMs, specMap, ctx) {
     _meta: modelMeta,
   };
   // Add blocked/networkError flags so agents can branch
-  for (const [name, scope] of Object.entries(blocked)) {
+  for (const [name, info] of Object.entries(blocked)) {
     data[`${name}Blocked`] = true;
-    data[`${name}Scope`] = scope;
+    data[`${name}Scope`] = info.scope;
+    if (info.httpCode) data[`${name}HttpCode`] = info.httpCode;
   }
   for (const [name] of Object.entries(networkErrors)) {
     data[`${name}NetworkError`] = true;
@@ -137,6 +140,8 @@ function overview(model, modelMeta, nowMs, specMap, ctx) {
       if (!ent) { ctx.out.line(`  ${spec.name.padEnd(16)} 0`); continue; }
       if (ent.networkError) {
         ctx.out.line(`  ${spec.name.padEnd(16)} ⚠ couldn't reach GHL`);
+      } else if (ent.blocked && ent.httpCode) {
+        ctx.out.line(`  ${spec.name.padEnd(16)} ✖ API error ${ent.httpCode} (not a scope issue)`);
       } else if (ent.blocked) {
         ctx.out.line(`  ${spec.name.padEnd(16)} ✖ needs ${ent.scope}`);
       } else {
@@ -173,6 +178,11 @@ function entityList(entityName, model, modelMeta, nowMs, specMap, showAll, ctx) 
     return 1;
   }
 
+  if (ent?.blocked && ent.httpCode) {
+    ctx.out.warn(`✖ ${entityName} — API error ${ent.httpCode} (not a scope issue — please report this)`);
+    ctx.out.data({ entity: entityName, blocked: true, httpCode: ent.httpCode, scope: ent.scope, _meta: modelMeta });
+    return 1;
+  }
   if (!ent || ent.blocked) {
     const scope = ent?.scope ?? 'unknown';
     ctx.out.warn(`✖ ${entityName} blocked — needs ${scope}`);
@@ -229,6 +239,11 @@ function entityList(entityName, model, modelMeta, nowMs, specMap, showAll, ctx) 
 
 function locationCmd(model, modelMeta, ctx) {
   const ent = model.entities.location;
+  if (ent?.blocked && ent.httpCode) {
+    ctx.out.warn(`✖ location — API error ${ent.httpCode} (not a scope issue — please report this)`);
+    ctx.out.data({ blocked: true, httpCode: ent.httpCode, scope: ent.scope, _meta: modelMeta });
+    return 1;
+  }
   if (!ent || ent.blocked) {
     const scope = ent?.scope ?? 'locations.readonly';
     ctx.out.warn(`✖ location blocked — needs ${scope}`);

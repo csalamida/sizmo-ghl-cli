@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.3] — 2026-07-05
+
+**The scope-vs-API-error conflation from 2.4.2 wasn't unique to `sync`/`list`/`crm`.** A wider grep
+turned up the identical pattern in five more places.
+
+### Fixed
+- **`sizmo business list`, `sizmo surveys`, `sizmo forms`** — each had its own copy of the same
+  bug: any non-2xx response on that entity was reported as "needs `<scope>`" regardless of
+  whether it was a real 401/403 or some other API error. Now each distinguishes the two, matching
+  the fix already applied to `sync`/`list`/`crm`.
+- **`sizmo export`** — a blocked entity's warning always said "blocked (missing scope)"; now says
+  "API error `<code>` (not a scope issue)" when that's what actually happened, and the exported
+  document's `{blocked}` marker itself now carries `httpCode` when present.
+- **`sizmo diff`** — when comparing against an export produced by the fixed `export`, a
+  non-scope-blocked side now reports "API error `<code>` — not a scope issue" instead of a bare
+  "blocked (`<scope>`)" that could read as a permissions problem.
+
+539/539 tests green (6 new).
+
 ## [2.4.2] — 2026-07-05
 
 **`links` was never a scope problem.** A user with the `links.readonly` scope already granted
@@ -490,7 +509,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.2...HEAD
+[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.3...HEAD
+[2.4.3]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.3
 [2.4.2]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.2
 [2.4.1]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.1
 [2.4.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.0

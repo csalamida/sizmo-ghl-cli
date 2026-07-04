@@ -41,6 +41,12 @@ async function listBusinesses(ctx) {
   const ents  = model?.entities ?? {};
 
   if (ents.businesses?.blocked) {
+    // httpCode present = a real (non-401/403) API error reached the PIT — not a scope issue,
+    // even though sync marks it "blocked" the same way as a real 401/403.
+    if (ents.businesses.httpCode) {
+      ctx.out.line(`✖ businesses — API error ${ents.businesses.httpCode} (not a scope issue — please report this)`);
+      return EXIT.API;
+    }
     ctx.out.line('✖ businesses blocked — needs businesses.readonly scope');
     return EXIT.AUTH;
   }

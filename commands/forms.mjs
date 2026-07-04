@@ -32,6 +32,10 @@ async function listForms(ctx) {
   const ents  = model?.entities ?? {};
 
   if (ents.forms?.blocked) {
+    if (ents.forms.httpCode) {
+      ctx.out.line(`✖ forms — API error ${ents.forms.httpCode} (not a scope issue — please report this)`);
+      return EXIT.API;
+    }
     ctx.out.line('✖ forms blocked — needs forms.readonly scope');
     return EXIT.AUTH;
   }

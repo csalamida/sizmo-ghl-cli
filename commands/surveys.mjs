@@ -32,6 +32,10 @@ async function listSurveys(ctx) {
   const ents  = model?.entities ?? {};
 
   if (ents.surveys?.blocked) {
+    if (ents.surveys.httpCode) {
+      ctx.out.line(`✖ surveys — API error ${ents.surveys.httpCode} (not a scope issue — please report this)`);
+      return EXIT.API;
+    }
     ctx.out.line('✖ surveys blocked — needs surveys.readonly scope');
     return EXIT.AUTH;
   }

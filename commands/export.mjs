@@ -43,7 +43,13 @@ const byName = (a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')
 function entityGroup(ent, scope, mapFn, sort, warnings) {
   if (!ent) { warnings.push(`${scope}: not synced (run sizmo sync)`); return { unavailable: 'not synced' }; }
   if (ent.networkError) { warnings.push(`${scope}: could not reach GoHighLevel`); return { unavailable: 'network' }; }
-  if (ent.blocked) { warnings.push(`${scope}: blocked (missing scope)`); return { blocked: ent.scope || scope }; }
+  if (ent.blocked) {
+    // httpCode present = a real (non-401/403) API error reached the PIT — not a missing scope,
+    // even though the model marks it "blocked" the same way.
+    if (ent.httpCode) { warnings.push(`${scope}: API error ${ent.httpCode} (not a scope issue)`); return { blocked: ent.scope || scope, httpCode: ent.httpCode }; }
+    warnings.push(`${scope}: blocked (missing scope)`);
+    return { blocked: ent.scope || scope };
+  }
   return (ent.items || []).map(mapFn).sort(sort);
 }
 
@@ -63,7 +69,11 @@ export async function buildExportDoc(ctx) {
     currency: (locItem.business?.currency || locItem.currency || null),
     country: locItem.country || null,
   };
-  if (E.location?.blocked) warnings.push('locations.readonly: blocked (missing scope)');
+  if (E.location?.blocked) {
+    warnings.push(E.location.httpCode
+      ? `locations.readonly: API error ${E.location.httpCode} (not a scope issue)`
+      : 'locations.readonly: blocked (missing scope)');
+  }
 
   const pipelines = entityGroup(E.pipelines, 'opportunities.readonly',
     p => ({ id: p.id, name: p.name ?? null,

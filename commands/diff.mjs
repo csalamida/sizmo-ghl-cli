@@ -32,7 +32,8 @@ function diffGroup(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b)) {
     const side = !Array.isArray(a) ? 'A' : 'B';
     const marker = !Array.isArray(a) ? a : b;
-    return { comparable: false, reason: `not comparable — ${side} is ${marker?.blocked ? 'blocked (' + marker.blocked + ')' : 'unavailable'}` };
+    const blockedNote = marker?.httpCode ? `API error ${marker.httpCode} — not a scope issue` : `blocked (${marker?.blocked})`;
+    return { comparable: false, reason: `not comparable — ${side} is ${marker?.blocked ? blockedNote : 'unavailable'}` };
   }
   const aMap = new Map(a.map(x => [keyOf(x), x]));
   const bMap = new Map(b.map(x => [keyOf(x), x]));
