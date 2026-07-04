@@ -56,7 +56,10 @@ export async function run(args, ctx) {
       ent.networkError
         ? { networkError: true, error: ent.error }
         : ent.blocked
-          ? { blocked: true, scope: ent.scope }
+          // httpCode present = a real (non-401/403) API error reached the PIT — NOT a scope
+          // issue, even though the entity is blocked the same way. Surface it so an agent
+          // piping --json doesn't wrongly conclude the scope needs granting.
+          ? (ent.httpCode ? { blocked: true, httpCode: ent.httpCode, scope: ent.scope } : { blocked: true, scope: ent.scope })
           : { fetchedAt: ent.fetchedAt, count: ent.items ? ent.items.length : (ent.item ? 1 : 0) },
     ])
   )});
@@ -68,6 +71,12 @@ export async function run(args, ctx) {
     for (const [name, ent] of Object.entries(model.entities)) {
       if (ent.networkError) {
         ctx.out.line(`  ⚠ ${name.padEnd(14)} couldn't reach GHL`);
+      } else if (ent.blocked && ent.httpCode) {
+        // Not a scope block — the scope reached real logic and got a real API error back
+        // (a bad request sizmo itself sent, a 404, a 5xx). Saying "needs <scope>" here would
+        // be actively wrong if the scope is already granted — this is a sizmo/API bug, not
+        // a permissions gap.
+        ctx.out.line(`  ✖ ${name.padEnd(14)} API error ${ent.httpCode} (not a scope issue — please report this)`);
       } else if (ent.blocked) {
         ctx.out.line(`  ✖ ${name.padEnd(14)} needs ${ent.scope}`);
       } else {

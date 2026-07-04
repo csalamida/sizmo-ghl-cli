@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.2] — 2026-07-05
+
+**`links` was never a scope problem.** A user with the `links.readonly` scope already granted
+would still see `sizmo sync`/`sizmo list links` report "needs links.readonly" — because sizmo
+itself was sending a `limit` param GoHighLevel's `/links/` endpoint rejects with 422, and *any*
+non-2xx response on a synced entity was unconditionally reported as a missing scope, even when
+the PIT clearly reached real API logic to get that error.
+
+### Fixed
+- **`sizmo sync links` / `sizmo list links` were completely broken for everyone, regardless of
+  scopes granted.** `lib/model.mjs`'s `links` entity sent `&limit=50`; GoHighLevel's `/links/`
+  endpoint 422s on that param ("property limit should not exist") — it's the one entity here that
+  doesn't accept `limit`. Removed. `sizmo list links` now correctly returns real trigger-link data.
+- **A non-scope API error on any synced entity was being misreported as "needs `<scope>`."**
+  `sync.mjs`'s human display, its `--json` envelope, and `list.mjs`'s `blockedExit()` (12 call
+  sites, one per entity) all collapsed "401/403, scope genuinely missing" and "some other error
+  (422/404/5xx) reached the PIT just fine" into the identical message and exit code. An operator
+  who's already granted the scope would see this and go looking for a permissions problem that
+  doesn't exist — the bug is sizmo's, not theirs. Now: a real scope block still says "needs
+  `<scope>`" (`EXIT.AUTH`); any other HTTP error says "API error `<code>` (not a scope issue —
+  please report this)" (`EXIT.API`), and `--json` surfaces the distinguishing `httpCode` field so
+  an agent doesn't draw the wrong conclusion either.
+
+Found via a systematic live-verification sweep across every remaining untested endpoint, prompted
+directly by a question about why `links` stayed blocked with all 157 PIT scopes granted.
+
+528/528 tests green (6 new).
+
 ## [2.4.1] — 2026-07-05
 
 **A systematic live-verification sweep of every write command that had never been checked against
@@ -462,7 +490,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.1...HEAD
+[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.2...HEAD
+[2.4.2]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.2
 [2.4.1]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.1
 [2.4.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.0
 [2.3.1]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.3.1

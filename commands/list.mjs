@@ -69,8 +69,17 @@ function maxNameLen(items, fallback = 16) {
 
 function pad(s, n) { return String(s ?? '').slice(0, n).padEnd(n); }
 
-function blockedExit(entity, scope, ctx) {
-  ctx.out.line(`✖ ${entity} blocked — needs ${scope}`);
+// ent: the blocked model entity ({ blocked: true, scope, httpCode? }) — httpCode present means
+// a real (non-401/403) API error reached the PIT, which is NOT a scope issue even though sizmo's
+// own sync marks it "blocked" the same way. Saying "needs <scope>" there would be actively wrong
+// if the scope is already granted, and EXIT.AUTH would send an agent chasing a permissions fix
+// for what's actually a sizmo/API bug.
+function blockedExit(entity, ent, ctx) {
+  if (ent?.httpCode) {
+    ctx.out.line(`✖ ${entity} — API error ${ent.httpCode} (not a scope issue — please report this)`);
+    return EXIT.API;
+  }
+  ctx.out.line(`✖ ${entity} blocked — needs ${ent?.scope ?? '(unknown scope)'}`);
   return EXIT.AUTH;
 }
 
@@ -134,7 +143,7 @@ function listAllExpanded(ents, userMap, ctx) {
 // ── calendars ─────────────────────────────────────────────────────────────────
 
 function listCalendars(ents, userMap, ctx) {
-  if (ents.calendars?.blocked) return blockedExit('calendars', 'calendars.readonly', ctx);
+  if (ents.calendars?.blocked) return blockedExit('calendars', ents.calendars, ctx);
   const items = ents.calendars?.items ?? [];
 
   const nw = Math.min(30, maxNameLen(items, 14) + 2);
@@ -165,7 +174,7 @@ function listCalendars(ents, userMap, ctx) {
 // ── pipelines ─────────────────────────────────────────────────────────────────
 
 function listPipelines(ents, ctx) {
-  if (ents.pipelines?.blocked) return blockedExit('pipelines', 'opportunities.readonly', ctx);
+  if (ents.pipelines?.blocked) return blockedExit('pipelines', ents.pipelines, ctx);
   const items = ents.pipelines?.items ?? [];
 
   ctx.out.data({ entity: 'pipelines', items });
@@ -190,7 +199,7 @@ function listPipelines(ents, ctx) {
 // ── tags ─────────────────────────────────────────────────────────────────────
 
 function listTags(ents, showAll, ctx) {
-  if (ents.tags?.blocked) return blockedExit('tags', 'locations/tags.readonly', ctx);
+  if (ents.tags?.blocked) return blockedExit('tags', ents.tags, ctx);
   const items = ents.tags?.items ?? [];
   const shown = showAll ? items : items.slice(0, 40);
 
@@ -214,7 +223,7 @@ function listTags(ents, showAll, ctx) {
 // ── custom fields ─────────────────────────────────────────────────────────────
 
 function listFields(ents, showAll, ctx) {
-  if (ents.customFields?.blocked) return blockedExit('custom fields', 'locations/customFields.readonly', ctx);
+  if (ents.customFields?.blocked) return blockedExit('custom fields', ents.customFields, ctx);
   const items = ents.customFields?.items ?? [];
   const shown = showAll ? items : items.slice(0, 30);
 
@@ -247,7 +256,7 @@ async function listValues(ctx) {
   let values = [];
   try {
     const r = await ctx.http.get(`/locations/${encodeURIComponent(ctx.cfg.loc)}/customValues`);
-    if (r.code === 401 || r.code === 403) return blockedExit('custom values', 'locations/customValues.readonly', ctx);
+    if (r.code === 401 || r.code === 403) return blockedExit('custom values', { scope: 'locations/customValues.readonly' }, ctx);
     values = r.j?.customValues ?? [];
   } catch (e) {
     ctx.out.warn(`could not fetch custom values: ${e.message}`);
@@ -278,7 +287,7 @@ async function listValues(ctx) {
 // ── users ─────────────────────────────────────────────────────────────────────
 
 function listUsers(ents, ctx) {
-  if (ents.users?.blocked) return blockedExit('users', 'users.readonly', ctx);
+  if (ents.users?.blocked) return blockedExit('users', ents.users, ctx);
   const items = ents.users?.items ?? [];
 
   ctx.out.data({ entity: 'users', items });
@@ -303,7 +312,7 @@ function listUsers(ents, ctx) {
 
 function listForms(ents, showAll, ctx) {
   if (!ents.forms) return notSyncedExit('forms', ctx);
-  if (ents.forms?.blocked) return blockedExit('forms', 'forms.readonly', ctx);
+  if (ents.forms?.blocked) return blockedExit('forms', ents.forms, ctx);
   const items = ents.forms?.items ?? [];
   const shown = showAll ? items : items.slice(0, 30);
 
@@ -332,7 +341,7 @@ function listForms(ents, showAll, ctx) {
 
 function listSurveys(ents, showAll, ctx) {
   if (!ents.surveys) return notSyncedExit('surveys', ctx);
-  if (ents.surveys?.blocked) return blockedExit('surveys', 'surveys.readonly', ctx);
+  if (ents.surveys?.blocked) return blockedExit('surveys', ents.surveys, ctx);
   const items = ents.surveys?.items ?? [];
   const shown = showAll ? items : items.slice(0, 30);
 
@@ -361,7 +370,7 @@ function listSurveys(ents, showAll, ctx) {
 
 function listProducts(ents, showAll, ctx) {
   if (!ents.products) return notSyncedExit('products', ctx);
-  if (ents.products?.blocked) return blockedExit('products', 'products.readonly', ctx);
+  if (ents.products?.blocked) return blockedExit('products', ents.products, ctx);
   const items = ents.products?.items ?? [];
   const shown = showAll ? items : items.slice(0, 30);
 
@@ -391,7 +400,7 @@ function listProducts(ents, showAll, ctx) {
 
 function listLinks(ents, showAll, ctx) {
   if (!ents.links) return notSyncedExit('trigger links', ctx);
-  if (ents.links?.blocked) return blockedExit('trigger links', 'links.readonly', ctx);
+  if (ents.links?.blocked) return blockedExit('trigger links', ents.links, ctx);
   const items = ents.links?.items ?? [];
   const shown = showAll ? items : items.slice(0, 30);
 
@@ -420,7 +429,7 @@ function listLinks(ents, showAll, ctx) {
 
 function listBusinesses(ents, showAll, ctx) {
   if (!ents.businesses) return notSyncedExit('businesses', ctx);
-  if (ents.businesses?.blocked) return blockedExit('businesses', 'businesses.readonly', ctx);
+  if (ents.businesses?.blocked) return blockedExit('businesses', ents.businesses, ctx);
   const items = ents.businesses?.items ?? [];
   const shown = showAll ? items : items.slice(0, 30);
 
@@ -450,7 +459,7 @@ function listBusinesses(ents, showAll, ctx) {
 
 function listObjects(ents, ctx) {
   if (!ents.objects) return notSyncedExit('custom objects', ctx);
-  if (ents.objects?.blocked) return blockedExit('custom objects', 'objects.readonly', ctx);
+  if (ents.objects?.blocked) return blockedExit('custom objects', ents.objects, ctx);
   const items = ents.objects?.items ?? [];
 
   ctx.out.data({ entity: 'objects', items });

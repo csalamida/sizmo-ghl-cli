@@ -55,6 +55,13 @@ test('products extract reads _id — GHL products API is the one entity that has
   assert.equal(items[0].name, 'TRrest');
 });
 
+test('links buildPath sends no `limit` param — GHL 422s "property limit should not exist" if present', () => {
+  const spec = ENTITY_SPECS.find(s => s.name === 'links');
+  const path = spec.buildPath('L-TEST');
+  assert.ok(!/[?&]limit=/.test(path), `links buildPath must not include limit — got: ${path}`);
+  assert.match(path, /locationId=L-TEST/);
+});
+
 test('forms/surveys/businesses/objects extract reads id — confirmed against live GHL response shape', () => {
   const cases = [
     ['forms', { forms: [{ id: 'f1', name: 'Form' }] }],
