@@ -116,10 +116,14 @@ export async function run(args, ctx) {
     if (!gate.proceed) return gate.code;
 
     // Execute
+    // GHL's create endpoint requires locationId in the body (verified live: 422 "locationId
+    // can't be undefined" without it) and the stage field is pipelineStageId, not stageId
+    // (verified live: 422 "property stageId should not exist").
     const body = {
       name,
+      locationId: ctx.cfg.loc,
       pipelineId: pl.id,
-      stageId: stage.id,
+      pipelineStageId: stage.id,
       status: 'open',
       contactId: contact,
       ...(value != null ? { monetaryValue: Number(value) } : {}),
@@ -173,7 +177,9 @@ export async function run(args, ctx) {
     if (!gate.proceed) return gate.code;
 
     // Execute
-    const r = await ctx.http.put(`/opportunities/${encodeURIComponent(oppId)}`, { stageId: found.stage.id });
+    // GHL's field is pipelineStageId, not stageId (verified live against a real opportunity:
+    // sending stageId returns 422 "property stageId should not exist" — the move never applies).
+    const r = await ctx.http.put(`/opportunities/${encodeURIComponent(oppId)}`, { pipelineStageId: found.stage.id });
 
     if (r.code === 401 || r.code === 403) {
       throw new GhlError(

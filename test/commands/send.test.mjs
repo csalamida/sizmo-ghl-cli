@@ -74,6 +74,36 @@ test('send email: --confirm → POST /conversations/messages fires once, exit 0'
   assert.equal(getCalledWrites().filter(w => w.startsWith('POST')).length, 1);
 });
 
+test('send sms: request body includes locationId — verified live, GHL 422s without it', async () => {
+  const fixture = { 'POST /conversations/messages': { status: 200, j: { messageId: 'msg-001' } } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, loc: 'L-TEST', fixture });
+  await run({ _: [CONTACT], channel: 'sms', message: MESSAGE }, ctx);
+  const body = getCalledBodies().find(b => b.method === 'POST').body;
+  assert.equal(body.locationId, 'L-TEST');
+  assert.equal(body.type, 'SMS');
+  assert.equal(body.message, MESSAGE);
+  assert.equal(body.html, undefined, 'SMS must not send html — GHL only reads message for SMS');
+});
+
+test('send email: request body includes locationId + html + subject — verified live, message alone 422s with a misleading "no message or attachments" error', async () => {
+  const fixture = { 'POST /conversations/messages': { status: 200, j: { messageId: 'msg-002' } } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, loc: 'L-TEST', fixture });
+  await run({ _: [CONTACT], channel: 'email', message: 'Hello there\nSecond line' }, ctx);
+  const body = getCalledBodies().find(b => b.method === 'POST').body;
+  assert.equal(body.locationId, 'L-TEST');
+  assert.equal(body.type, 'Email');
+  assert.ok(body.html.includes('Hello there'), 'html must carry the message content — GHL requires it for email');
+  assert.equal(body.subject, 'Hello there', 'subject defaults from the first line since send has no --subject flag');
+});
+
+test('send email: a leading blank line never produces an empty subject', async () => {
+  const fixture = { 'POST /conversations/messages': { status: 200, j: { messageId: 'msg-003' } } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture });
+  await run({ _: [CONTACT], channel: 'email', message: '\n\nActual content here' }, ctx);
+  const body = getCalledBodies().find(b => b.method === 'POST').body;
+  assert.equal(body.subject, 'Actual content here');
+});
+
 // ── scope floor (401/403 → exit AUTH) ────────────────────────────────────────
 
 test('send sms: 401 → exit AUTH + scope message', async () => {

@@ -59,6 +59,16 @@ test('opp create: --confirm → POST fires once, exit 0', async () => {
   assert.equal(getCalledWrites().filter(w => w.startsWith('POST')).length, 1);
 });
 
+test('opp create: request body includes locationId and pipelineStageId (NOT stageId) — verified live against the real API', async () => {
+  const fixture = { 'POST /opportunities/': { status: 200, j: { opportunity: { id: 'opp-new-001' } } } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, loc: 'L-TEST', model: MODEL, fixture });
+  await run({ _: ['create'], name: 'Deal A', pipeline: 'Main Sales', stage: 'New Lead', contact: 'cid-x' }, ctx);
+  const body = getCalledBodies().find(b => b.method === 'POST').body;
+  assert.equal(body.locationId, 'L-TEST', 'GHL rejects create with 422 "locationId can\'t be undefined" if missing');
+  assert.equal(body.pipelineStageId, 'st-001', 'GHL rejects create with 422 "property stageId should not exist" — field is pipelineStageId');
+  assert.equal(body.stageId, undefined, 'must NOT send the wrong field name');
+});
+
 // ── opp create — unknown pipeline → exit NOTFOUND ────────────────────────────
 
 test('opp create: unknown pipeline → exit NOTFOUND (exit 4)', async () => {
@@ -107,6 +117,15 @@ test('opp move: --confirm → PUT fires once, exit 0', async () => {
   const code = await run({ _: ['move', 'opp-123'], stage: 'Won' }, ctx);
   assert.equal(code, EXIT.OK);
   assert.equal(getCalledWrites().filter(w => w.startsWith('PUT')).length, 1);
+});
+
+test('opp move: request body uses pipelineStageId (NOT stageId) — verified live, stageId 422s the real API', async () => {
+  const fixture = { 'PUT /opportunities/opp-123': { status: 200, j: {} } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture });
+  await run({ _: ['move', 'opp-123'], stage: 'Won' }, ctx);
+  const body = getCalledBodies().find(b => b.method === 'PUT').body;
+  assert.equal(body.pipelineStageId, 'st-002');
+  assert.equal(body.stageId, undefined, 'must NOT send the wrong field name');
 });
 
 // ── opp move — unknown stage ──────────────────────────────────────────────────

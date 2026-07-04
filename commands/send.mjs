@@ -55,11 +55,19 @@ export async function run(args, ctx) {
   if (!gate.proceed) return gate.code;
 
   // Execute
-  const r = await ctx.http.post('/conversations/messages', {
-    type: CHANNEL_TYPE[channel],
-    contactId,
-    message,
-  });
+  // GHL requires locationId in the body (verified live: without it, SMS 422s and email 422s
+  // with a misleading "no message or attachments" error). Email additionally requires `html` —
+  // `message` alone 422s with that same misleading error even though a message was sent; GHL
+  // only reads `message` for SMS. Subject defaults from the message's first line since send.mjs
+  // has no separate --subject flag (verified live: message+html+subject → 201 "Email queued").
+  const body = { type: CHANNEL_TYPE[channel], contactId, locationId: ctx.cfg.loc, message };
+  if (channel === 'email') {
+    body.html = message.split('\n').map(l => `<p>${l}</p>`).join('');
+    // First non-blank line, never empty (a leading blank line in the message would otherwise
+    // produce an empty subject).
+    body.subject = (message.split('\n').find(l => l.trim()) || 'Message').trim().slice(0, 78);
+  }
+  const r = await ctx.http.post('/conversations/messages', body);
 
   if (r.code === 401 || r.code === 403) {
     throw new GhlError(

@@ -160,7 +160,7 @@ These commands change data in GoHighLevel. Every write requires `--confirm`; wit
 | `sizmo opp update <oppId> [--value --status]` | Update value or status of an opportunity | `--value` or `--status` | `opportunities.write` |
 | `sizmo appointment book --calendar --contact --start` | Book an appointment | `--calendar`, `--contact`, `--start` | `calendars.write` |
 | `sizmo appointment cancel <apptId>` | Cancel an appointment | apptId positional | `calendars.write` |
-| `sizmo send <contactId> --channel sms\|email --message "..."` | Send an SMS or email | `--channel`, `--message` | `conversations/message.write` |
+| `sizmo send <contactId> --channel sms\|email --message "..."` | Send an SMS or email (email subject auto-generated from the message's first line — no separate `--subject` flag) | `--channel`, `--message` | `conversations/message.write` |
 
 **Build / scaffold writes** — stand up a location from the terminal instead of clicking. The PIT scope is the gate: if your token carries the write scope, the command works; if not, it fails with `AUTH` + the exact scope to add.
 

@@ -82,8 +82,10 @@ export async function run(args, ctx) {
     if (!gate.proceed) return gate.code;
 
     // Execute
+    // GHL requires locationId in the body (verified live: 400 "Location ID is required" without it).
     const r = await ctx.http.post('/calendars/events/appointments', {
       calendarId: cal.id,
+      locationId: ctx.cfg.loc,
       contactId: contact,
       startTime: start,
     });

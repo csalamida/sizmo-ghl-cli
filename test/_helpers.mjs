@@ -28,11 +28,14 @@ export function makeFakeCtx({
   // Track which paths were actually called (for C3 + write-guard assertions)
   const calledPaths = [];
   const calledWrites = []; // separate log for write calls (POST/PUT/DELETE) so tests can assert none fired
+  const calledBodies = []; // { method, path, body } for every write — so tests can assert on the ACTUAL
+                            // outgoing request shape, not just that a call happened (a wrong field name
+                            // sent to the real API is invisible if body is never inspected).
 
-  function fakeFetch(method, path, opts = {}) {
+  function fakeFetch(method, path, opts = {}, body = undefined) {
     const qs = opts?.query ? '?' + new URLSearchParams(Object.fromEntries(Object.entries(opts.query).filter(([,v])=>v!=null).map(([k,v])=>[k,String(v)]))).toString() : '';
     const key = `${method} ${path}${qs}`;
-    if (method !== 'GET') calledWrites.push(key);
+    if (method !== 'GET') { calledWrites.push(key); calledBodies.push({ method, path, body }); }
     calledPaths.push(key);
     const hit = fixture[key] || (!qs ? fixture[`${method} ${path}`] : undefined);
     if (!hit) throw new Error('unmocked request: ' + key);
@@ -40,10 +43,10 @@ export function makeFakeCtx({
   }
 
   const http = {
-    get:    async (path, opts = {})        => fakeFetch('GET',    path, opts),
-    post:   async (path, _body, opts = {}) => fakeFetch('POST',   path, opts),
-    put:    async (path, _body, opts = {}) => fakeFetch('PUT',    path, opts),
-    delete: async (path, _body, opts = {}) => fakeFetch('DELETE', path, opts),
+    get:    async (path, opts = {})       => fakeFetch('GET',    path, opts),
+    post:   async (path, body, opts = {}) => fakeFetch('POST',   path, opts, body),
+    put:    async (path, body, opts = {}) => fakeFetch('PUT',    path, opts, body),
+    delete: async (path, body, opts = {}) => fakeFetch('DELETE', path, opts, body),
   };
   let printed = '';
   const out = makeOut({ json, tty: false, command: 'test', location: loc, write: s => printed += s, writeErr: () => {} });
@@ -69,5 +72,8 @@ export function makeFakeCtx({
     getCalledPaths: () => [...calledPaths],
     // Write-guard: expose write calls so tests can assert no write fired without --confirm
     getCalledWrites: () => [...calledWrites],
+    // Body-guard: expose the actual outgoing body per write so tests can assert on real field
+    // names/shape, not just that some call happened.
+    getCalledBodies: () => [...calledBodies],
   };
 }

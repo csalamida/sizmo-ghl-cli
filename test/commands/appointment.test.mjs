@@ -54,6 +54,17 @@ test('appointment book: --confirm → POST fires once, exit 0', async () => {
   assert.equal(getCalledWrites().filter(w => w.startsWith('POST')).length, 1);
 });
 
+test('appointment book: request body includes locationId — verified live, GHL 400s "Location ID is required" without it', async () => {
+  const fixture = { 'POST /calendars/events/appointments': { status: 200, j: { id: APPT_ID } } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, loc: 'L-TEST', model: MODEL, fixture });
+  await run({ _: ['book'], calendar: 'Coaching Calls', contact: CONTACT, start: START }, ctx);
+  const body = getCalledBodies().find(b => b.method === 'POST').body;
+  assert.equal(body.locationId, 'L-TEST');
+  assert.equal(body.calendarId, 'cal-001');
+  assert.equal(body.contactId, CONTACT);
+  assert.equal(body.startTime, START);
+});
+
 // ── book — unknown calendar ───────────────────────────────────────────────────
 
 test('appointment book: unknown calendar → exit NOTFOUND', async () => {

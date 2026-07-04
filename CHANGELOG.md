@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] — 2026-07-05
+
+**A systematic live-verification sweep of every write command that had never been checked against
+a real GoHighLevel location — found and fixed 3 completely broken commands.** Prompted by v2.4.0's
+live pass catching 2 real bugs in `sizmo ask`: same pattern, wider net. The root cause enabling all
+of these: `test/_helpers.mjs`, used by every command's test suite, silently discarded the request
+body on every mocked write — a wrong field name could never fail a test, because no test could see
+it. Fixed the helper too (`getCalledBodies()`), so this bug class can't recur silently.
+
+### Fixed
+- **`sizmo opp create` never worked.** GoHighLevel's create endpoint requires `locationId` in the
+  body (422 "locationId can't be undefined" without it) and the stage field is `pipelineStageId`,
+  not `stageId` (422 "property stageId should not exist"). Every `opp create` call has failed
+  since it shipped.
+- **`sizmo opp move` never worked.** Same `stageId` → `pipelineStageId` mistake — GoHighLevel
+  returns 422 and the stage change never applies.
+- **`sizmo appointment book` never worked.** Missing `locationId` in the body — GoHighLevel
+  returns 400 "Location ID is required."
+- **`sizmo send --channel email` never worked; `--channel sms` never worked either.** Both were
+  missing `locationId` (422). Email additionally needs an `html` field — GoHighLevel accepts
+  `message` alone with a misleading 422 ("no message or attachments") that gives no hint `html` is
+  what's actually missing. Email now also gets an auto-generated subject line (from the message's
+  first non-blank line) since `send` has no separate `--subject` flag.
+
+All four were confirmed working end-to-end against a real location (create → move/read-back →
+delete, book → cancel) before merging. Each fix is regression-tested against the exact body shape
+that failed live, not just "a write happened."
+
+### Changed
+- `test/_helpers.mjs`: `makeFakeCtx` now captures the actual body of every POST/PUT/DELETE call
+  (`getCalledBodies()`), not just that a call happened. Every command's test suite can now assert
+  on real outgoing field names — this is what should have caught the four bugs above.
+
 ## [2.4.0] — 2026-07-05
 
 **`sizmo ask` now runs things — it doesn't just tell you what to type.** Until this release, every
@@ -429,7 +462,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.1...HEAD
+[2.4.1]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.1
 [2.4.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.0
 [2.3.1]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.3.1
 [2.3.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.3.0
