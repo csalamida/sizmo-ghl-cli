@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] — 2026-07-05
+
+**`sizmo ask` now runs things — it doesn't just tell you what to type.** Until this release, every
+`sizmo ask` call — read or write — only ever printed a suggested command; you still had to copy
+it and run it yourself. That's gone. Reads execute immediately. Writes preview once, then a bare
+`sizmo ask --confirm` fires them — no retyping, no re-asking the AI.
+
+### Added
+- **Reads execute immediately.** `sizmo ask "who hasn't replied in 3 days"` now runs `triage` and
+  shows the real output, instead of printing `→ sizmo triage` and stopping.
+- **Writes fire on a bare `--confirm`.** The preview resolves every name to a real id once and
+  caches that exact plan locally (10 min TTL); `--confirm` replays the cached plan — it never
+  re-asks the LLM, so what you previewed is guaranteed to be what fires (a second LLM call on the
+  same sentence could in principle resolve differently; caching removes that risk entirely).
+- **Multi-step chaining.** `sizmo ask "tag Ana as follow-up and book her Friday at 2pm" --confirm`
+  runs both steps in order off one confirm. A batch stops at the first failed step and reports
+  exactly which steps already succeeded, which failed, and which were never attempted.
+- **Pronoun follow-ups ("her", "that deal") — resolved locally, never sent to the AI.** The LLM
+  only ever sees the literal placeholder `<recent-contact>`; the real name/id is substituted back
+  in afterward from a short-lived local cache (20 min TTL). Same-sentence references ("tag Marco…
+  and note him…") resolve from what was just found in that sentence, not stale cross-call memory.
+- **Local fast path for bare command names — zero AI calls, zero cost.** `sizmo ask "brief"`,
+  `sizmo ask "list forms"`, `sizmo ask "no show"` and similar exact/near-exact command names
+  resolve instantly without touching the LLM at all.
+- **`opp move`/`opp create` now resolve a person's open opportunity by name** ("move Ana's deal to
+  Proposal Sent"), disambiguating on pipeline name when someone has more than one open deal.
+- **`field`/`calendar`/`business` delete resolve by name** from the already-synced local model —
+  no id lookup required first.
+- `sizmo ask` can now fire `tag`, `note`, `send`, `contact` (create/upsert/delete), `opp`
+  (create/move), `value create`, `field` (create/delete), `calendar` (create/delete), and
+  `business` (create/delete) directly. `invoice draft/send`, `appointment book/cancel`, and
+  `opp update` are deliberately NOT auto-fired — money and scheduling stay a manually-typed step;
+  `sizmo ask` still resolves and prints the exact command for those.
+
+### Fixed
+- **`sizmo ask`'s contact search never actually worked.** It called `GET /contacts/?search=…` —
+  GoHighLevel returns HTTP 422 for that param name (the real one is `query`) — and the failure was
+  silently read as `contacts: []`, reported as "no contact found" instead of an API error. Since
+  every write in `sizmo ask` (2.3.0/2.3.1) needed a contact resolved first, **this meant no write
+  command in `sizmo ask` could ever complete** — caught during this release's live-verification
+  pass, not before. Fixed, and now covered by both a mocked regression test and a live check.
+- **Opportunity pipeline/stage names were never resolvable.** The `/opportunities/search` response
+  carries only `pipelineId`/`pipelineStageId` — no inline name fields — so the old pipeline-hint
+  disambiguation (`--pipeline` to pick between two open deals) silently matched nothing, and
+  candidate lists showed blank pipeline/stage text. Now resolved from the synced local model.
+
+### Security
+- New local-only cache for `sizmo ask`: a last-resolved-contact file (name+id, 20 min TTL) and a
+  pending-write-plan file (10 min TTL, can contain write content — a note's text, a tag name, an
+  SMS/email body — for that window). Both `0600`, atomic writes, `~/.config/sizmo/ask-memory/`,
+  never transmitted anywhere. See `SECURITY.md`.
+
 ## [2.3.1] — 2026-07-03
 
 ### Changed
@@ -377,7 +429,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.3.1...HEAD
+[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.0
 [2.3.1]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.3.1
 [2.3.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.3.0
 [2.2.0]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.2.0

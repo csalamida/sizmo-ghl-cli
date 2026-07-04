@@ -36,8 +36,17 @@ Expect a first response within **72 hours**. Please include repro steps and the 
    third boundary: your typed request text, plus a structural CRM excerpt (pipeline/calendar/tag/
    form/survey/business **names and ids**) is sent to whichever provider you chose (Anthropic or
    OpenAI) to resolve a command. **Never sent:** your PIT, contact records, conversations, or money
-   data. If you don't set an AI key, sizmo makes zero calls to any LLM, ever — `ask` fails with
-   setup instructions instead.
+   data — not even a contact you referred to by pronoun ("her", "that deal"): the LLM only ever
+   sees the literal placeholder token `<recent-contact>`, and the real name/id is substituted
+   back in locally, after the LLM has already responded. If you don't set an AI key, sizmo makes
+   zero calls to any LLM, ever — `ask` fails with setup instructions instead.
+4. **Two short-lived local files for `sizmo ask`** — a last-resolved-contact cache (name+id, 20
+   min TTL, so a pronoun follow-up works) and a pending-write-plan cache (10 min TTL — the exact
+   commands `sizmo ask` is about to run once you type `--confirm`, so `--confirm` fires *precisely*
+   what you already previewed instead of re-asking the AI and risking it resolve differently the
+   second time). Both live at `~/.config/sizmo/ask-memory/`, `0600`, atomic writes, never sent
+   anywhere — same local-only category as the model cache. The pending-plan file can contain
+   write content (a note's text, an SMS/email body, a tag name) for up to 10 minutes.
 
 Everything else the tool stores stays on your machine.
 
@@ -50,7 +59,8 @@ Everything else the tool stores stays on your machine.
 | **The PIT scope is the gate — and there is no card-charging path.** sizmo exposes only what your token's scopes + GoHighLevel's *public* API allow; a missing scope fails with `AUTH` + the exact scope to add. Money-side, the public API offers create-**draft**-invoice, **send** an invoice (a pay-link the customer acts on), and recording a manual payment — there is **no public "charge a card" endpoint**, so sizmo cannot pull money off a card on its own. **Every write — operational *or* money — requires `--confirm`** (without it the CLI prints the change and exits 5). | `grep -rn "ctx.http.post\|ctx.http.put\|ctx.http.delete" commands/` — every write is scope-gated + confirm-gated; there is no charge/capture/refund call. |
 | **No telemetry.** sizmo makes exactly two kinds of outbound request: the GoHighLevel API, and a once-a-day npm-registry check for a newer version (a plain `GET`, sending nothing about you). | Read `lib/update-notify.mjs`; opt out with `--no-update-check` or `NO_UPDATE_NOTIFIER=1`. |
 | **Zero runtime dependencies.** No transitive supply chain to trust. | `cat package.json` → `"dependencies": {}`. |
-| **`sizmo ask` never sends your PIT, contacts, conversations, or money data to the LLM provider.** Only your typed request text and CRM structure names/ids (pipelines, calendars, tags, forms, surveys, businesses) leave the machine — and only if you've set an `--ai-key`. | Read `lib/llm.mjs` (the only place an LLM is called) and `buildCrmExcerpt()` in `commands/ask.mjs` (the only data assembled for it). |
+| **`sizmo ask` never sends your PIT, contacts, conversations, or money data to the LLM provider.** Only your typed request text and CRM structure names/ids (pipelines, calendars, tags, forms, surveys, businesses) leave the machine — and only if you've set an `--ai-key`. Pronoun follow-ups resolve locally via a placeholder token, never a real name. | Read `lib/llm.mjs` (the only place an LLM is called), `buildCrmExcerpt()` and the `RECENT_CONTACT_TOKEN` handling in `commands/ask.mjs`. |
+| **`sizmo ask`'s confirm leg never re-asks the AI.** The unconfirmed preview resolves every name to a real id once and caches that exact plan; `--confirm` replays the cached plan verbatim — it cannot fire something different from what you previewed. `sizmo ask` also declines to auto-fire money (`invoice`) or scheduling (`appointment`) commands, and `opp update` — it only ever resolves and prints those for you to run yourself. | Read `savePendingPlan`/`loadPendingPlan` in `lib/ask-memory.mjs` and the `EXECUTABLE_WRITE_COMMANDS` set in `commands/ask.mjs`. |
 
 ## Limitations (read this — a strengths-only security doc is a false-confidence trap)
 
@@ -75,6 +85,10 @@ Everything else the tool stores stays on your machine.
   charge a card (GoHighLevel exposes no public endpoint for that), but a *sent* invoice is a real
   request for payment to your customer — grant money scopes deliberately. Prior to 2.0, sizmo
   excluded all money endpoints; 2.0 moved to "the PIT scope is the gate."
+- **`sizmo ask` can fire a MULTI-step batch off one `--confirm`.** "Tag Ana as follow-up and book
+  her Friday" previews both steps, then a single `--confirm` runs both in order — read the whole
+  preview, not just the first line, before confirming. A batch stops at the first failed step;
+  it never continues past one.
 
 ## Audit it yourself
 

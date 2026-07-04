@@ -135,12 +135,11 @@ PIT lives at `~/.config/ghl-auth/`. Never in argv, never in env passed from outs
 ## Natural Language Interface (optional — requires AI key)
 
 ```bash
-sizmo ask "who hasn't replied in 3 days"
-sizmo ask "tag Ana Cruz as follow-up"
-sizmo ask "move Website Package deal to Proposal Sent"
-sizmo ask "show me stuck deals older than 2 weeks"
-sizmo ask "send Marco a check-in SMS"           # shows preview → exit 5
-sizmo ask "send Marco a check-in SMS" --confirm  # fires (never auto)
+sizmo ask "brief"                                   # bare command name — no AI call at all
+sizmo ask "who hasn't replied in 3 days"            # runs triage, shows real output
+sizmo ask "tag Ana Cruz as follow-up"                # preview → exit 5
+sizmo ask --confirm                                  # fires the previewed plan (no re-asking the AI)
+sizmo ask "tag Ana as follow-up and book her Friday at 2pm" --confirm  # two steps, one confirm
 ```
 
 Setup:
@@ -149,8 +148,12 @@ sizmo config set --profile <name> --ai-key "sk-ant-..." --ai-provider anthropic
 sizmo config set --profile <name> --ai-key "sk-..." --ai-provider openai
 ```
 
-Flow: intent → LLM resolves → shows exact command → writes still need `--confirm`.
-Reads execute immediately. Confidence < 70% → asks to rephrase. Contact names → auto-search → resolves to ID.
+Flow: intent → (bare command names skip the AI entirely) → LLM resolves one or more steps →
+reads run immediately; writes preview + cache the resolved plan → a bare `--confirm` replays that
+exact plan (never re-asks the AI, so it can't fire something different from the preview).
+Confidence < 70% → asks to rephrase. Contact/opportunity names → auto-search → resolves to ID.
+Pronoun follow-ups ("her") resolve from a local cache — the AI only ever sees a placeholder token.
+`invoice`/`appointment`/`opp update` stay resolve-only (money/scheduling stay manual).
 Providers: `anthropic` (default, claude-haiku-4-5-20251001) · `openai` (gpt-4o-mini).
 
 ## As an Agent Tool

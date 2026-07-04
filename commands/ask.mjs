@@ -1,19 +1,59 @@
-// commands/ask.mjs — natural language → sizmo command resolver.
+// commands/ask.mjs — natural language → sizmo command resolver AND executor.
 // Requires an AI key in profile: sizmo config set --profile <name> --ai-key <key>
-// Reads show the resolved command. Writes preview + exit 5 without --confirm.
+//
+// EXECUTION MODEL (the point of this file):
+//   - Bare command matches (brief/doctor/list forms/etc) skip the LLM entirely — lib/quick-match.mjs.
+//   - READS always execute immediately and print real output. No --confirm needed (same as running
+//     the command directly), no risk (nothing mutates).
+//   - WRITES go through preview → confirm → fire, same guarantee the rest of the CLI has, but the
+//     confirm leg NEVER re-resolves via the LLM or re-runs a live search. The first (unconfirmed)
+//     call resolves every name to a real id, caches that EXACT concretized plan locally
+//     (lib/ask-memory.mjs), and `--confirm` replays that cached plan verbatim. This is what
+//     guarantees "what you previewed is what fires" even though you typed a name, not an id.
+//   - Multi-step asks ("tag her VIP and book Friday") are one batch: every step resolves before
+//     anything executes; a single --confirm fires the whole ordered batch; the first failure
+//     stops the rest.
+//   - sizmo ask never sends your PIT, contacts, or money data to the LLM. Only your request text
+//     and CRM *structure* (pipeline/calendar/tag/form/survey/business names+ids) leave the
+//     machine. Pronoun follow-ups ("her", "that deal") are resolved via a local-only placeholder
+//     substitution — the LLM only ever sees the literal token "<recent-contact>", never a real
+//     name or id. See SECURITY.md.
+//   - invoice draft/send, appointment book/cancel, and opp update are NOT auto-fired — sizmo ask
+//     resolves and prints the exact deterministic command for you to run yourself (money and
+//     scheduling stay a deliberate, manually-typed action).
 
 import { callLlm } from '../lib/llm.mjs';
-import { EXIT } from '../lib/errors.mjs';
+import { EXIT, GhlError } from '../lib/errors.mjs';
+import { registry } from '../lib/registry.mjs';
+import { quickMatch } from '../lib/quick-match.mjs';
+import { saveLastContact as _saveLastContact, loadLastContact as _loadLastContact,
+         savePendingPlan as _savePendingPlan, loadPendingPlan as _loadPendingPlan,
+         clearPendingPlan as _clearPendingPlan } from '../lib/ask-memory.mjs';
+
+// ctx._askMemoryDir overrides the default ~/.config/sizmo/ask-memory dir — same pattern as
+// ctx._modelDir elsewhere (test isolation; real runs never set this).
+const saveLastContact = (loc, c, now, ctx) => _saveLastContact(loc, c, now, ctx?._askMemoryDir);
+const loadLastContact = (loc, now, ctx) => _loadLastContact(loc, now, ctx?._askMemoryDir);
+const savePendingPlan = (loc, steps, now, ctx) => _savePendingPlan(loc, steps, now, ctx?._askMemoryDir);
+const loadPendingPlan = (loc, now, ctx) => _loadPendingPlan(loc, now, ctx?._askMemoryDir);
+const clearPendingPlan = (loc, ctx) => _clearPendingPlan(loc, ctx?._askMemoryDir);
 
 export const meta = {
   name: 'ask',
-  summary: 'resolve natural language to a sizmo command (requires AI key in profile)',
+  summary: 'resolve (and, for reads, run) a natural language request — requires an AI key in profile',
   flags: [],
 };
 
-// Compact static schema — given to LLM as command reference.
+const RECENT_CONTACT_TOKEN = '<recent-contact>';
+
+// Commands sizmo ask can fire directly once concretized. Anything else (invoice, appointment,
+// opp update) falls back to resolve-and-print — see the file header for why.
+const EXECUTABLE_WRITE_COMMANDS = new Set(['tag', 'note', 'send', 'contact', 'opp', 'value', 'field', 'calendar', 'business']);
+// Only these two opp subcommands are executable; opp update stays print-only.
+const EXECUTABLE_OPP_SUBCOMMANDS = new Set(['create', 'move']);
+
 const SCHEMA_PROMPT = `
-READ COMMANDS (no --confirm, safe):
+READ COMMANDS (run immediately, no --confirm):
   brief                                 morning readout: revenue, waiting contacts, stuck deals
   snapshot                              6-metric summary card
   triage                                unreplied threads, longest first
@@ -33,78 +73,85 @@ READ COMMANDS (no --confirm, safe):
   diff <file>                           compare snapshot vs live
   forms                                 list all forms
   forms <formId>                        recent submissions for a form
-  forms <formId> --top <n>             limit submission rows
   surveys                               list all surveys
   surveys <surveyId>                    recent submissions for a survey
-  transactions                          payment transaction history (read-only)
-  transactions --top <n>               show more rows (default 25, max 100)
-  transactions --type subscription|order  filter by type
+  transactions                          payment transaction history
   business list                         list B2B companies
-  list calendars                        calendar IDs and staff
-  list pipelines                        pipeline and stage IDs
-  list tags                             all tag names
-  list fields                           custom field IDs and types
-  list values                           custom value IDs and current values
-  list users                            user IDs and emails
-  list forms                            form IDs (no submissions)
-  list surveys                          survey IDs
-  list products                         product IDs
-  list businesses                       B2B company IDs
+  list [entity]                         id lookup — pipelines|calendars|tags|fields|values|users|forms|surveys|products|links|businesses|objects
 
-WRITE COMMANDS (need --confirm; without it: preview + exit 5):
-  tag <contactId> --add <tag>
-  tag <contactId> --remove <tag>
-  note <contactId> --text "..."
-  contact create --email <e> --name "..."
-  contact upsert --email <e> --name "..."
-  contact delete <contactId>
-  opp create --pipeline "name" --stage "name" --name "deal" --contact <id>
-  opp move <oppId> --stage "name"
-  send <contactId> --channel sms --message "..."
-  send <contactId> --channel email --message "..."
-  value update <valueId> --value "..."
-  value create --name "..." --value "..."
-  field create --name "..." --type TEXT|MONETORY|DATE
-  calendar create --name "..."
-  calendar delete <calendarId>
-  appointment book --calendar "name" --contact <id> --start ISO8601
+WRITE COMMANDS THIS TOOL CAN FIRE DIRECTLY (still confirm-gated — see steps schema below):
+  tag        — add/remove a tag on a contact
+  note       — add a note to a contact
+  send       — sms or email a contact
+  contact    — create | upsert (de-dupe on email/phone) | delete
+  opp        — create | move (an existing deal to a new stage)
+  value      — create a custom value (delete needs an id you already have — not resolvable by name)
+  field      — create | delete a custom field
+  calendar   — create | delete a calendar
+  business   — create | delete a B2B company
+
+WRITE COMMANDS THIS TOOL ONLY RESOLVES (prints the exact command — you run it yourself; money and
+scheduling stay a deliberate manual step):
+  opp update <oppId> [--value --status]
+  appointment book --calendar --contact --start ISO8601
   appointment cancel <apptId>
-  invoice draft --contact <id> --item "Name:Amount" --currency PHP
+  invoice draft --contact <id> --item "Name:amount[:qty]" --currency PHP
   invoice send <invoiceId>
-  business create --name "Company" --website "https://..." --email "..."
-  business delete <businessId>
 `.trim();
 
-function buildSystemPrompt(crmExcerpt) {
-  return `You are a GoHighLevel CLI command resolver. Translate a natural language request into the exact sizmo CLI command.
+function buildSystemPrompt(crmExcerpt, recentContactAvailable) {
+  return `You are a GoHighLevel CLI command resolver. Translate a natural language request into one or more sizmo command steps.
 
 ${SCHEMA_PROMPT}
 
 CRM STRUCTURE FOR THIS LOCATION:
 ${crmExcerpt}
 
+RECENT CONTEXT: ${recentContactAvailable ? 'A contact was recently resolved in this session.' : 'No recent contact on file.'}
+
 Return ONLY this JSON, no other text:
 {
-  "command": "tag",
-  "args": ["<contactId>"],
-  "flags": { "add": "VIP" },
+  "steps": [
+    {
+      "command": "tag",
+      "subcommand": null,
+      "isWrite": true,
+      "intent": "Add VIP tag to Ana",
+      "contactQuery": "Ana Cruz",
+      "oppQuery": null,
+      "oppPipelineHint": null,
+      "fieldQuery": null,
+      "calendarQuery": null,
+      "businessQuery": null,
+      "fields": { "add": "VIP" }
+    }
+  ],
   "confidence": 0.95,
-  "intent": "Add VIP tag to contact",
-  "isWrite": true,
-  "requiresContactSearch": false,
-  "contactQuery": null,
-  "explanation": "brief reason for this command choice"
+  "explanation": "brief reason for this resolution"
 }
 
 Rules:
-- confidence < 0.7 means you are unsure — explain in "explanation"
-- requiresContactSearch: true when you know a person name but not their ID
-- contactQuery: the name or email to search when requiresContactSearch is true
-- isWrite: true for any command that modifies GHL data
-- args: positional arguments BEFORE flags, as a JSON array
-- flags: object with flag names (without --) mapped to values; boolean flags map to true
-- Never invent IDs — only use IDs shown in the CRM structure above
-- Use the pipeline/calendar/tag names from the CRM structure when matching`;
+- One step per distinct action. "tag Ana VIP and book her Friday 2pm" is TWO steps.
+- "command" is the bare registry word (tag, note, send, contact, opp, value, field, calendar,
+  business, invoice, appointment, or a read command like brief/triage/list).
+- "subcommand" is create|upsert|delete|move|update|book|cancel|list when the command needs one,
+  else null.
+- contactQuery: the person's name or email this step acts on. If a LATER step in THIS SAME
+  request refers back to a person already named in an EARLIER step here ("tag Ana... and book
+  her..."), just repeat that same name string again — do not use the placeholder for that, you
+  already know who it is. Reserve the EXACT literal string "${RECENT_CONTACT_TOKEN}" ONLY for a
+  pronoun/follow-up that refers to someone from a PREVIOUS, separate ask call (see RECENT CONTEXT
+  above) — never guess a name, never invent one. null if this step doesn't act on a specific contact.
+- oppQuery / oppPipelineHint: for "opp move"/"opp update", oppQuery is whose deal (same rules as
+  contactQuery, including the "${RECENT_CONTACT_TOKEN}" token); oppPipelineHint is the pipeline
+  name if mentioned, to disambiguate when someone has more than one open deal.
+- fieldQuery / calendarQuery / businessQuery: the EXISTING field/calendar/business name to find
+  (for delete only) — must match a name shown in CRM STRUCTURE above, never invented.
+- fields: every other named value as plain keys matching CLI flag names exactly — add, remove,
+  text, channel, message, email, phone, name, first, last, tag, pipeline, stage, value, status,
+  type, model, "slot-min", website, item, currency.
+- confidence < 0.7 means you are unsure — explain why in "explanation".
+- Never invent an id — only use ids/names shown in CRM STRUCTURE, or the ${RECENT_CONTACT_TOKEN} token.`;
 }
 
 function buildCrmExcerpt(model) {
@@ -161,21 +208,379 @@ function buildCrmExcerpt(model) {
   return lines.length ? lines.join('\n') : '(no CRM data cached — run: sizmo sync)';
 }
 
-function buildCommandStr(resolved) {
-  const parts = ['sizmo', resolved.command];
-  for (const a of (resolved.args ?? [])) parts.push(a);
-  for (const [k, v] of Object.entries(resolved.flags ?? {})) {
-    if (v === true) parts.push(`--${k}`);
-    else {
-      const val = String(v);
-      parts.push(`--${k}`, val.includes(' ') ? `"${val}"` : val);
+// ── local (cached-model) name→id lookups — no live call, no LLM involvement ────────────────────
+
+function normKey(s) { return String(s ?? '').trim().toLowerCase(); }
+
+function findLocalByName(items, name, labelFn = (x) => x.name) {
+  const target = normKey(name);
+  if (!target) return { error: 'no name given' };
+  const matches = items.filter(x => normKey(labelFn(x)) === target);
+  if (matches.length === 1) return { item: matches[0] };
+  if (matches.length === 0) return { error: `no match for "${name}"` };
+  return { error: `"${name}" matches ${matches.length} items — be more specific`, matches };
+}
+
+// ── live contact + opportunity search (dedupe-aware within one ask invocation) ─────────────────
+
+async function searchContactByQuery(query, ctx) {
+  try {
+    // GHL's /contacts/ list endpoint takes `query` (fuzzy match), NOT `search` — that param
+    // name returns HTTP 422. Verified live: `search=` errors, `query=` correctly filters
+    // (0 results for a nonsense term, real matches for a real one).
+    const r = await ctx.http.get('/contacts/', { query: { locationId: ctx.cfg.loc, query, limit: 5 } });
+    if (r.code === 401 || r.code === 403) return { error: `contacts.readonly scope required to search contacts` };
+    if (!r.ok) return { error: `contact search failed — API ${r.code}` };
+    const contacts = r.j?.contacts ?? [];
+    if (contacts.length === 0) return { error: `no contact found for "${query}"` };
+    if (contacts.length > 1) {
+      const list = contacts.map(c => `${c.id}  ${[c.firstName, c.lastName].filter(Boolean).join(' ')}  ${c.email ?? ''}`);
+      return { error: `"${query}" matches ${contacts.length} contacts — be more specific`, candidates: list };
     }
+    const c = contacts[0];
+    return { id: c.id, name: [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email || c.id };
+  } catch (e) {
+    return { error: `contact search failed: ${e.message}` };
   }
-  return parts.join(' ');
+}
+
+// GHL's opportunity object only carries pipelineId/pipelineStageId — no human-readable name
+// fields (verified live: pipelineName/pipelineStageName/stageName are all undefined on the real
+// response). Resolve them from the cached model, same as pipeline.mjs already does.
+function buildPipelineNameLookup(model) {
+  const lookup = new Map(); // pipelineId → { name, stages: Map(stageId → stageName) }
+  for (const p of model?.entities?.pipelines?.items ?? []) {
+    const stages = new Map((p.stages ?? []).map(s => [s.id, s.name]));
+    lookup.set(p.id, { name: p.name, stages });
+  }
+  return lookup;
+}
+
+async function searchOpportunityByContact({ contactId, contactName, pipelineHint }, ctx, pipelineLookup) {
+  try {
+    const r = await ctx.http.get('/opportunities/search', { query: { location_id: ctx.cfg.loc, contact_id: contactId, status: 'open', limit: 25 } });
+    if (!r.ok) return { error: `couldn't search opportunities (API ${r.code})` };
+    let opps = (r.j?.opportunities ?? r.j?.data ?? []).map(o => {
+      const pl = pipelineLookup?.get(o.pipelineId);
+      return { ...o, pipelineName: pl?.name ?? o.pipelineId, stageLabel: pl?.stages.get(o.pipelineStageId) ?? o.pipelineStageId };
+    });
+    if (pipelineHint) {
+      const target = normKey(pipelineHint);
+      const filtered = opps.filter(o => normKey(o.pipelineName) === target || normKey(o.pipelineId) === target);
+      if (filtered.length) opps = filtered;
+    }
+    if (opps.length === 0) return { error: `${contactName} has no open opportunities${pipelineHint ? ` in "${pipelineHint}"` : ''}` };
+    if (opps.length > 1) {
+      const list = opps.map(o => `${o.id}  ${o.name ?? ''}  ${o.pipelineName} / ${o.stageLabel}`);
+      return { error: `${contactName} has ${opps.length} open opportunities — be more specific (pipeline name, or use the exact id)`, candidates: list };
+    }
+    const o = opps[0];
+    return { id: o.id, label: `${o.name ?? contactName}'s deal (${o.pipelineName ?? ''})` };
+  } catch (e) {
+    return { error: `opportunity search failed: ${e.message}` };
+  }
+}
+
+// ── per-command step builders — pure, validate required fields, assemble the exact `parsed`
+// shape each real command expects (never trust the LLM's raw args ordering) ────────────────────
+
+function need(fields, keys) {
+  for (const k of keys) if (!fields?.[k]) return `missing --${k}`;
+  return null;
+}
+
+const STEP_BUILDERS = {
+  tag: (step, ids) => {
+    const f = step.fields ?? {};
+    if (!ids.contactId) return { error: 'no contact resolved' };
+    if (!f.add && !f.remove) return { error: 'missing --add or --remove' };
+    const parsed = { _: [ids.contactId], ...(f.add ? { add: f.add } : {}), ...(f.remove ? { remove: f.remove } : {}) };
+    return { parsed, describe: `Tag ${ids.contactName}: ${f.add ? '+' + f.add : '-' + f.remove}` };
+  },
+  note: (step, ids) => {
+    const f = step.fields ?? {};
+    if (!ids.contactId) return { error: 'no contact resolved' };
+    if (!f.text) return { error: 'missing --text' };
+    return { parsed: { _: [ids.contactId], text: f.text }, describe: `Note on ${ids.contactName}: "${f.text}"` };
+  },
+  send: (step, ids) => {
+    const f = step.fields ?? {};
+    if (!ids.contactId) return { error: 'no contact resolved' };
+    const err = need(f, ['channel', 'message']);
+    if (err) return { error: err };
+    return { parsed: { _: [ids.contactId], channel: f.channel, message: f.message }, describe: `Send ${f.channel} to ${ids.contactName}: "${f.message}"` };
+  },
+  contact: (step, ids) => {
+    const f = step.fields ?? {};
+    const sub = step.subcommand;
+    if (sub === 'create') {
+      if (!f.email && !f.phone && !f.name && !f.first && !f.last) return { error: 'contact create needs at least one of email/phone/name' };
+      const parsed = { _: ['create'], ...f };
+      return { parsed, describe: `Create contact: ${f.name || f.email || f.phone}` };
+    }
+    if (sub === 'upsert') {
+      if (!f.email && !f.phone) return { error: 'contact upsert needs email or phone' };
+      const parsed = { _: ['upsert'], ...f };
+      return { parsed, describe: `Upsert contact: ${f.email || f.phone}` };
+    }
+    if (sub === 'delete') {
+      if (!ids.contactId) return { error: 'no contact resolved' };
+      return { parsed: { _: ['delete', ids.contactId] }, describe: `Delete contact ${ids.contactName}` };
+    }
+    return { error: `unsupported contact subcommand "${sub}"` };
+  },
+  opp: (step, ids) => {
+    const f = step.fields ?? {};
+    const sub = step.subcommand;
+    if (sub === 'create') {
+      if (!ids.contactId) return { error: 'no contact resolved' };
+      const err = need(f, ['name', 'pipeline', 'stage']);
+      if (err) return { error: err };
+      const parsed = { _: ['create'], name: f.name, pipeline: f.pipeline, stage: f.stage, contact: ids.contactId, ...(f.value ? { value: f.value } : {}) };
+      return { parsed, describe: `Create opportunity "${f.name}" for ${ids.contactName} in ${f.pipeline}/${f.stage}` };
+    }
+    if (sub === 'move') {
+      if (!ids.oppId) return { error: 'no opportunity resolved' };
+      if (!f.stage) return { error: 'missing --stage' };
+      return { parsed: { _: ['move', ids.oppId], stage: f.stage }, describe: `Move ${ids.oppLabel} to ${f.stage}` };
+    }
+    return { error: `unsupported opp subcommand "${sub}" — sizmo ask can only fire opp create/move directly` };
+  },
+  value: (step, ids) => {
+    const f = step.fields ?? {};
+    if (step.subcommand !== 'create') return { error: 'sizmo ask can only fire value create directly — value delete needs an id (run sizmo list values)' };
+    const err = need(f, ['name', 'value']);
+    if (err) return { error: err };
+    return { parsed: { _: ['create'], name: f.name, value: f.value }, describe: `Create custom value "${f.name}" = "${f.value}"` };
+  },
+  field: (step, ids) => {
+    const f = step.fields ?? {};
+    if (step.subcommand === 'create') {
+      if (!f.name) return { error: 'missing --name' };
+      return { parsed: { _: ['create'], name: f.name, ...(f.type ? { type: f.type } : {}), ...(f.model ? { model: f.model } : {}) }, describe: `Create field "${f.name}"${f.type ? ` (${f.type})` : ''}` };
+    }
+    if (step.subcommand === 'delete') {
+      if (!ids.fieldId) return { error: 'no field resolved' };
+      return { parsed: { _: ['delete', ids.fieldId] }, describe: `Delete field "${ids.fieldName}"` };
+    }
+    return { error: `unsupported field subcommand "${step.subcommand}"` };
+  },
+  calendar: (step, ids) => {
+    const f = step.fields ?? {};
+    if (step.subcommand === 'create') {
+      if (!f.name) return { error: 'missing --name' };
+      return { parsed: { _: ['create'], name: f.name, ...(f.type ? { type: f.type } : {}), ...(f['slot-min'] ? { 'slot-min': f['slot-min'] } : {}) }, describe: `Create calendar "${f.name}"` };
+    }
+    if (step.subcommand === 'delete') {
+      if (!ids.calendarId) return { error: 'no calendar resolved' };
+      return { parsed: { _: ['delete', ids.calendarId] }, describe: `Delete calendar "${ids.calendarName}"` };
+    }
+    return { error: `unsupported calendar subcommand "${step.subcommand}"` };
+  },
+  business: (step, ids) => {
+    const f = step.fields ?? {};
+    if (step.subcommand === 'create') {
+      if (!f.name) return { error: 'missing --name' };
+      return { parsed: { _: ['create'], name: f.name, ...(f.email ? { email: f.email } : {}), ...(f.phone ? { phone: f.phone } : {}), ...(f.website ? { website: f.website } : {}) }, describe: `Create business "${f.name}"` };
+    }
+    if (step.subcommand === 'delete') {
+      if (!ids.businessId) return { error: 'no business resolved' };
+      return { parsed: { _: ['delete', ids.businessId] }, describe: `Delete business "${ids.businessName}"` };
+    }
+    return { error: `unsupported business subcommand "${step.subcommand}"` };
+  },
+};
+
+const READ_COMMANDS = new Set([
+  'brief', 'snapshot', 'triage', 'pipeline', 'receivables', 'reconcile', 'booked-not-paid',
+  'noshow', 'focus', 'segment', 'crm', 'export', 'diff', 'forms', 'surveys', 'transactions', 'list',
+]);
+
+function isExecutable(step) {
+  if (READ_COMMANDS.has(step.command)) return true;
+  if (!EXECUTABLE_WRITE_COMMANDS.has(step.command)) return false;
+  if (step.command === 'opp') return EXECUTABLE_OPP_SUBCOMMANDS.has(step.subcommand);
+  return true;
+}
+
+// ── concretize: resolve every placeholder to a real id, build `parsed` per step. Aborts the
+// WHOLE batch (returns {ok:false}) on any failure — never a partial resolution. ─────────────────
+
+export async function concretize(steps, ctx, now) {
+  const contactCache = new Map(); // normalized query → {id,name} | {error}
+  let resolvedContact = null; // last one actually resolved this call, for memory save
+
+  async function resolveContact(query) {
+    const key = normKey(query);
+    if (contactCache.has(key)) return contactCache.get(key);
+    let result;
+    if (query === RECENT_CONTACT_TOKEN) {
+      // Prefer a contact already resolved EARLIER IN THIS SAME BATCH ("tag Marco... and note
+      // him...") over the persisted cross-call memory — the persisted file isn't updated until
+      // the whole batch finishes, so without this a same-sentence pronoun would incorrectly
+      // fall back to whoever was resolved in a PREVIOUS, unrelated ask call.
+      const last = resolvedContact ?? loadLastContact(ctx.cfg.loc, now, ctx);
+      result = last ? { id: last.id, name: last.name } : { error: 'no recent contact remembered — name someone explicitly' };
+    } else {
+      result = await searchContactByQuery(query, ctx);
+    }
+    contactCache.set(key, result);
+    if (result.id) resolvedContact = result;
+    return result;
+  }
+
+  const model = await ctx.ensureModel();
+  const ents = model?.entities ?? {};
+  const pipelineLookup = buildPipelineNameLookup(model);
+  const concrete = [];
+  const previewLines = [];
+
+  for (const step of steps) {
+    // Reject an unrecognized/hallucinated command up front — never let it silently fall into
+    // the "resolve-only, print this" path (which would print a command that doesn't exist).
+    if (!Object.prototype.hasOwnProperty.call(registry, step.command)) {
+      return { ok: false, error: `the AI suggested an unrecognized command "${step.command}" — try rephrasing` };
+    }
+
+    const ids = {};
+
+    if (step.contactQuery) {
+      const r = await resolveContact(step.contactQuery);
+      if (r.error) return { ok: false, error: r.error, candidates: r.candidates };
+      ids.contactId = r.id; ids.contactName = r.name;
+    }
+
+    if (step.oppQuery) {
+      const c = await resolveContact(step.oppQuery);
+      if (c.error) return { ok: false, error: c.error, candidates: c.candidates };
+      const o = await searchOpportunityByContact({ contactId: c.id, contactName: c.name, pipelineHint: step.oppPipelineHint }, ctx, pipelineLookup);
+      if (o.error) return { ok: false, error: o.error, candidates: o.candidates };
+      ids.oppId = o.id; ids.oppLabel = o.label;
+    }
+
+    if (step.fieldQuery) {
+      const r = findLocalByName(ents.customFields?.items ?? [], step.fieldQuery);
+      if (r.error) return { ok: false, error: r.error, candidates: r.matches?.map(m => `${m.id}  ${m.name}`) };
+      ids.fieldId = r.item.id; ids.fieldName = r.item.name;
+    }
+
+    if (step.calendarQuery) {
+      const r = findLocalByName(ents.calendars?.items ?? [], step.calendarQuery);
+      if (r.error) return { ok: false, error: r.error, candidates: r.matches?.map(m => `${m.id}  ${m.name}`) };
+      ids.calendarId = r.item.id; ids.calendarName = r.item.name;
+    }
+
+    if (step.businessQuery) {
+      const r = findLocalByName(ents.businesses?.items ?? [], step.businessQuery);
+      if (r.error) return { ok: false, error: r.error, candidates: r.matches?.map(m => `${m.id}  ${m.name}`) };
+      ids.businessId = r.item.id; ids.businessName = r.item.name;
+    }
+
+    if (READ_COMMANDS.has(step.command)) {
+      const parsed = { _: [...(step.args ?? [])], ...(step.fields ?? {}) };
+      concrete.push({ command: step.command, parsed, isWrite: false, describe: step.intent ?? `Run ${step.command}` });
+      previewLines.push(`  ${step.intent ?? step.command}`);
+      continue;
+    }
+
+    if (!isExecutable(step)) {
+      concrete.push({ command: step.command, subcommand: step.subcommand, step, isWrite: true, executable: false });
+      previewLines.push(`  ${step.intent ?? step.command} (resolve-only — you run this one)`);
+      continue;
+    }
+
+    const builder = STEP_BUILDERS[step.command];
+    if (!builder) return { ok: false, error: `sizmo ask doesn't know how to run "${step.command}" yet` };
+    const built = builder(step, ids);
+    if (built.error) return { ok: false, error: `${step.command}${step.subcommand ? ' ' + step.subcommand : ''}: ${built.error}` };
+    concrete.push({ command: step.command, parsed: built.parsed, isWrite: true, executable: true, describe: built.describe });
+    previewLines.push(`  ${built.describe}`);
+  }
+
+  return { ok: true, concrete, previewLines, resolvedContact };
+}
+
+// ── execute: run concretized steps in order via the real registry command. Hard stop on the
+// first non-OK exit code — never continue past a failure. ─────────────────────────────────────
+
+export async function executeSteps(concrete, ctx) {
+  const results = [];
+  for (const step of concrete) {
+    if (step.executable === false) {
+      results.push({ command: step.command, skipped: true, note: 'resolve-only command — not auto-fired' });
+      continue;
+    }
+    let mod;
+    try {
+      mod = await registry[step.command]();
+    } catch (e) {
+      results.push({ command: step.command, code: EXIT.API, error: e.message });
+      break;
+    }
+    let code;
+    try {
+      code = await mod.run(step.parsed, ctx);
+    } catch (e) {
+      if (e instanceof GhlError) {
+        ctx.out.line(`  ✖ ${step.describe ?? step.command}: ${e.message}`);
+        results.push({ command: step.command, code: e.code, error: e.message });
+      } else {
+        ctx.out.line(`  ✖ ${step.describe ?? step.command}: ${e.message}`);
+        results.push({ command: step.command, code: EXIT.API, error: e.message });
+      }
+      break;
+    }
+    results.push({ command: step.command, code: code ?? EXIT.OK });
+    if ((code ?? EXIT.OK) !== EXIT.OK) break; // hard stop — never continue past a failure
+  }
+  return results;
+}
+
+// Re-prints what's about to fire (so a replayed plan is always observable, never silently
+// executed) and, after running, reports every step's actual outcome — not just "it stopped" —
+// so a partial-batch failure never leaves the human unsure which steps already went through
+// (and might otherwise re-run the whole batch, double-firing the ones that already succeeded).
+async function runWithReport(concrete, ctx) {
+  ctx.out.line('');
+  for (const step of concrete) ctx.out.line(`  ${step.describe ?? step.command}`);
+  ctx.out.line('');
+  const results = await executeSteps(concrete, ctx);
+  ctx.out.line('');
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const label = concrete[i]?.describe ?? r.command;
+    if (r.skipped) ctx.out.line(`  — ${label} (not auto-fired)`);
+    else if (!r.code || r.code === EXIT.OK) ctx.out.line(`  ✓ ${label}`);
+    else ctx.out.line(`  ✖ ${label}${r.error ? ` — ${r.error}` : ''}`);
+  }
+  if (results.length < concrete.length) {
+    const remaining = concrete.length - results.length;
+    ctx.out.line(`  ${remaining} step(s) not attempted — fix the error above and re-ask.`);
+  }
+  ctx.out.flush();
+  const failed = results.find(r => r.code && r.code !== EXIT.OK);
+  return failed ? failed.code : EXIT.OK;
 }
 
 export async function run(parsed, ctx) {
-  const intent = parsed._.join(' ').trim();
+  const now = typeof ctx.now === 'function' ? ctx.now() : ctx.now;
+  const intent = (parsed._ ?? []).join(' ').trim();
+
+  // ── bare/typed --confirm: replay the cached plan, never re-resolve ────────────────────────
+  if (ctx.confirmed) {
+    const pending = loadPendingPlan(ctx.cfg.loc, now, ctx);
+    if (pending) {
+      clearPendingPlan(ctx.cfg.loc, ctx); // a stray extra --confirm can't replay an already-fired plan
+      return runWithReport(pending, ctx);
+    }
+    if (!intent) {
+      ctx.out.line('nothing to confirm — run `sizmo ask "..."` first (without --confirm) to preview.');
+      ctx.out.flush();
+      return EXIT.USAGE;
+    }
+    // Fresh sentence + --confirm, no prior preview: resolve and fire in this SAME call (safe —
+    // one resolution, no drift risk since nothing was shown beforehand). Falls through below.
+  }
 
   if (!intent) {
     ctx.out.line('usage: sizmo ask "what you want to do"');
@@ -183,129 +588,128 @@ export async function run(parsed, ctx) {
     ctx.out.line('examples:');
     ctx.out.line('  sizmo ask "who has been waiting longest for a reply"');
     ctx.out.line('  sizmo ask "tag Ana Cruz as follow-up"');
-    ctx.out.line('  sizmo ask "show me unpaid invoices"');
-    ctx.out.line('  sizmo ask "move the Website Package deal to Proposal Sent"');
+    ctx.out.line('  sizmo ask "tag Ana as follow-up and book her Friday at 2pm" --confirm');
+    ctx.out.line('  sizmo ask "move Website Package to Proposal Sent"');
     ctx.out.flush();
     return EXIT.USAGE;
   }
 
-  const aiKey = ctx.cfg.aiKey;
-  const aiProvider = ctx.cfg.aiProvider || 'anthropic';
+  // ── local fast path: bare command names never touch the LLM ───────────────────────────────
+  const quick = quickMatch(intent);
+  let steps, confidence = 1, explanation = null;
 
-  if (!aiKey) {
-    ctx.out.line('sizmo ask requires an AI key in your profile.');
-    ctx.out.line('');
-    ctx.out.line('Setup (pick your provider):');
-    ctx.out.line('  sizmo config set --profile <name> --ai-key "sk-ant-..." --ai-provider anthropic');
-    ctx.out.line('  sizmo config set --profile <name> --ai-key "sk-..." --ai-provider openai');
-    ctx.out.line('');
-    ctx.out.line('Supported: anthropic (default, claude-haiku-4-5-20251001), openai (gpt-4o-mini)');
-    ctx.out.flush();
-    return EXIT.AUTH;
-  }
-
-  // Load CRM model for context (auto-syncs if missing)
-  const model = await ctx.ensureModel();
-  const crmExcerpt = buildCrmExcerpt(model);
-
-  ctx.out.line(`Resolving: "${intent}"...`);
-  ctx.out.flush();
-
-  let resolved;
-  try {
-    resolved = await callLlm({
-      apiKey: aiKey,
-      provider: aiProvider,
-      systemPrompt: buildSystemPrompt(crmExcerpt),
-      userMessage: intent,
-    });
-  } catch (e) {
-    ctx.out.line(`AI error: ${e.message}`);
-    if (e.message?.includes('401') || e.message?.includes('403')) {
-      ctx.out.line('Check your AI key: sizmo config set --profile <name> --ai-key <key>');
+  if (quick) {
+    steps = [{ command: quick.command, subcommand: null, isWrite: false, intent: quick.intent, args: quick.args, fields: {} }];
+  } else {
+    const aiKey = ctx.cfg.aiKey;
+    const aiProvider = ctx.cfg.aiProvider || 'anthropic';
+    if (!aiKey) {
+      ctx.out.line('sizmo ask requires an AI key in your profile (or type an exact command name — see `sizmo schema`).');
+      ctx.out.line('');
+      ctx.out.line('Setup (pick your provider):');
+      ctx.out.line('  sizmo config set --profile <name> --ai-key "sk-ant-..." --ai-provider anthropic');
+      ctx.out.line('  sizmo config set --profile <name> --ai-key "sk-..." --ai-provider openai');
+      ctx.out.flush();
+      return EXIT.AUTH;
     }
+
+    const model = await ctx.ensureModel();
+    const crmExcerpt = buildCrmExcerpt(model);
+    const recentContact = loadLastContact(ctx.cfg.loc, now, ctx);
+
+    ctx.out.line(`Resolving: "${intent}"...`);
     ctx.out.flush();
-    return EXIT.API;
+
+    let resolved;
+    try {
+      resolved = await callLlm({ apiKey: aiKey, provider: aiProvider, systemPrompt: buildSystemPrompt(crmExcerpt, !!recentContact), userMessage: intent });
+    } catch (e) {
+      ctx.out.line(`AI error: ${e.message}`);
+      if (e.message?.includes('401') || e.message?.includes('403')) ctx.out.line('Check your AI key: sizmo config set --profile <name> --ai-key <key>');
+      ctx.out.flush();
+      return EXIT.API;
+    }
+
+    if (!resolved?.steps?.length) {
+      ctx.out.line('Could not resolve — LLM returned no steps. Try rephrasing.');
+      ctx.out.flush();
+      return EXIT.USAGE;
+    }
+    steps = resolved.steps;
+    confidence = resolved.confidence ?? 1;
+    explanation = resolved.explanation ?? null;
   }
 
-  if (!resolved?.command) {
-    ctx.out.line('Could not resolve — LLM returned no command. Try rephrasing.');
-    ctx.out.flush();
-    return EXIT.USAGE;
-  }
-
-  if ((resolved.confidence ?? 1) < 0.7) {
-    const pct = Math.round((resolved.confidence ?? 0) * 100);
-    ctx.out.line(`Low confidence (${pct}%): ${resolved.explanation ?? 'unclear request'}`);
+  if (confidence < 0.7) {
+    ctx.out.line(`Low confidence (${Math.round(confidence * 100)}%): ${explanation ?? 'unclear request'}`);
     ctx.out.line('Try rephrasing, or browse commands: sizmo schema');
     ctx.out.flush();
     return EXIT.USAGE;
   }
 
-  // Contact search — resolve name → ID when LLM needs it
-  if (resolved.requiresContactSearch && resolved.contactQuery) {
-    ctx.out.line(`Searching: "${resolved.contactQuery}"...`);
+  const result = await concretize(steps, ctx, now);
+  if (!result.ok) {
+    ctx.out.line(`Couldn't resolve: ${result.error}`);
+    if (result.candidates) for (const c of result.candidates) ctx.out.line(`  ${c}`);
     ctx.out.flush();
-    try {
-      const r = await ctx.http.get('/contacts/', {
-        query: { locationId: ctx.cfg.loc, search: resolved.contactQuery, limit: 5 },
-      });
-      const contacts = r.j?.contacts ?? [];
-
-      if (contacts.length === 0) {
-        ctx.out.line(`No contact found for "${resolved.contactQuery}"`);
-        ctx.out.line(`Try: sizmo segment --name "${resolved.contactQuery}"`);
-        ctx.out.flush();
-        return EXIT.NOTFOUND;
-      }
-
-      if (contacts.length > 1) {
-        ctx.out.line(`Multiple matches for "${resolved.contactQuery}" — pick one:`);
-        for (const c of contacts) {
-          ctx.out.line(`  ${c.id}  ${[c.firstName, c.lastName].filter(Boolean).join(' ')}  ${c.email ?? ''}`);
-        }
-        ctx.out.line('');
-        ctx.out.line(`Retry with the exact ID:`);
-        ctx.out.line(`  sizmo ask "${intent}" --contact-id ${contacts[0].id}`);
-        ctx.out.flush();
-        return EXIT.USAGE;
-      }
-
-      const contactId = contacts[0].id;
-      const name = [contacts[0].firstName, contacts[0].lastName].filter(Boolean).join(' ');
-      ctx.out.line(`  → ${name} (${contactId})`);
-
-      // Replace placeholder in args with real ID
-      resolved.args = (resolved.args ?? []).map(a =>
-        a === '<contactId>' || a === resolved.contactQuery ? contactId : a
-      );
-      // If no placeholder existed, prepend the ID (tag/note/send take contactId first)
-      if (!(resolved.args ?? []).includes(contactId)) {
-        resolved.args = [contactId, ...(resolved.args ?? [])];
-      }
-    } catch (e) {
-      ctx.out.line(`Contact search failed: ${e.message}`);
-      ctx.out.flush();
-      return EXIT.API;
-    }
+    return EXIT.NOTFOUND;
   }
 
-  const cmdStr = buildCommandStr(resolved);
+  if (result.resolvedContact) saveLastContact(ctx.cfg.loc, result.resolvedContact, now, ctx);
 
-  ctx.out.line('');
-  ctx.out.line(`  ${resolved.intent}`);
-  ctx.out.line(`  → ${cmdStr}`);
+  const anyWrite = result.concrete.some(s => s.isWrite);
 
-  if (resolved.isWrite) {
+  if (!anyWrite) {
+    // Pure read batch — execute immediately, print real output.
+    const results = await executeSteps(result.concrete, ctx);
+    ctx.out.flush();
+    const failed = results.find(r => r.code && r.code !== EXIT.OK);
+    return failed ? failed.code : EXIT.OK;
+  }
+
+  const anyNonExecutable = result.concrete.some(s => s.isWrite && s.executable === false);
+  if (anyNonExecutable && result.concrete.length > 1) {
     ctx.out.line('');
-    ctx.out.line('  Rerun with --confirm to apply:');
+    ctx.out.line("This request mixes something sizmo ask can't fire automatically (invoicing, appointments, or opp update) with other steps.");
+    ctx.out.line('Ask for one thing at a time when it involves those.');
+    ctx.out.flush();
+    return EXIT.USAGE;
+  }
+
+  if (anyNonExecutable) {
+    // Single non-executable write — today's original resolve-and-print behavior.
+    const step = steps[0];
+    const cmdParts = ['sizmo', step.command, step.subcommand].filter(Boolean);
+    for (const [k, v] of Object.entries(step.fields ?? {})) {
+      if (v === true) cmdParts.push(`--${k}`);
+      else cmdParts.push(`--${k}`, String(v).includes(' ') ? `"${v}"` : String(v));
+    }
+    const cmdStr = cmdParts.join(' ');
+    ctx.out.line('');
+    ctx.out.line(`  ${step.intent ?? 'resolved command'}`);
+    ctx.out.line(`  → ${cmdStr}`);
+    ctx.out.line('');
+    ctx.out.line('  Rerun with --confirm to apply (sizmo ask cannot fire this one automatically):');
     ctx.out.line(`  ${cmdStr} --confirm`);
     ctx.out.line('');
     ctx.out.flush();
     return EXIT.CONFIRM;
   }
 
+  // Executable write(s). If this call already carries --confirm (the "fresh sentence + --confirm,
+  // no prior preview" case from the top of run()), fire now — same-call resolution, no drift risk.
+  if (ctx.confirmed) {
+    return runWithReport(result.concrete, ctx);
+  }
+
+  // Preview + cache the concretized plan for a bare `--confirm` replay.
+  savePendingPlan(ctx.cfg.loc, result.concrete, now, ctx);
+  ctx.out.line('');
+  for (const line of result.previewLines) ctx.out.line(line);
+  ctx.out.line('');
+  ctx.out.line('  Rerun with --confirm to apply:');
+  ctx.out.line('  sizmo ask --confirm');
   ctx.out.line('');
   ctx.out.flush();
-  return EXIT.OK;
+  return EXIT.CONFIRM;
 }

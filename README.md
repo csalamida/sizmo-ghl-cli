@@ -33,7 +33,7 @@ Three things it does that nothing else in the ecosystem does:
 
 - **Diff a location.** `sizmo export` turns a GoHighLevel location into one deterministic file; `sizmo diff` shows exactly what changed — or what a push *would* change. GHL snapshots are structurally incapable of this (the single loudest voted GHL fear is push-overwrite anxiety); a file is not. [See the 30-second demo →](examples/demo/)
 - **Answer the Monday questions.** `sizmo brief` prints where money is leaking and who needs a reply today — and never invents a number to do it. A blocked data source is reported as *unknown*, never as zero.
-- **Speak plain English to your CRM.** `sizmo ask "tag Ana as follow-up"` resolves to the exact command — reads run immediately, writes still show a preview and need `--confirm`. Opt-in only (needs an AI key); zero LLM calls without one, and your PIT/contacts/money never leave the machine (see `SECURITY.md`).
+- **Speak plain English to your CRM — it runs, not just resolves.** `sizmo ask "tag Ana as follow-up"` runs a read immediately; a write previews then fires on a bare `sizmo ask --confirm` (no retyping). Chain steps in one sentence — `sizmo ask "tag Ana as follow-up and book her Friday at 2pm"` — and one `--confirm` fires the whole batch in order. Bare command names ("brief", "list forms") skip the AI call entirely. Opt-in only (needs an AI key); zero LLM calls without one, and your PIT/contacts/money never leave the machine — pronoun follow-ups ("her") resolve locally, the AI never sees the real name (see `SECURITY.md`).
 
 Why not the tools you already have:
 
@@ -141,7 +141,7 @@ Command list generated from `sizmo schema` (authoritative — pulled directly fr
 | `sizmo forms [formId]` | List forms, or view a form's recent submissions | `--top N` (default 20, max 100) |
 | `sizmo surveys [surveyId]` | List surveys, or view a survey's recent submissions | `--top N` (default 20, max 100) |
 | `sizmo transactions` | Payment transaction history (read-only) | `--top N`, `--type <entityType>` |
-| `sizmo ask "<intent>"` | Resolve a plain-English request to the exact sizmo command | needs `sizmo config set --ai-key <key>` |
+| `sizmo ask "<intent>"` | Run a plain-English read immediately; preview a write and fire it with a bare `--confirm`. Chains multiple steps in one sentence. | needs `sizmo config set --ai-key <key>` (or an exact command name — skips the AI call) |
 | `sizmo sync` | Refresh the local CRM model (all 12 entities) | `[entity]` (sync one) |
 | `sizmo export` | Dump the location's structure to one deterministic, diffable file | `--out <file>` (else stdout) |
 | `sizmo diff` | Compare an export against live, or two exports — what changed | `sizmo diff <file>` \| `sizmo diff <a> <b>` |
@@ -352,7 +352,9 @@ The JSON `_meta` block in every `crm` response lets agents branch on staleness w
 - **`--dry-run` available on all writes.** Shows the change description without executing. Exits 0.
 - **PIT never in argv.** Credentials are passed via stdin (`--pit-stdin`) or env var (`--pit-env VAR`). Never logged, never echoed raw.
 - **60-second read cache.** Repeated calls within 60s return cached data. `cacheAgeMs` in the envelope tells you how old. Use `--fresh` to bypass.
-- **`sizmo ask` is opt-in and scoped.** With no `--ai-key` set, sizmo makes zero LLM calls. With one set, only your typed request text and CRM *structure* (pipeline/calendar/tag/form/survey/business names + ids) reach your chosen provider — never your PIT, contacts, conversations, or money data.
+- **`sizmo ask` is opt-in and scoped.** With no `--ai-key` set, sizmo makes zero LLM calls. With one set, only your typed request text and CRM *structure* (pipeline/calendar/tag/form/survey/business names + ids) reach your chosen provider — never your PIT, contacts, conversations, or money data. Pronoun follow-ups resolve from a local cache; the AI only ever sees a placeholder token, never a real name.
+- **`sizmo ask`'s confirm never re-asks the AI.** The preview resolves every name to a real id once and caches that exact plan (`~/.config/sizmo/ask-memory/`, 10 min TTL); `--confirm` replays it verbatim — it can't fire something different from what you previewed.
+- **`sizmo ask` can't auto-fire everything.** Invoicing, appointments, and `opp update` still only resolve-and-print (money and scheduling stay a deliberate manual step) — `tag`/`note`/`send`/`contact`/`opp create`/`opp move`/`value create`/`field`/`calendar`/`business` fire directly.
 
 Every claim above is verifiable — see [`SECURITY.md`](SECURITY.md) for the threat model, the self-audit recipes, and how to report a vulnerability. Zero runtime dependencies: what you read is what runs.
 
@@ -364,6 +366,7 @@ Every claim above is verifiable — see [`SECURITY.md`](SECURITY.md) for the thr
 - **Pipeline currency.** GHL opportunity monetary values carry no currency field — they inherit pipeline config. The CLI renders them as-is; cross-currency totals are never summed.
 - **No workflow writes.** This tool has no workflow-authoring capability. Workflow creation stays in GoHighLevel's UI.
 - **`sizmo ask` accuracy depends on your CRM model being synced** (`sizmo sync`) and on the LLM provider you configure — a low-confidence resolution says so and asks you to rephrase rather than guessing at a command.
+- **`sizmo ask` opportunity lookup ("move Ana's deal to Won") searches only that contact's OPEN opportunities** — it can't find or move a won/lost/abandoned one by name.
 
 ## Exit codes
 
