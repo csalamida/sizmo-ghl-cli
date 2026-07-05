@@ -2,21 +2,35 @@
 // Verifies: no-profile happy path (stubbed stdin + fetch), stdin-token never appears in
 // argv/logs, idempotent re-init (no duplicate profile), non-TTY path, edge cases.
 //
-// NOTE on config dir: lib/config.mjs resolves XDG_CONFIG_HOME at MODULE-LOAD time, so every
-// test in a run shares one profiles.json (the env the runner started with). We follow
-// router-verb.test.mjs: resolve that path once and snapshot/restore profiles around each test,
-// rather than swapping XDG per-test (which config.mjs would ignore).
-import { test } from 'node:test';
+// SAFETY: lib/config.mjs actually resolves XDG_CONFIG_HOME LAZILY (at call time, not
+// module-load — fixed in 1.3.0; this file's old comment claiming otherwise was stale), so we
+// redirect it to an isolated temp dir for this file's entire run via before/after. Never touch
+// the real ~/.config/sizmo/ — even a per-test-correct save/restore (which this file already had)
+// isn't safe if ANOTHER test file runs concurrently against the same real path; a version of
+// that exact cross-file collision corrupted a real profile in a sibling test file.
+import { test, before, after } from 'node:test';
 import assert from 'node:assert';
-import { readFileSync, writeFileSync, statSync, mkdirSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { mkdtempSync, readFileSync, writeFileSync, statSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { route } from '../../lib/cli.mjs';
 import { EXIT } from '../../lib/errors.mjs';
 
-const XDG = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
-const CFG_DIR = join(XDG, 'sizmo');
-const PROFILES_PATH = join(CFG_DIR, 'profiles.json');
+let XDG, CFG_DIR, PROFILES_PATH;
+const PREV_XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
+
+before(() => {
+  XDG = mkdtempSync(join(tmpdir(), 'sizmo-init-test-'));
+  process.env.XDG_CONFIG_HOME = XDG;
+  CFG_DIR = join(XDG, 'sizmo');
+  PROFILES_PATH = join(CFG_DIR, 'profiles.json');
+});
+
+after(() => {
+  if (PREV_XDG_CONFIG_HOME === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = PREV_XDG_CONFIG_HOME;
+  try { rmSync(XDG, { recursive: true, force: true }); } catch {}
+});
 
 // Run fn with a clean profiles.json + a stubbed global fetch + cleared env creds.
 // Restores everything (and the original profiles file) afterward.

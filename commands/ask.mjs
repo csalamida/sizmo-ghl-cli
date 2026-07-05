@@ -26,6 +26,7 @@ import { callLlm } from '../lib/llm.mjs';
 import { EXIT, GhlError } from '../lib/errors.mjs';
 import { registry } from '../lib/registry.mjs';
 import { quickMatch } from '../lib/quick-match.mjs';
+import { ENTITY_SPECS } from '../lib/model.mjs';
 import { saveLastContact as _saveLastContact, loadLastContact as _loadLastContact,
          savePendingPlan as _savePendingPlan, loadPendingPlan as _loadPendingPlan,
          clearPendingPlan as _clearPendingPlan } from '../lib/ask-memory.mjs';
@@ -208,7 +209,13 @@ function buildCrmExcerpt(model) {
   return lines.length ? lines.join('\n') : '(no CRM data cached — run: sizmo sync)';
 }
 
-// ── local (cached-model) name→id lookups — no live call, no LLM involvement ────────────────────
+// ── live name→id lookups for field/calendar/business — NOT the local sync cache ────────────────
+// Live-verified: a field/calendar/business created by an earlier ask step (or an earlier separate
+// ask call) isn't in the local model cache until `sizmo sync` runs again — resolving against
+// that cache would fail to find something that demonstrably exists. These three endpoints each
+// return their COMPLETE list in one uncapped call (verified live — customFields and objects even
+// reject a `limit` param outright), so a fresh live fetch costs one extra GET, not a page-by-page
+// crawl, and is reused via `liveCache` when a batch references the same entity type twice.
 
 function normKey(s) { return String(s ?? '').trim().toLowerCase(); }
 
@@ -219,6 +226,26 @@ function findLocalByName(items, name, labelFn = (x) => x.name) {
   if (matches.length === 1) return { item: matches[0] };
   if (matches.length === 0) return { error: `no match for "${name}"` };
   return { error: `"${name}" matches ${matches.length} items — be more specific`, matches };
+}
+
+async function fetchLiveEntity(entityName, ctx, liveCache) {
+  if (liveCache.has(entityName)) return liveCache.get(entityName);
+  const spec = ENTITY_SPECS.find(s => s.name === entityName);
+  const path = spec.buildPath(ctx.cfg.loc);
+  const r = await ctx.http.get(path, spec.version !== '2021-07-28' ? { version: spec.version } : undefined);
+  if (r.code === 401 || r.code === 403) {
+    const result = { error: `${spec.scope} scope required` };
+    liveCache.set(entityName, result);
+    return result;
+  }
+  if (!r.ok) {
+    const result = { error: `couldn't fetch ${entityName} (API ${r.code})` };
+    liveCache.set(entityName, result);
+    return result;
+  }
+  const result = { items: spec.extract(r.j).items };
+  liveCache.set(entityName, result);
+  return result;
 }
 
 // ── live contact + opportunity search (dedupe-aware within one ask invocation) ─────────────────
@@ -420,6 +447,7 @@ function isExecutable(step) {
 
 export async function concretize(steps, ctx, now) {
   const contactCache = new Map(); // normalized query → {id,name} | {error}
+  const liveEntityCache = new Map(); // entity name → {items} | {error} — one live fetch per type per batch
   let resolvedContact = null; // last one actually resolved this call, for memory save
 
   async function resolveContact(query) {
@@ -442,7 +470,6 @@ export async function concretize(steps, ctx, now) {
   }
 
   const model = await ctx.ensureModel();
-  const ents = model?.entities ?? {};
   const pipelineLookup = buildPipelineNameLookup(model);
   const concrete = [];
   const previewLines = [];
@@ -471,19 +498,25 @@ export async function concretize(steps, ctx, now) {
     }
 
     if (step.fieldQuery) {
-      const r = findLocalByName(ents.customFields?.items ?? [], step.fieldQuery);
+      const live = await fetchLiveEntity('customFields', ctx, liveEntityCache);
+      if (live.error) return { ok: false, error: live.error };
+      const r = findLocalByName(live.items, step.fieldQuery);
       if (r.error) return { ok: false, error: r.error, candidates: r.matches?.map(m => `${m.id}  ${m.name}`) };
       ids.fieldId = r.item.id; ids.fieldName = r.item.name;
     }
 
     if (step.calendarQuery) {
-      const r = findLocalByName(ents.calendars?.items ?? [], step.calendarQuery);
+      const live = await fetchLiveEntity('calendars', ctx, liveEntityCache);
+      if (live.error) return { ok: false, error: live.error };
+      const r = findLocalByName(live.items, step.calendarQuery);
       if (r.error) return { ok: false, error: r.error, candidates: r.matches?.map(m => `${m.id}  ${m.name}`) };
       ids.calendarId = r.item.id; ids.calendarName = r.item.name;
     }
 
     if (step.businessQuery) {
-      const r = findLocalByName(ents.businesses?.items ?? [], step.businessQuery);
+      const live = await fetchLiveEntity('businesses', ctx, liveEntityCache);
+      if (live.error) return { ok: false, error: live.error };
+      const r = findLocalByName(live.items, step.businessQuery);
       if (r.error) return { ok: false, error: r.error, candidates: r.matches?.map(m => `${m.id}  ${m.name}`) };
       ids.businessId = r.item.id; ids.businessName = r.item.name;
     }

@@ -14,7 +14,7 @@ A full terminal interface to one GoHighLevel location — **read it, build it, b
 
 | | Commands |
 |---|---|
-| **Ask** (natural language, opt-in AI key) | `ask "who hasn't replied in 3 days"` · `ask "tag Ana as follow-up"` — resolves to the exact command |
+| **Ask** (natural language — your own AI agent, or sizmo's opt-in resolver) | `ask "who hasn't replied in 3 days"` · `ask "tag Ana as follow-up"` — resolves to the exact command |
 | **See** (read-only) | `brief` · `snapshot` · `triage` · `pipeline` · `receivables` · `reconcile` · `booked-not-paid` · `noshow` · `focus` · `segment` · `crm` · `list` (12 entities) · `forms` · `surveys` · `transactions` |
 | **Version** (read-only) | `export` (location → one diffable file) · `diff` (file vs live, or file vs file — *what changed?*) |
 | **Act** | `tag` · `note` · `opp` (create/move/update) · `appointment` (book/cancel) · `send` (SMS/email) |
@@ -33,7 +33,7 @@ Three things it does that nothing else in the ecosystem does:
 
 - **Diff a location.** `sizmo export` turns a GoHighLevel location into one deterministic file; `sizmo diff` shows exactly what changed — or what a push *would* change. GHL snapshots are structurally incapable of this (the single loudest voted GHL fear is push-overwrite anxiety); a file is not. [See the 30-second demo →](examples/demo/)
 - **Answer the Monday questions.** `sizmo brief` prints where money is leaking and who needs a reply today — and never invents a number to do it. A blocked data source is reported as *unknown*, never as zero.
-- **Speak plain English to your CRM — it runs, not just resolves.** `sizmo ask "tag Ana as follow-up"` runs a read immediately; a write previews then fires on a bare `sizmo ask --confirm` (no retyping). Chain steps in one sentence — `sizmo ask "tag Ana as follow-up and book her Friday at 2pm"` — and one `--confirm` fires the whole batch in order. Bare command names ("brief", "list forms") skip the AI call entirely. Opt-in only (needs an AI key); zero LLM calls without one, and your PIT/contacts/money never leave the machine — pronoun follow-ups ("her") resolve locally, the AI never sees the real name (see `SECURITY.md`).
+- **Speak plain English to your CRM — two paths, pick what you already have.** Most people driving sizmo already run an AI coding agent (Claude Code, Codex, Cursor). Point it at this repo — hand it `SKILL.md` — and it drives sizmo's documented flag commands directly (`sizmo tag …`, `sizmo opp move …`): zero extra AI key, zero extra cost, and it's the subscription you're already paying for. If you want the CLI itself to understand plain English with no agent in the loop, that's `sizmo ask`: it runs, not just resolves. `sizmo ask "tag Ana as follow-up"` runs a read immediately; a write previews then fires on a bare `sizmo ask --confirm` (no retyping). Chain steps in one sentence — `sizmo ask "tag Ana as follow-up and book her Friday at 2pm"` — and one `--confirm` fires the whole batch in order, resolving every name (fields, calendars, businesses, contacts) live against the account, never a stale local guess. Bare command names ("brief", "list forms") skip the AI call entirely. `ask` needs its own AI key (`sizmo config set --ai-key`); zero LLM calls without one, and your PIT/contacts/money never leave the machine — pronoun follow-ups ("her") resolve locally, the AI only ever sees a placeholder token, never the real name (see `SECURITY.md`).
 
 Why not the tools you already have:
 
@@ -365,7 +365,7 @@ Every claim above is verifiable — see [`SECURITY.md`](SECURITY.md) for the thr
 - **No-show / booked-not-paid calendar truncation.** GHL's `/calendars/events` endpoint has no pagination cursor. If a calendar returns >= 100 events the result may be silently truncated. A `degraded: true` warning is emitted in that case.
 - **Pipeline currency.** GHL opportunity monetary values carry no currency field — they inherit pipeline config. The CLI renders them as-is; cross-currency totals are never summed.
 - **No workflow writes.** This tool has no workflow-authoring capability. Workflow creation stays in GoHighLevel's UI.
-- **`sizmo ask` accuracy depends on your CRM model being synced** (`sizmo sync`) and on the LLM provider you configure — a low-confidence resolution says so and asks you to rephrase rather than guessing at a command.
+- **`sizmo ask`'s LLM step uses your synced CRM model as context** (which pipelines/calendars/tags/forms/surveys/businesses it knows to suggest) — run `sizmo sync` after adding things so the AI is aware of them. Actual name→id resolution (contacts, opportunities, custom fields, calendars, businesses) is always a live fetch, not the cache, so a just-created entity resolves correctly even before the next sync. Accuracy also depends on the LLM provider you configure — a low-confidence resolution says so and asks you to rephrase rather than guessing at a command.
 - **`sizmo ask` opportunity lookup ("move Ana's deal to Won") searches only that contact's OPEN opportunities** — it can't find or move a won/lost/abandoned one by name.
 
 ## Exit codes
@@ -390,20 +390,16 @@ sizmo brief --profile clientB
 
 See `docs/how-to/multi-client.md` for full workflow.
 
-## Claude Skill
+## Driving sizmo with an AI agent (recommended — no AI key needed)
 
-`SKILL.md` in this repo is a ready-to-load Claude Code skill. It gives any Claude agent the full command reference, safety rules, and agent-use patterns in one file — no manual briefing needed.
+`SKILL.md` in this repo is the full command reference, safety rules, and agent-use patterns in one file — no manual briefing needed. It's the fastest way to get natural language working against sizmo, because your agent (not sizmo) is the one doing the language understanding, using the subscription you already pay for.
 
-**Install it globally (one machine, all projects):**
-
-```sh
-cp SKILL.md ~/.claude/skills/sizmo-cli.md
-```
-
-**Or project-local:**
+**Claude Code — ready-to-load skill:**
 
 ```sh
-cp SKILL.md /your-project/.claude/skills/sizmo-cli.md
+cp SKILL.md ~/.claude/skills/sizmo-cli.md          # global, all projects
+# or
+cp SKILL.md /your-project/.claude/skills/sizmo-cli.md   # project-local
 ```
 
 Once installed, load it in any Claude session:
@@ -412,7 +408,9 @@ Once installed, load it in any Claude session:
 /sizmo-cli
 ```
 
-Claude will know every command, every flag, the confirm-gate pattern, how to read the JSON envelope, and when to stop and ask the human before firing a write. No extra prompting required.
+**Codex, Cursor, or any other coding agent:** `SKILL.md` is plain markdown — no Claude-specific format. Paste it into the agent's context (system prompt, project instructions file, or just tell it to read `SKILL.md` in this repo) and it works the same way: the agent knows every command, every flag, the confirm-gate pattern, how to read the JSON envelope, and when to stop and ask you before firing a write.
+
+Either way, your agent will know every command, every flag, the confirm-gate pattern, how to read the JSON envelope, and when to stop and ask the human before firing a write. No extra prompting required.
 
 If you update sizmo (new commands, changed flags), pull the repo and re-copy `SKILL.md` — the skill tracks the CLI version.
 

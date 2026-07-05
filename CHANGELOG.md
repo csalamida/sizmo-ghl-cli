@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.6] — 2026-07-05
+
+**A full live-verification pass on `sizmo ask` — every executable command (tag, note, contact
+create/upsert/delete, opp create/move, value create, field/calendar/business create/delete) fired
+through the real `concretize()` + `executeSteps()` pipeline against a live account, not just unit
+tests.** Found and fixed the one real gap; README repositioned to match how people actually run
+this thing.
+
+### Fixed
+- **`sizmo ask` resolved custom fields, calendars, and businesses from the periodically-synced
+  local model cache instead of a live fetch.** Creating one of these via `ask` and immediately
+  referencing it by name in the same session (e.g. "delete the field I just made") failed — the
+  cache hadn't caught up. Contacts and opportunities already resolved live; fields/calendars/
+  businesses now do too, via a `fetchLiveEntity()` helper that reuses the existing `ENTITY_SPECS`
+  fetch/extract logic and is memoized per command-batch (a multi-step chain that references the
+  same entity type twice fires one HTTP call, not one per reference).
+
+### Changed
+- **README repositioned around how sizmo is actually driven.** Most users already run an AI coding
+  agent (Claude Code, Codex, Cursor) — pointing it at `SKILL.md` gets natural-language control over
+  sizmo's flag commands with zero extra AI key and zero extra cost. `sizmo ask` (its own opt-in
+  `--ai-key` resolver) is now framed as the second path — for when you want the CLI itself to
+  understand plain English with no agent in the loop — rather than the only one. The "Claude Skill"
+  section is now "Driving sizmo with an AI agent" and documents Codex/Cursor use (`SKILL.md` is
+  plain markdown, not Claude-specific).
+
+### Internal
+- **Test suite could corrupt a real `~/.config/sizmo/profiles.json`.** Three test files
+  (`router-verb`, `config-list-json`, `init`) never redirected `XDG_CONFIG_HOME`, and a
+  `try { return fn() } finally { restore() }` helper didn't `await` the async `fn` — the `finally`
+  restore ran right after `fn` was called, not after it resolved, racing any write `fn` made. Fixed:
+  all three now redirect to an isolated `mkdtempSync` temp dir via `before()`/`after()` hooks for
+  the file's whole run, and the helper is `async` with `return await fn()`. No shipped CLI behavior
+  changed — this only affected contributors running the test suite.
+
+548/548 tests green (12 new).
+
 ## [2.4.5] — 2026-07-05
 
 **A full audit of every hardcoded `limit` in the codebase, prompted directly by "why did you only

@@ -1,27 +1,46 @@
 // test/client/router-verb.test.mjs
 // Tests for routerVerb (auth status/check, config list/use/set/rm).
-
-import { test } from 'node:test';
+//
+// SAFETY: this file exercises `route(['config', ...])`, which writes real profile files via
+// lib/config.mjs. It MUST NEVER touch the user's real ~/.config/sizmo/ — a previous version of
+// this file wrote directly to the real path (backup-then-restore around each test) and a
+// try/finally-around-an-unawaited-async-call race left a test fixture ("test-env-set" /
+// "pit-TENV9999") permanently overwriting a real profile. `before`/`after` below redirect
+// XDG_CONFIG_HOME to an isolated temp dir for this file's entire run — lib/config.mjs resolves
+// its path LAZILY from that env var, so route()'s internal reads/writes follow it automatically.
+import { test, before, after } from 'node:test';
 import assert from 'node:assert';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { route } from '../../lib/cli.mjs';
 import { EXIT } from '../../lib/errors.mjs';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// Resolve the config dir the same way lib/config.mjs does (XDG-aware).
-const XDG = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
-const PROFILES_PATH = join(XDG, 'sizmo', 'profiles.json');
+let XDG, PROFILES_PATH;
+const PREV_XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
 
-function withProfiles(db, fn) {
+before(() => {
+  XDG = mkdtempSync(join(tmpdir(), 'sizmo-router-verb-test-'));
+  process.env.XDG_CONFIG_HOME = XDG;
+  PROFILES_PATH = join(XDG, 'sizmo', 'profiles.json');
+});
+
+after(() => {
+  if (PREV_XDG_CONFIG_HOME === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = PREV_XDG_CONFIG_HOME;
+  try { rmSync(XDG, { recursive: true, force: true }); } catch {}
+});
+
+async function withProfiles(db, fn) {
   let original;
   try { original = readFileSync(PROFILES_PATH, 'utf8'); } catch { original = null; }
   try {
     mkdirSync(join(XDG, 'sizmo'), { recursive: true });
     writeFileSync(PROFILES_PATH, JSON.stringify(db, null, 2), { mode: 0o600 });
-    return fn();
+    return await fn(); // MUST await before finally restores — fn() is async (wraps route());
+                        // restoring before it settles was the exact bug that corrupted a real file.
   } finally {
     if (original !== null) writeFileSync(PROFILES_PATH, original, { mode: 0o600 });
     else { try { rmSync(PROFILES_PATH); } catch {} }

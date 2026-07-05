@@ -1,22 +1,37 @@
 // test/client/config-list-json.test.mjs — config list --json machine output
 // Verifies: returns 0, output parses to {schemaVersion:1, profiles:[...]}, PIT never raw.
-import { test } from 'node:test'; import assert from 'node:assert';
-import { writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os'; import { join } from 'node:path';
+//
+// SAFETY: redirects XDG_CONFIG_HOME to an isolated temp dir for this file's run — see
+// router-verb.test.mjs for why (a version of this exact pattern that wrote directly to the real
+// ~/.config/sizmo/ path corrupted a real profile via an unawaited async race).
+import { test, before, after } from 'node:test'; import assert from 'node:assert';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os'; import { join } from 'node:path';
 import { route } from '../../lib/cli.mjs';
 import { EXIT } from '../../lib/errors.mjs';
 
-// Resolve the config dir the same way lib/config.mjs does (XDG-aware).
-const XDG = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
-const PROFILES_PATH = join(XDG, 'sizmo', 'profiles.json');
+let XDG, PROFILES_PATH;
+const PREV_XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
 
-function withProfiles(db, fn) {
+before(() => {
+  XDG = mkdtempSync(join(tmpdir(), 'sizmo-config-list-test-'));
+  process.env.XDG_CONFIG_HOME = XDG;
+  PROFILES_PATH = join(XDG, 'sizmo', 'profiles.json');
+});
+
+after(() => {
+  if (PREV_XDG_CONFIG_HOME === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = PREV_XDG_CONFIG_HOME;
+  try { rmSync(XDG, { recursive: true, force: true }); } catch {}
+});
+
+async function withProfiles(db, fn) {
   let original;
   try { original = readFileSync(PROFILES_PATH, 'utf8'); } catch { original = null; }
   try {
     mkdirSync(join(XDG, 'sizmo'), { recursive: true });
     writeFileSync(PROFILES_PATH, JSON.stringify(db, null, 2), { mode: 0o600 });
-    return fn();
+    return await fn(); // must await before finally restores — see router-verb.test.mjs
   } finally {
     if (original !== null) writeFileSync(PROFILES_PATH, original, { mode: 0o600 });
     else { try { rmSync(PROFILES_PATH); } catch {} }

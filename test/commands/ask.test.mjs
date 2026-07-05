@@ -34,8 +34,11 @@ const FAKE_MODEL = {
 
 // contactsByQuery: { "ana": [{...}] } — one http fake serving both /contacts/ search and
 // /opportunities/search, call-counted so dedupe can be asserted.
-function makeCtx({ contactsByQuery = {}, contactTotalByQuery = {}, oppsByContact = {}, confirmed = false, askMemoryDir, httpOverrides = {} } = {}) {
+// field/calendar/business queries now hit a LIVE fetch (not the model cache) — served here from
+// the same FAKE_MODEL fixture data, just rerouted to the real endpoint paths ENTITY_SPECS uses.
+function makeCtx({ contactsByQuery = {}, contactTotalByQuery = {}, oppsByContact = {}, confirmed = false, askMemoryDir, httpOverrides = {}, liveEntities = FAKE_MODEL.entities } = {}) {
   let contactCalls = 0;
+  let fieldFetchCalls = 0, calendarFetchCalls = 0, businessFetchCalls = 0;
   let printed = '';
   const http = {
     get: async (path, opts) => {
@@ -53,6 +56,18 @@ function makeCtx({ contactsByQuery = {}, contactTotalByQuery = {}, oppsByContact
         const opps = oppsByContact[cid] ?? [];
         return { code: 200, ok: true, j: { opportunities: opps } };
       }
+      if (path === `/locations/${LOC}/customFields?model=all`) {
+        fieldFetchCalls++;
+        return { code: 200, ok: true, j: { customFields: liveEntities.customFields?.items ?? [] } };
+      }
+      if (path === `/calendars/?locationId=${LOC}`) {
+        calendarFetchCalls++;
+        return { code: 200, ok: true, j: { calendars: liveEntities.calendars?.items ?? [] } };
+      }
+      if (path === `/businesses/?locationId=${LOC}&limit=100`) {
+        businessFetchCalls++;
+        return { code: 200, ok: true, j: { businesses: liveEntities.businesses?.items ?? [] } };
+      }
       if (httpOverrides.get) return httpOverrides.get(path, opts);
       return { code: 200, ok: true, j: {} };
     },
@@ -67,7 +82,10 @@ function makeCtx({ contactsByQuery = {}, contactTotalByQuery = {}, oppsByContact
     _askMemoryDir: askMemoryDir,
     ensureModel: async () => FAKE_MODEL,
   };
-  return { ctx, getPrinted: () => printed, getContactCalls: () => contactCalls };
+  return {
+    ctx, getPrinted: () => printed, getContactCalls: () => contactCalls,
+    getFieldFetchCalls: () => fieldFetchCalls,
+  };
 }
 
 // ── concretize: contact resolution ──────────────────────────────────────────────────────────
@@ -217,7 +235,7 @@ test('concretize: opp move pipeline hint disambiguates multiple opportunities', 
 
 // ── local (cached-model) lookups: field / calendar / business — no live call ────────────────
 
-test('concretize: field/calendar/business delete resolve locally by name, no HTTP call', async () => {
+test('concretize: field/calendar/business delete resolve by a LIVE fetch, not the (possibly stale) model cache', async () => {
   const { ctx, getContactCalls } = makeCtx({});
   const steps = [
     { command: 'field', subcommand: 'delete', fieldQuery: 'Lead Source' },
@@ -229,7 +247,42 @@ test('concretize: field/calendar/business delete resolve locally by name, no HTT
   assert.deepEqual(r.concrete[0].parsed, { _: ['delete', 'fld_1'] });
   assert.deepEqual(r.concrete[1].parsed, { _: ['delete', 'cal_1'] });
   assert.deepEqual(r.concrete[2].parsed, { _: ['delete', 'biz_1'] });
-  assert.equal(getContactCalls(), 0);
+  assert.equal(getContactCalls(), 0, 'contact search must not fire for these — different lookup entirely');
+});
+
+test('concretize: resolves a field/calendar/business the model cache does NOT have — live-verified fix for "just created, ask can\'t find it yet"', async () => {
+  // The model cache (ctx.ensureModel → FAKE_MODEL) only knows about "Lead Source"/"Discovery
+  // Calls"/"Acme Co". These three exist ONLY in the live fetch — simulating something created
+  // moments ago that a stale sync hasn't picked up. Before the fix, this failed with
+  // "no match for X" even though the thing genuinely existed.
+  const freshEntities = {
+    customFields: { items: [{ id: 'fld_brand_new', name: 'Just Created Field' }] },
+    calendars: { items: [{ id: 'cal_brand_new', name: 'Just Created Calendar' }] },
+    businesses: { items: [{ id: 'biz_brand_new', name: 'Just Created Biz' }] },
+  };
+  const { ctx } = makeCtx({ liveEntities: freshEntities });
+  const steps = [
+    { command: 'field', subcommand: 'delete', fieldQuery: 'Just Created Field' },
+    { command: 'calendar', subcommand: 'delete', calendarQuery: 'Just Created Calendar' },
+    { command: 'business', subcommand: 'delete', businessQuery: 'Just Created Biz' },
+  ];
+  const r = await concretize(steps, ctx, NOW);
+  assert.equal(r.ok, true, r.ok ? '' : r.error);
+  assert.deepEqual(r.concrete[0].parsed, { _: ['delete', 'fld_brand_new'] });
+  assert.deepEqual(r.concrete[1].parsed, { _: ['delete', 'cal_brand_new'] });
+  assert.deepEqual(r.concrete[2].parsed, { _: ['delete', 'biz_brand_new'] });
+});
+
+test('concretize: a live entity fetch is reused within one batch — one HTTP call, not one per step', async () => {
+  const { ctx, getFieldFetchCalls } = makeCtx({});
+  // Two field-delete steps in the same batch ("delete field X and field Y") both need a
+  // customFields lookup — must reuse the one fetch, not fire it twice.
+  const steps = [
+    { command: 'field', subcommand: 'delete', fieldQuery: 'Lead Source' },
+    { command: 'field', subcommand: 'delete', fieldQuery: 'Lead Source' },
+  ];
+  await concretize(steps, ctx, NOW);
+  assert.equal(getFieldFetchCalls(), 1);
 });
 
 test('concretize: local lookup with duplicate names aborts rather than picking one', async () => {
