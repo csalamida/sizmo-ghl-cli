@@ -46,7 +46,10 @@ export async function run(args, ctx) {
     throw new GhlError(`note write failed — HTTP ${r.code}: ${(r.txt || '').slice(0, 200)}`, EXIT.API);
   }
 
-  ctx.out.data({ status: 'ok', command: 'note', contactId, noteId: r.j?.id ?? null });
+  // GHL wraps the created note under a "note" key — { note: { id, ... }, traceId } — not flat.
+  // Verified live 2026-07-05: reading r.j?.id (flat) always returned null even though the note
+  // itself wrote correctly; the write worked, only the id echoed back in --json was ever wrong.
+  ctx.out.data({ status: 'ok', command: 'note', contactId, noteId: r.j?.note?.id ?? null });
   ctx.out.line(`  note added to contact ${contactId}`);
   return EXIT.OK;
 }

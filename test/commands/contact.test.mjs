@@ -123,3 +123,46 @@ test('contact upsert: 401 → AUTH + contacts.write guidance', async () => {
   await assert.rejects(() => run({ _: ['upsert'], email: 'a@b.co' }, ctx),
     (e) => { assert.equal(e.code, EXIT.AUTH); assert.match(e.message, /contacts\.write/); return true; });
 });
+
+// GHL's /contacts/upsert treats `tags` as the FULL desired list, not additive — verified live
+// 2026-07-05: upserting an existing contact with --tag "x" wiped every other tag it had. sizmo
+// now looks the contact up first and merges --tag's value into its existing tags before sending.
+test('contact upsert --tag: merges with the existing contact\'s current tags — does not wipe them', async () => {
+  const fixture = {
+    'GET /contacts/?locationId=L-TEST&query=a%40b.co&limit=20': {
+      status: 200, j: { contacts: [{ id: 'up-1', email: 'a@b.co', tags: ['vip', 'source-fb'] }] },
+    },
+    'POST /contacts/upsert': { status: 200, j: { contact: { id: 'up-1' }, new: false } },
+  };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture });
+  const code = await run({ _: ['upsert'], email: 'a@b.co', tag: 'follow-up' }, ctx);
+  assert.equal(code, EXIT.OK);
+  const body = getCalledBodies().find(b => b.path === '/contacts/upsert').body;
+  assert.deepEqual(new Set(body.tags), new Set(['vip', 'source-fb', 'follow-up']), 'existing tags preserved, new tag added');
+});
+
+test('contact upsert --tag preview (no --confirm) names the merge so nothing is a surprise', async () => {
+  const fixture = {
+    'GET /contacts/?locationId=L-TEST&query=a%40b.co&limit=20': {
+      status: 200, j: { contacts: [{ id: 'up-1', email: 'a@b.co', tags: ['vip', 'source-fb'] }] },
+    },
+  };
+  const { ctx, getPrinted } = makeFakeCtx({ confirmed: false, fixture });
+  const code = await run({ _: ['upsert'], email: 'a@b.co', tag: 'follow-up' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  const changes = JSON.parse(getPrinted()).data.changes;
+  assert.match(changes.find(c => c.includes('tags:')), /merged with 2 existing tag/);
+});
+
+test('contact upsert --tag on a brand-new contact (no match found): sends just the given tag, no merge needed', async () => {
+  const fixture = {
+    'GET /contacts/?locationId=L-TEST&query=new%40b.co&limit=20': { status: 200, j: { contacts: [] } },
+    'POST /contacts/upsert': { status: 200, j: { contact: { id: 'up-2' }, new: true } },
+  };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture });
+  const code = await run({ _: ['upsert'], email: 'new@b.co', tag: 'follow-up' }, ctx);
+  assert.equal(code, EXIT.OK);
+  const body = getCalledBodies().find(b => b.path === '/contacts/upsert').body;
+  assert.deepEqual(body.tags, ['follow-up']);
+});

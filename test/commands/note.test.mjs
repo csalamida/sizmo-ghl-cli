@@ -29,14 +29,20 @@ test('note: no --confirm → exit 4 + envelope, no write fired', async () => {
 
 // ── --confirm → write fires ───────────────────────────────────────────────────
 
-test('note: --confirm → POST fires once, exit 0', async () => {
+test('note: --confirm → POST fires once, exit 0, noteId read from the real nested shape', async () => {
   const fixture = {
-    [`POST /contacts/${CONTACT}/notes`]: { status: 200, j: { id: 'note-abc' } },
+    // GHL's real response nests the created note under a "note" key — verified live
+    // 2026-07-05 (POST /contacts/:id/notes → { note: { id, ... }, traceId }), not flat.
+    // A flat { id: ... } mock here would hide the exact bug this caught: noteId always null.
+    [`POST /contacts/${CONTACT}/notes`]: { status: 200, j: { note: { id: 'note-abc' } } },
   };
-  const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true, fixture });
+  const { ctx, getCalledWrites, getPrinted } = makeFakeCtx({ confirmed: true, fixture });
   const code = await run({ _: [CONTACT], text: 'Called and left voicemail' }, ctx);
+  ctx.out.flush();
   assert.equal(code, EXIT.OK);
   assert.equal(getCalledWrites().filter(w => w.startsWith('POST')).length, 1);
+  const envelope = JSON.parse(getPrinted());
+  assert.equal(envelope.data.noteId, 'note-abc', 'noteId must be read from the nested note.id, not a flat id');
 });
 
 // ── scope floor ──────────────────────────────────────────────────────────────

@@ -69,24 +69,72 @@ test('opp create: request body includes locationId and pipelineStageId (NOT stag
   assert.equal(body.stageId, undefined, 'must NOT send the wrong field name');
 });
 
+// A model miss now falls back to a live fetch (2026-07-05 fix) before declaring NOTFOUND —
+// mirror MODEL's content so the "genuinely unknown" tests below still prove nothing found live.
+const LIVE_PIPELINES_FIXTURE = {
+  'GET /opportunities/pipelines?locationId=L-TEST': {
+    status: 200, j: { pipelines: [
+      { id: 'pl-001', name: 'Main Sales', stages: [
+        { id: 'st-001', name: 'New Lead', position: 0 },
+        { id: 'st-002', name: 'Won', position: 1 },
+      ] },
+    ] },
+  },
+};
+
 // ── opp create — unknown pipeline → exit NOTFOUND ────────────────────────────
 
-test('opp create: unknown pipeline → exit NOTFOUND (exit 4)', async () => {
-  const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL });
+test('opp create: unknown pipeline → falls back to a live fetch, still NOTFOUND when truly absent there too', async () => {
+  const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL, fixture: LIVE_PIPELINES_FIXTURE });
   await assert.rejects(
     () => run({ _: ['create'], name: 'X', pipeline: 'Unknown Pipeline', stage: 'New Lead', contact: 'c' }, ctx),
     (e) => { assert.equal(e.code, EXIT.NOTFOUND); assert.ok(/unknown pipeline/i.test(e.message)); return true; }
   );
 });
 
+test('opp create: resolves a pipeline the model does NOT have via the live fallback', async () => {
+  const fixture = {
+    'GET /opportunities/pipelines?locationId=L-TEST': {
+      status: 200, j: { pipelines: [{ id: 'pl-999', name: 'Brand New Pipeline', stages: [{ id: 'st-999', name: 'Intake', position: 0 }] }] },
+    },
+    'POST /opportunities/': { status: 200, j: { opportunity: { id: 'opp-live-1' } } },
+  };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture });
+  const code = await run({ _: ['create'], name: 'X', pipeline: 'Brand New Pipeline', stage: 'Intake', contact: 'c' }, ctx);
+  assert.equal(code, EXIT.OK);
+  const body = getCalledBodies().find(b => b.path === '/opportunities/').body;
+  assert.equal(body.pipelineId, 'pl-999');
+  assert.equal(body.pipelineStageId, 'st-999');
+});
+
 // ── opp create — unknown stage → exit NOTFOUND ───────────────────────────────
 
-test('opp create: unknown stage → exit NOTFOUND (exit 4)', async () => {
-  const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL });
+test('opp create: unknown stage → falls back to a live fetch, still NOTFOUND when truly absent there too', async () => {
+  const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL, fixture: LIVE_PIPELINES_FIXTURE });
   await assert.rejects(
     () => run({ _: ['create'], name: 'X', pipeline: 'Main Sales', stage: 'Nonexistent Stage', contact: 'c' }, ctx),
     (e) => { assert.equal(e.code, EXIT.NOTFOUND); assert.ok(/unknown stage/i.test(e.message)); return true; }
   );
+});
+
+test('opp create: resolves a stage the model does NOT have (existing pipeline, new stage) via the live fallback', async () => {
+  const fixture = {
+    'GET /opportunities/pipelines?locationId=L-TEST': {
+      status: 200, j: { pipelines: [
+        { id: 'pl-001', name: 'Main Sales', stages: [
+          { id: 'st-001', name: 'New Lead', position: 0 },
+          { id: 'st-002', name: 'Won', position: 1 },
+          { id: 'st-003', name: 'Brand New Stage', position: 2 },
+        ] },
+      ] },
+    },
+    'POST /opportunities/': { status: 200, j: { opportunity: { id: 'opp-live-2' } } },
+  };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture });
+  const code = await run({ _: ['create'], name: 'X', pipeline: 'Main Sales', stage: 'Brand New Stage', contact: 'c' }, ctx);
+  assert.equal(code, EXIT.OK);
+  const body = getCalledBodies().find(b => b.path === '/opportunities/').body;
+  assert.equal(body.pipelineStageId, 'st-003');
 });
 
 // ── opp create — 401/403 scope floor ─────────────────────────────────────────
@@ -130,12 +178,32 @@ test('opp move: request body uses pipelineStageId (NOT stageId) — verified liv
 
 // ── opp move — unknown stage ──────────────────────────────────────────────────
 
-test('opp move: unknown stage → exit NOTFOUND', async () => {
-  const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL });
+test('opp move: unknown stage → falls back to a live fetch, still NOTFOUND when truly absent there too', async () => {
+  const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL, fixture: LIVE_PIPELINES_FIXTURE });
   await assert.rejects(
     () => run({ _: ['move', 'opp-123'], stage: 'Ghost Stage' }, ctx),
     (e) => { assert.equal(e.code, EXIT.NOTFOUND); assert.ok(/unknown stage/i.test(e.message)); return true; }
   );
+});
+
+test('opp move: resolves a stage the model does NOT have via the live fallback', async () => {
+  const fixture = {
+    'GET /opportunities/pipelines?locationId=L-TEST': {
+      status: 200, j: { pipelines: [
+        { id: 'pl-001', name: 'Main Sales', stages: [
+          { id: 'st-001', name: 'New Lead', position: 0 },
+          { id: 'st-002', name: 'Won', position: 1 },
+          { id: 'st-003', name: 'Brand New Stage', position: 2 },
+        ] },
+      ] },
+    },
+    'PUT /opportunities/opp-123': { status: 200, j: {} },
+  };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture });
+  const code = await run({ _: ['move', 'opp-123'], stage: 'Brand New Stage' }, ctx);
+  assert.equal(code, EXIT.OK);
+  const body = getCalledBodies().find(b => b.method === 'PUT').body;
+  assert.equal(body.pipelineStageId, 'st-003');
 });
 
 // ── opp move — 403 scope floor ────────────────────────────────────────────────

@@ -26,7 +26,7 @@ import { callLlm } from '../lib/llm.mjs';
 import { EXIT, GhlError } from '../lib/errors.mjs';
 import { registry } from '../lib/registry.mjs';
 import { quickMatch } from '../lib/quick-match.mjs';
-import { ENTITY_SPECS } from '../lib/model.mjs';
+import { fetchLiveEntity } from '../lib/model.mjs';
 import { saveLastContact as _saveLastContact, loadLastContact as _loadLastContact,
          savePendingPlan as _savePendingPlan, loadPendingPlan as _loadPendingPlan,
          clearPendingPlan as _clearPendingPlan } from '../lib/ask-memory.mjs';
@@ -226,26 +226,6 @@ function findLocalByName(items, name, labelFn = (x) => x.name) {
   if (matches.length === 1) return { item: matches[0] };
   if (matches.length === 0) return { error: `no match for "${name}"` };
   return { error: `"${name}" matches ${matches.length} items — be more specific`, matches };
-}
-
-async function fetchLiveEntity(entityName, ctx, liveCache) {
-  if (liveCache.has(entityName)) return liveCache.get(entityName);
-  const spec = ENTITY_SPECS.find(s => s.name === entityName);
-  const path = spec.buildPath(ctx.cfg.loc);
-  const r = await ctx.http.get(path, spec.version !== '2021-07-28' ? { version: spec.version } : undefined);
-  if (r.code === 401 || r.code === 403) {
-    const result = { error: `${spec.scope} scope required` };
-    liveCache.set(entityName, result);
-    return result;
-  }
-  if (!r.ok) {
-    const result = { error: `couldn't fetch ${entityName} (API ${r.code})` };
-    liveCache.set(entityName, result);
-    return result;
-  }
-  const result = { items: spec.extract(r.j).items };
-  liveCache.set(entityName, result);
-  return result;
 }
 
 // ── live contact + opportunity search (dedupe-aware within one ask invocation) ─────────────────

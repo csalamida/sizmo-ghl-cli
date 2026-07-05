@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.7] — 2026-07-06
+
+**A full live-fire sweep of every single command in the CLI — all 16 reads, all 12 `list` entities,
+`export`/`diff`, and every write (contact/tag/note/opp/appointment/send/field/value/calendar/
+business/invoice) — fired against a real GoHighLevel account, each verified independently (a raw
+API read-back, not sizmo's own success message). Found and fixed 4 real bugs.**
+
+### Fixed
+- **`sizmo contact upsert --tag X` on an EXISTING contact replaced its entire tag list instead of
+  adding to it** — verified live: a contact with 2 existing tags was left with only the new one
+  after an upsert. This is the most serious finding in this release: a normal, successful-looking
+  command silently erasing a contact's tag/segmentation history. Fixed — `upsert` now looks the
+  contact up first (same email/phone key it already matches on) and merges the given tag(s) into
+  whatever it already has; the confirm preview now says so explicitly ("merged with N existing
+  tag(s) — nothing removed").
+- **`sizmo note` always returned `noteId: null`.** The note itself wrote correctly; only the id
+  echoed back in `--json` was wrong. GoHighLevel nests the created note under a `note` key
+  (`{ note: { id, ... } }`), and the code read a flat `.id`. Fixed.
+- **`sizmo appointment book --calendar` and `sizmo opp create/move --pipeline/--stage` failed with
+  "unknown calendar/pipeline/stage" on anything created earlier in the same session** — the exact
+  same stale-local-cache gap fixed for `sizmo ask` in 2.4.6, just still present in these two direct
+  (non-`ask`) commands. Both now fall back to a live fetch on a cache miss, via the same
+  `fetchLiveEntity()` helper (moved from `ask.mjs` into `lib/model.mjs` so all three call sites
+  share one implementation instead of three copies).
+- **`list` overview showed Custom Values as `✖`** (the same glyph used everywhere else for "blocked,
+  missing scope") purely because that entity has no precomputed count — it's fetched live, not
+  cached, and was never actually blocked. Now shows `·` instead of `✖` for that case.
+- **`sizmo api`'s raw escape hatch force-injected `locationId` into every request**, which 422s on
+  sub-resource endpoints that don't accept it (e.g. `/contacts/:id/notes`). Added `--no-loc` to skip
+  the auto-injection.
+
+556/556 tests green (16 new).
+
 ## [2.4.6] — 2026-07-05
 
 **A full live-verification pass on `sizmo ask` — every executable command (tag, note, contact

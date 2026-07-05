@@ -77,7 +77,31 @@ async function upsertContact(args, ctx) {
   if (!email && !phone) {
     throw new GhlError('contact upsert needs --email or --phone (the de-dupe key)', EXIT.USAGE, 'sizmo contact upsert --email you@co.com --name "Jane Doe"');
   }
-  const tags = args.tag ? String(args.tag).split(',').map(s => s.trim()).filter(Boolean) : undefined;
+  let tags = args.tag ? String(args.tag).split(',').map(s => s.trim()).filter(Boolean) : undefined;
+
+  // GHL's /contacts/upsert treats `tags` as the COMPLETE desired list, not an addition — verified
+  // live 2026-07-05: upserting an existing contact with --tag "x" replaced its entire existing tag
+  // set with just ["x"]. Silently wiping a contact's tags is exactly the kind of accident this CLI
+  // is supposed to be incapable of, so look the contact up first (same email/phone key upsert
+  // itself matches on) and merge --tag's value into whatever tags it already has.
+  let existingTags = [];
+  let mergedWithExisting = false;
+  if (tags) {
+    const key = email || phone;
+    const found = await ctx.http.get('/contacts/', { query: { locationId: ctx.cfg.loc, query: key, limit: 20 } });
+    if (found.ok) {
+      const match = (found.j?.contacts ?? []).find(c =>
+        (email && c.email && c.email.toLowerCase() === email.toLowerCase()) ||
+        (phone && c.phone === phone)
+      );
+      if (match?.tags?.length) {
+        existingTags = match.tags;
+        const merged = new Set([...existingTags, ...tags]);
+        if (merged.size > tags.length) mergedWithExisting = true;
+        tags = [...merged];
+      }
+    }
+  }
 
   const body = {
     locationId: ctx.cfg.loc,
@@ -94,7 +118,7 @@ async function upsertContact(args, ctx) {
   const changes = [
     `Upsert contact on ${email ? 'email' : 'phone'} ${email || phone}`,
     `  → updates the matching contact, or creates it if none exists: ${who}`,
-    ...(tags ? [`  tags: ${tags.join(', ')}`] : []),
+    ...(tags ? [`  tags: ${tags.join(', ')}${mergedWithExisting ? ` (merged with ${existingTags.length} existing tag(s) — nothing removed)` : ''}`] : []),
   ];
   const parts = ['sizmo contact upsert'];
   for (const [flag, v] of [['--name', name], ['--first', first], ['--last', last], ['--email', email], ['--phone', phone], ['--tag', args.tag]]) {

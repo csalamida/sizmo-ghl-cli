@@ -1,11 +1,13 @@
 // commands/opp.mjs — create, move, or update a pipeline opportunity.
 // Scope required: opportunities.write
-// Pipeline and stage names are resolved to IDs via the CRM model.
+// Pipeline and stage names are resolved to IDs via the CRM model, falling back to a live fetch
+// on a cache miss — verified live 2026-07-05: same gap as appointment.mjs's calendar resolution
+// and sizmo ask's field/calendar/business resolution, just for pipelines/stages here.
 // NEVER fires without --confirm. No-confirm → exit 5 (CONFIRM) + envelope.
 // 401/403 → exit 3 with scope guidance.
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
-import { isStale } from '../lib/model.mjs';
+import { isStale, fetchLiveEntity } from '../lib/model.mjs';
 
 export const meta = {
   name: 'opp',
@@ -81,9 +83,17 @@ export async function run(args, ctx) {
     if (!stName)  throw new GhlError('opp create requires --stage',    EXIT.USAGE);
     if (!contact) throw new GhlError('opp create requires --contact',  EXIT.USAGE);
 
-    // Resolve names → IDs via model
+    // Resolve names → IDs via model, falling back to a live fetch on a miss (the pipeline/stage
+    // may have been created earlier in this same session, before the model last re-synced).
+    // One live cache shared across both lookups below — a stage-resolution miss right after a
+    // pipeline-resolution live fetch reuses that same fetch instead of firing a second one.
     const model = await ctx.ensureModel();
-    const pl    = resolvePipelineByName(plName, model);
+    const liveCache = new Map();
+    let pl = resolvePipelineByName(plName, model);
+    if (!pl) {
+      const live = await fetchLiveEntity('pipelines', ctx, liveCache);
+      if (!live.error) pl = live.items.find(p => p.name === plName) ?? null;
+    }
     if (!pl) {
       throw new GhlError(
         `unknown pipeline '${plName}' — run sizmo crm pipelines`,
@@ -91,7 +101,16 @@ export async function run(args, ctx) {
         'sizmo crm pipelines to list available pipelines'
       );
     }
-    const stage = resolveStageByName(stName, pl);
+    let stage = resolveStageByName(stName, pl);
+    if (!stage) {
+      // pl itself may be current but its stages stale (a new stage added after last sync) —
+      // re-check against a live pipelines fetch before giving up.
+      const live = await fetchLiveEntity('pipelines', ctx, liveCache);
+      if (!live.error) {
+        const livePl = live.items.find(p => p.name === plName);
+        if (livePl) stage = resolveStageByName(stName, livePl);
+      }
+    }
     if (!stage) {
       throw new GhlError(
         `unknown stage '${stName}' in pipeline '${plName}' — run sizmo crm pipelines`,
@@ -155,7 +174,16 @@ export async function run(args, ctx) {
     if (!stName) throw new GhlError('opp move requires --stage', EXIT.USAGE);
 
     const model = await ctx.ensureModel();
-    const found = resolveStageGlobal(stName, model);
+    let found = resolveStageGlobal(stName, model);
+    if (!found) {
+      const live = await fetchLiveEntity('pipelines', ctx, new Map());
+      if (!live.error) {
+        for (const pl of live.items) {
+          const stage = resolveStageByName(stName, pl);
+          if (stage) { found = { pipeline: pl, stage }; break; }
+        }
+      }
+    }
     if (!found) {
       throw new GhlError(
         `unknown stage '${stName}' — run sizmo crm pipelines`,

@@ -67,12 +67,32 @@ test('appointment book: request body includes locationId — verified live, GHL 
 
 // ── book — unknown calendar ───────────────────────────────────────────────────
 
-test('appointment book: unknown calendar → exit NOTFOUND', async () => {
-  const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL });
+test('appointment book: unknown calendar → falls back to a live fetch, still NOTFOUND when truly absent there too', async () => {
+  // A model miss now triggers a live fallback fetch (2026-07-05 fix) before declaring NOTFOUND —
+  // mock that call returning the same one calendar, so "Mystery Calendar" is genuinely nowhere.
+  const fixture = { 'GET /calendars/?locationId=L-TEST': { status: 200, j: { calendars: [{ id: 'cal-001', name: 'Coaching Calls' }] } } };
+  const { ctx } = makeFakeCtx({ confirmed: false, model: MODEL, fixture });
   await assert.rejects(
     () => run({ _: ['book'], calendar: 'Mystery Calendar', contact: CONTACT, start: START }, ctx),
     (e) => { assert.equal(e.code, EXIT.NOTFOUND); assert.ok(/unknown calendar/i.test(e.message)); return true; }
   );
+});
+
+test('appointment book: resolves a calendar the model does NOT have via the live fallback — the actual bug this fixes', async () => {
+  // "Brand New Calendar" exists only in the live fetch, not in MODEL — proves a calendar created
+  // earlier in the same session (before the next sync) can still be booked on immediately.
+  const fixture = {
+    'GET /calendars/?locationId=L-TEST': { status: 200, j: { calendars: [
+      { id: 'cal-001', name: 'Coaching Calls' },
+      { id: 'cal-999', name: 'Brand New Calendar' },
+    ] } },
+    'POST /calendars/events/appointments': { status: 200, j: { id: 'appt-live-1' } },
+  };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture });
+  const code = await run({ _: ['book'], calendar: 'Brand New Calendar', contact: CONTACT, start: START }, ctx);
+  assert.equal(code, EXIT.OK);
+  const body = getCalledBodies().find(b => b.path === '/calendars/events/appointments').body;
+  assert.equal(body.calendarId, 'cal-999');
 });
 
 // ── book — invalid start ───────────────────────────────────────────────────────

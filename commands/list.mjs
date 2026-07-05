@@ -96,8 +96,12 @@ function listOverview(ents, ctx) {
     if (ents[key]?.blocked) return null;
     return (ents[key]?.items ?? []).length;
   };
-  const row = (label, count, cmd) =>
-    ctx.out.line(`  ${pad(label, 16)}${count != null ? String(count).padStart(4) : '  ✖'}    sizmo list ${cmd}`);
+  const row = (label, count, cmd) => {
+    // ✖ means "blocked, missing scope" everywhere else in this CLI — never reuse it for
+    // "not cached, fetched live on demand." That's a different, non-error state (below).
+    const display = count === 'live' ? '   ·' : (count != null ? String(count).padStart(4) : '  ✖');
+    ctx.out.line(`  ${pad(label, 16)}${display}    sizmo list ${cmd}`);
+  };
 
   ctx.out.line('');
   ctx.out.line('  CRM ENTITIES');
@@ -106,7 +110,7 @@ function listOverview(ents, ctx) {
   row('Calendars',     cnt('calendars'),    'calendars');
   row('Tags',          cnt('tags'),         'tags');
   row('Custom Fields', cnt('customFields'), 'fields');
-  row('Custom Values', null,                'values  (live)');
+  row('Custom Values', 'live',               'values  (live)');
   row('Users',         cnt('users'),        'users');
   ctx.out.line('');
   ctx.out.line('  CONTENT & COMMERCE');

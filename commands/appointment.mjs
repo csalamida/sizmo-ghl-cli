@@ -1,10 +1,14 @@
 // commands/appointment.mjs — book or cancel a calendar appointment.
 // Scope required: calendars.write
-// Calendar name resolved to ID via CRM model.
+// Calendar name resolved to ID via CRM model, falling back to a live fetch on a cache miss —
+// verified live 2026-07-05: booking on a calendar created earlier in the same session failed
+// with "unknown calendar" because the model hadn't re-synced yet. Same gap `sizmo ask` had for
+// field/calendar/business, just in this direct (non-ask) command path too.
 // NEVER fires without --confirm. No-confirm → exit 5 (CONFIRM) + envelope.
 // 401/403 → exit 3 with scope guidance.
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
+import { fetchLiveEntity } from '../lib/model.mjs';
 
 export const meta = {
   name: 'appointment',
@@ -58,9 +62,14 @@ export async function run(args, ctx) {
       throw new GhlError(`appointment book: invalid --start '${start}' — must be ISO 8601 (e.g. 2026-06-15T10:00:00Z)`, EXIT.USAGE);
     }
 
-    // Resolve calendar name → id via model
+    // Resolve calendar name → id via model, falling back to a live fetch on a miss (the model
+    // may simply not have caught up yet with a calendar created earlier in this same session).
     const model = await ctx.ensureModel();
-    const cal   = resolveCalendarByName(calName, model);
+    let cal = resolveCalendarByName(calName, model);
+    if (!cal) {
+      const live = await fetchLiveEntity('calendars', ctx, new Map());
+      if (!live.error) cal = live.items.find(c => c.name === calName) ?? null;
+    }
     if (!cal) {
       throw new GhlError(
         `unknown calendar '${calName}' — run sizmo crm calendars`,

@@ -40,3 +40,21 @@ test('list businesses: same distinction holds for a different entity (not links-
   assert.equal(code, EXIT.API);
   assert.match(blocked.getPrinted(), /API error 500/);
 });
+
+// Caught live 2026-07-05: the overview's row() reused ✖ (the exact glyph a real scope block
+// renders as) for Custom Values simply because it has no precomputed count — it's fetched live
+// on demand, never cached, so it was never "blocked" at all. Same conflation bug as above, just
+// inside the overview renderer instead of blockedExit().
+test('list overview: Custom Values shows a live-fetch marker, never the blocked ✖ — it is fetched live by design, not blocked', async () => {
+  const { ctx, getPrinted } = makeCtx({
+    pipelines: { items: [] }, calendars: { items: [] }, tags: { items: [] },
+    customFields: { items: [] }, users: { items: [] }, forms: { items: [] },
+    surveys: { items: [] }, products: { items: [] }, links: { items: [] },
+    businesses: { items: [] }, objects: { items: [] },
+  });
+  const code = await run({ _: [] }, ctx);
+  assert.equal(code, EXIT.OK);
+  const out = getPrinted();
+  assert.match(out, /Custom Values\s+·\s+sizmo list values/);
+  assert.doesNotMatch(out, /Custom Values\s+✖/, 'must not render as blocked — it is not');
+});
