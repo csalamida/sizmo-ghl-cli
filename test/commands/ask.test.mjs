@@ -34,7 +34,7 @@ const FAKE_MODEL = {
 
 // contactsByQuery: { "ana": [{...}] } — one http fake serving both /contacts/ search and
 // /opportunities/search, call-counted so dedupe can be asserted.
-function makeCtx({ contactsByQuery = {}, oppsByContact = {}, confirmed = false, askMemoryDir, httpOverrides = {} } = {}) {
+function makeCtx({ contactsByQuery = {}, contactTotalByQuery = {}, oppsByContact = {}, confirmed = false, askMemoryDir, httpOverrides = {} } = {}) {
   let contactCalls = 0;
   let printed = '';
   const http = {
@@ -43,7 +43,10 @@ function makeCtx({ contactsByQuery = {}, oppsByContact = {}, confirmed = false, 
         contactCalls++;
         const q = opts.query.query;
         const contacts = contactsByQuery[q] ?? [];
-        return { code: 200, ok: true, j: { contacts } };
+        // Real GHL responses carry meta.total (can exceed contacts.length when more match than
+        // fit on one page) — only set it when a test explicitly wants to exercise that.
+        const meta = q in contactTotalByQuery ? { total: contactTotalByQuery[q] } : undefined;
+        return { code: 200, ok: true, j: { contacts, ...(meta ? { meta } : {}) } };
       }
       if (path === '/opportunities/search') {
         const cid = opts.query.contact_id;
@@ -96,6 +99,35 @@ test('concretize: multiple contact matches abort with candidate list, never gues
   const r = await concretize(steps, ctx, NOW);
   assert.equal(r.ok, false);
   assert.equal(r.candidates.length, 2);
+});
+
+test('concretize: uses GHL\'s real meta.total, not just page size — never undercounts when more match than fit on one page', async () => {
+  // 10 real matches exist; GHL's page only returned 3 (page size in this fixture), but meta.total
+  // says 10 — the error message and "N more" note must reflect the TRUE count, not page length.
+  const tenNames = Array.from({ length: 3 }, (_, i) => ({ id: `c${i}`, firstName: 'Ana', lastName: `Person${i}` }));
+  const { ctx } = makeCtx({
+    contactsByQuery: { Ana: tenNames },
+    contactTotalByQuery: { Ana: 10 },
+  });
+  const r = await concretize([{ command: 'tag', contactQuery: 'Ana', fields: { add: 'VIP' } }], ctx, NOW);
+  assert.equal(r.ok, false);
+  assert.match(r.error, /matches 10 contacts/, 'must report the real total (10), not the page size (3)');
+});
+
+test('concretize: candidate list caps at 10 for readability, with an explicit "N more" note when the real total is higher', async () => {
+  const fifteen = Array.from({ length: 15 }, (_, i) => ({ id: `c${i}`, firstName: 'Ana', lastName: `Person${i}` }));
+  const { ctx } = makeCtx({ contactsByQuery: { Ana: fifteen }, contactTotalByQuery: { Ana: 15 } });
+  const r = await concretize([{ command: 'tag', contactQuery: 'Ana', fields: { add: 'VIP' } }], ctx, NOW);
+  assert.equal(r.ok, false);
+  assert.equal(r.candidates.length, 11, '10 shown + 1 "more" note line');
+  assert.match(r.candidates[10], /5 more/);
+});
+
+test('concretize: a single real match still resolves cleanly when meta.total confirms exactly 1', async () => {
+  const { ctx } = makeCtx({ contactsByQuery: { 'Ana Cruz': [{ id: 'c1', firstName: 'Ana', lastName: 'Cruz' }] }, contactTotalByQuery: { 'Ana Cruz': 1 } });
+  const r = await concretize([{ command: 'tag', contactQuery: 'Ana Cruz', fields: { add: 'VIP' } }], ctx, NOW);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.concrete[0].parsed._, ['c1']);
 });
 
 test('concretize: dedupes identical contactQuery text across steps — one live search, not two', async () => {

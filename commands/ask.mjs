@@ -223,19 +223,28 @@ function findLocalByName(items, name, labelFn = (x) => x.name) {
 
 // ── live contact + opportunity search (dedupe-aware within one ask invocation) ─────────────────
 
+const CONTACT_SEARCH_LIMIT = 100; // GHL's real max — verified live: 101 gets 422 "limit must not be greater than 100"
+const CANDIDATE_DISPLAY_MAX = 10; // readability cap on the disambiguation list — not the search limit
+
 async function searchContactByQuery(query, ctx) {
   try {
     // GHL's /contacts/ list endpoint takes `query` (fuzzy match), NOT `search` — that param
     // name returns HTTP 422. Verified live: `search=` errors, `query=` correctly filters
     // (0 results for a nonsense term, real matches for a real one).
-    const r = await ctx.http.get('/contacts/', { query: { locationId: ctx.cfg.loc, query, limit: 5 } });
+    const r = await ctx.http.get('/contacts/', { query: { locationId: ctx.cfg.loc, query, limit: CONTACT_SEARCH_LIMIT } });
     if (r.code === 401 || r.code === 403) return { error: `contacts.readonly scope required to search contacts` };
     if (!r.ok) return { error: `contact search failed — API ${r.code}` };
     const contacts = r.j?.contacts ?? [];
-    if (contacts.length === 0) return { error: `no contact found for "${query}"` };
-    if (contacts.length > 1) {
-      const list = contacts.map(c => `${c.id}  ${[c.firstName, c.lastName].filter(Boolean).join(' ')}  ${c.email ?? ''}`);
-      return { error: `"${query}" matches ${contacts.length} contacts — be more specific`, candidates: list };
+    // meta.total is the REAL match count from GHL — not just how many came back on this page.
+    // Reporting contacts.length alone would silently undercount whenever more than the page
+    // size actually matches (verified live: meta.total exists and can exceed items.length).
+    const total = r.j?.meta?.total ?? contacts.length;
+    if (total === 0) return { error: `no contact found for "${query}"` };
+    if (total > 1) {
+      const shown = contacts.slice(0, CANDIDATE_DISPLAY_MAX);
+      const list = shown.map(c => `${c.id}  ${[c.firstName, c.lastName].filter(Boolean).join(' ')}  ${c.email ?? ''}`);
+      if (total > shown.length) list.push(`  … ${total - shown.length} more — narrow the name further`);
+      return { error: `"${query}" matches ${total} contact${total === 1 ? '' : 's'} — be more specific`, candidates: list };
     }
     const c = contacts[0];
     return { id: c.id, name: [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email || c.id };
@@ -258,7 +267,8 @@ function buildPipelineNameLookup(model) {
 
 async function searchOpportunityByContact({ contactId, contactName, pipelineHint }, ctx, pipelineLookup) {
   try {
-    const r = await ctx.http.get('/opportunities/search', { query: { location_id: ctx.cfg.loc, contact_id: contactId, status: 'open', limit: 25 } });
+    // GHL's real max is 100 (verified live: 101 gets 400 "limit must not be greater than 100").
+    const r = await ctx.http.get('/opportunities/search', { query: { location_id: ctx.cfg.loc, contact_id: contactId, status: 'open', limit: CONTACT_SEARCH_LIMIT } });
     if (!r.ok) return { error: `couldn't search opportunities (API ${r.code})` };
     let opps = (r.j?.opportunities ?? r.j?.data ?? []).map(o => {
       const pl = pipelineLookup?.get(o.pipelineId);
@@ -271,7 +281,9 @@ async function searchOpportunityByContact({ contactId, contactName, pipelineHint
     }
     if (opps.length === 0) return { error: `${contactName} has no open opportunities${pipelineHint ? ` in "${pipelineHint}"` : ''}` };
     if (opps.length > 1) {
-      const list = opps.map(o => `${o.id}  ${o.name ?? ''}  ${o.pipelineName} / ${o.stageLabel}`);
+      const shown = opps.slice(0, CANDIDATE_DISPLAY_MAX);
+      const list = shown.map(o => `${o.id}  ${o.name ?? ''}  ${o.pipelineName} / ${o.stageLabel}`);
+      if (opps.length > shown.length) list.push(`  … ${opps.length - shown.length} more — narrow further`);
       return { error: `${contactName} has ${opps.length} open opportunities — be more specific (pipeline name, or use the exact id)`, candidates: list };
     }
     const o = opps[0];

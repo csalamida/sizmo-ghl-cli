@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.4] — 2026-07-05
+
+### Fixed
+- **`sizmo ask`'s contact/opportunity disambiguation could silently undercount matches.** Both
+  searches capped at a low page size (5 for contacts, 25 for opportunities) and reported that
+  page's length as the match count — if more actually matched than fit on the page, the "matches N
+  contacts" message was wrong. Bumped both to GHL's real max (100 — verified live: 101 gets
+  rejected) and now reads the API's own `meta.total` for the count instead of trusting page
+  length. The candidate list shown to the user still caps at 10 for readability, with an explicit
+  "N more — narrow further" note whenever the real total exceeds what's displayed.
+
+542/542 tests green (4 new).
+
 ## [2.4.3] — 2026-07-05
 
 **The scope-vs-API-error conflation from 2.4.2 wasn't unique to `sync`/`list`/`crm`.** A wider grep
@@ -509,7 +522,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.3...HEAD
+[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.4...HEAD
+[2.4.4]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.4
 [2.4.3]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.3
 [2.4.2]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.2
 [2.4.1]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.1
