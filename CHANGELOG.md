@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.5] — 2026-07-05
+
+**A full audit of every hardcoded `limit` in the codebase, prompted directly by "why did you only
+check ask.mjs — check the rest."** Fair. Checked all of them live against the real API instead of
+assuming.
+
+### Fixed
+- **`sizmo sync`'s `forms`/`products`/`businesses` model-cache entities were capped at `limit=50`**
+  — GHL's real max for all three is 100 (verified live: accepted). A location with more than 50
+  forms, products, or businesses would have silently synced only the first 50, with no warning.
+  Bumped to 100.
+
+### Verified clean (no change needed, now documented so nobody "fixes" these by mistake)
+- **`surveys`** genuinely caps at 50, not 100 — verified live: `limit=100` is rejected with 422
+  "limit must not be greater than 50." The one entity here that's actually different from its
+  siblings.
+- **`customFields` and `objects`** reject a `limit` param outright (422 "property limit should not
+  exist") and always return the complete list regardless — correct as-is, by omission.
+- **`customValues`** (used by `export`, `value delete`, `list values`) returns the identical full
+  count whether `limit` is omitted, 100, or 200 — already complete, no pagination needed.
+- The already-paginated read commands (`booked-not-paid`, `pipeline`, `reconcile`, `receivables`,
+  `triage`, `snapshot`, `segment`) page to completion regardless of per-page size — not affected by
+  this class of bug regardless of what limit they use per page.
+
+546/546 tests green (6 new).
+
 ## [2.4.4] — 2026-07-05
 
 ### Fixed
@@ -522,7 +548,8 @@ scaffolding that makes the existing CLI dependable.
 - Private Integration Token (PIT) auth via stdin/env (never argv); multi-profile config.
 - Stable `--json` envelope (`schemaVersion: 1`); `sizmo auth status` / `auth check` / `schema`.
 
-[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.4...HEAD
+[Unreleased]: https://github.com/csalamida/sizmo-ghl-cli/compare/v2.4.5...HEAD
+[2.4.5]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.5
 [2.4.4]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.4
 [2.4.3]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.3
 [2.4.2]: https://github.com/csalamida/sizmo-ghl-cli/releases/tag/v2.4.2

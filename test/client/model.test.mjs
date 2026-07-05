@@ -62,6 +62,28 @@ test('links buildPath sends no `limit` param — GHL 422s "property limit should
   assert.match(path, /locationId=L-TEST/);
 });
 
+test('customFields buildPath sends no `limit` param — same rejection, plus it already returns everything', () => {
+  const spec = ENTITY_SPECS.find(s => s.name === 'customFields');
+  assert.ok(!/[?&]limit=/.test(spec.buildPath('L-TEST')));
+});
+
+test('objects buildPath sends no `limit` param — same rejection as links/customFields', () => {
+  const spec = ENTITY_SPECS.find(s => s.name === 'objects');
+  assert.ok(!/[?&]limit=/.test(spec.buildPath('L-TEST')));
+});
+
+test('forms/products/businesses buildPath use limit=100 (GHL\'s real max) — 50 silently missed anything past the 50th', () => {
+  for (const name of ['forms', 'products', 'businesses']) {
+    const spec = ENTITY_SPECS.find(s => s.name === name);
+    assert.match(spec.buildPath('L-TEST'), /[?&]limit=100(&|$)/, `${name} must use limit=100`);
+  }
+});
+
+test('surveys buildPath stays at limit=50 — genuinely GHL\'s max for this one entity, not an oversight (100 gets rejected live)', () => {
+  const spec = ENTITY_SPECS.find(s => s.name === 'surveys');
+  assert.match(spec.buildPath('L-TEST'), /[?&]limit=50(&|$)/);
+});
+
 test('forms/surveys/businesses/objects extract reads id — confirmed against live GHL response shape', () => {
   const cases = [
     ['forms', { forms: [{ id: 'f1', name: 'Form' }] }],
