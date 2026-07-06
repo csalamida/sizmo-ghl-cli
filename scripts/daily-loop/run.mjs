@@ -54,6 +54,21 @@ function sh(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: 'utf8', cwd: REPO_ROOT, ...opts }).trim();
 }
 
+// Smoke-tests each candidate with --version rather than just checking it exists — a broken
+// binary (wrong platform/arch, dangling symlink) can be present on disk and still unusable.
+function resolveClaudeBin() {
+  const home = process.env.HOME || '';
+  const candidates = ['/opt/homebrew/bin/claude', '/usr/local/bin/claude', join(home, '.local/bin/claude')];
+  for (const c of candidates) {
+    if (!existsSync(c)) continue;
+    try {
+      execFileSync(c, ['--version'], { timeout: 5000, stdio: 'pipe' });
+      return c;
+    } catch { /* try next candidate */ }
+  }
+  throw new Error(`no working claude binary found — tried: ${candidates.join(', ')}`);
+}
+
 async function main() {
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10);
@@ -95,27 +110,54 @@ async function main() {
   let prUrl = '';
 
   try {
-    // Fresh worktree off latest main — never the possibly-stale local checkout.
+    // Fresh worktree off latest main — never the possibly-stale local checkout. A crashed prior
+    // attempt on the same day can leave the branch name behind (worktree remove doesn't delete
+    // the branch pointer) — clear it first so a retry isn't blocked by its own last failure.
     sh('git', ['fetch', 'origin', 'main']);
+    try { sh('git', ['branch', '-D', branch]); } catch { /* didn't exist, fine */ }
     sh('git', ['worktree', 'add', '-b', branch, worktreeDir, 'origin/main']);
 
-    const child = spawn('claude', [
+    // Resolve an ABSOLUTE path to a claude binary that actually runs — never rely on inherited
+    // PATH. Verified live 2026-07-06: a stale ~/.local/bin/claude symlink (pointing at a Linux
+    // ELF binary, not macOS Mach-O) sits earlier in PATH than the real /opt/homebrew/bin/claude
+    // in at least one invocation context. A bare `spawn('claude', …)` hit that broken one and
+    // failed with ENOEXEC. Each candidate is smoke-tested with --version, not just checked for
+    // existence, since the broken file DOES exist — it just can't execute.
+    const claudeBin = resolveClaudeBin();
+
+    const child = spawn(claudeBin, [
       '-p', lane.prompt,
       '--permission-mode', 'default',
       '--allowedTools', SAFETY_ALLOWED_TOOLS,
       '--model', 'sonnet',
       '--max-budget-usd', MAX_BUDGET_USD,
       '--no-session-persistence',
-    ], { cwd: worktreeDir, stdio: 'inherit' });
+    ], { cwd: worktreeDir, stdio: ['ignore', 'pipe', 'pipe'] });
 
-    const timedOut = await new Promise((resolve) => {
-      const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(true); }, MAX_RUNTIME_MS);
-      child.on('exit', () => { clearTimeout(timer); resolve(false); });
+    let stderrBuf = '';
+    child.stdout.on('data', d => process.stdout.write(d));
+    child.stderr.on('data', d => { process.stderr.write(d); stderrBuf += d.toString(); });
+
+    const { timedOut, exitCode, spawnError } = await new Promise((resolve) => {
+      const timer = setTimeout(() => { child.kill('SIGKILL'); resolve({ timedOut: true, exitCode: null, spawnError: null }); }, MAX_RUNTIME_MS);
+      child.on('error', (err) => { clearTimeout(timer); resolve({ timedOut: false, exitCode: null, spawnError: err }); });
+      child.on('exit', (code) => { clearTimeout(timer); resolve({ timedOut: false, exitCode: code, spawnError: null }); });
     });
 
-    if (timedOut) {
+    if (spawnError) {
+      // Should be unreachable now that resolveClaudeBin() smoke-tests the binary first — kept
+      // as a hard backstop so a spawn-level failure is never misreported as "clean."
+      outcome = 'failed';
+      summary = `Lane "${lane.key}" failed to launch claude: ${spawnError.message}`;
+    } else if (timedOut) {
       outcome = 'timeout';
       summary = `Lane "${lane.key}" exceeded ${MAX_RUNTIME_MS / 60000} min — killed.`;
+    } else if (exitCode !== 0) {
+      // A non-zero exit (rate limit hit, auth issue, crash) must never fall through to the
+      // "no diff => clean" check below — that's exactly how a real failure gets silently
+      // misreported as "ran fine, found nothing." Distinguish them explicitly.
+      outcome = 'failed';
+      summary = `Lane "${lane.key}" exited ${exitCode}: ${stderrBuf.slice(-500) || '(no stderr captured)'}`;
     } else {
       const status = sh('git', ['status', '--porcelain'], { cwd: worktreeDir });
       if (!status) {
@@ -146,6 +188,9 @@ async function main() {
     console.error(summary);
   } finally {
     try { sh('git', ['worktree', 'remove', '--force', worktreeDir]); } catch { /* best-effort cleanup */ }
+    // Local branch ref is redundant once pushed (origin has it) and just clutter otherwise —
+    // always drop it so a retry never trips over its own prior branch name.
+    try { sh('git', ['branch', '-D', branch]); } catch { /* best-effort cleanup */ }
   }
 
   const kindMap = { pr: 'success', clean: 'info', failed: 'failure', timeout: 'failure' };
