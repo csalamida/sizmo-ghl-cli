@@ -42,3 +42,4 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # required by gitleaks-action for PR-triggered scans

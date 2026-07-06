@@ -21,3 +21,7 @@ Thumbs.db
 # Coverage / test output
 coverage/
 .nyc_output/
+
+# Daily engineering loop — local-machine only, never part of the published package
+scripts/daily-loop/daily-loop.log
+scripts/daily-loop/PAUSED
