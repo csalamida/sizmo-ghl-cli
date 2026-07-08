@@ -179,6 +179,74 @@ test('appointment cancel: --dry-run → status dry_run, no write, exit 0', async
   assert.equal(envelope.data.status, 'dry_run');
 });
 
+// ── note — no --confirm ──────────────────────────────────────────────────────
+
+test('appointment note: no --confirm → exit 5, no write fired', async () => {
+  const { ctx, getPrinted, getCalledWrites } = makeFakeCtx({ confirmed: false });
+  const code = await run({ _: ['note', APPT_ID], text: 'Confirmed reschedule request' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  assert.equal(getCalledWrites().length, 0);
+  const envelope = JSON.parse(getPrinted());
+  assert.equal(envelope.data.status, 'confirmation_required');
+  assert.ok(envelope.data.changes.some(c => /Confirmed reschedule/.test(c)));
+  assert.ok(envelope.data.confirmCommand.includes('--confirm'));
+  assert.ok(envelope.data.confirmCommand.includes(APPT_ID));
+});
+
+// ── note — --confirm → write fires ───────────────────────────────────────────
+
+test('appointment note: --confirm → POST fires once, exit 0, body field sent as "body"', async () => {
+  const fixture = { [`POST /calendars/appointments/${APPT_ID}/notes`]: { status: 200, j: { id: 'note-appt-1' } } };
+  const { ctx, getCalledWrites, getCalledBodies, getPrinted } = makeFakeCtx({ confirmed: true, fixture });
+  const code = await run({ _: ['note', APPT_ID], text: 'Confirmed reschedule request' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.OK);
+  assert.equal(getCalledWrites().filter(w => w.startsWith('POST')).length, 1);
+  const body = getCalledBodies().find(b => b.path === `/calendars/appointments/${APPT_ID}/notes`).body;
+  assert.deepEqual(body, { body: 'Confirmed reschedule request' }, 'field name is "body", per describe_operation — not "text" or "note"');
+  const envelope = JSON.parse(getPrinted());
+  assert.equal(envelope.data.noteId, 'note-appt-1');
+});
+
+test('appointment note: response nested under a "note" key (like contact notes) still resolves noteId', async () => {
+  // Same defensive lookup as commands/note.mjs — the flat-vs-nested shape is unverified against
+  // the live API here (describe_operation only covers the request), so both must work.
+  const fixture = { [`POST /calendars/appointments/${APPT_ID}/notes`]: { status: 200, j: { note: { id: 'note-appt-2' } } } };
+  const { ctx, getPrinted } = makeFakeCtx({ confirmed: true, fixture });
+  await run({ _: ['note', APPT_ID], text: 'hi' }, ctx);
+  ctx.out.flush();
+  assert.equal(JSON.parse(getPrinted()).data.noteId, 'note-appt-2');
+});
+
+// ── note — scope floor ───────────────────────────────────────────────────────
+
+test('appointment note: 401 → exit AUTH + scope message', async () => {
+  const fixture = { [`POST /calendars/appointments/${APPT_ID}/notes`]: { status: 401, j: {} } };
+  const { ctx } = makeFakeCtx({ confirmed: true, fixture });
+  await assert.rejects(
+    () => run({ _: ['note', APPT_ID], text: 'hi' }, ctx),
+    (e) => { assert.equal(e.code, EXIT.AUTH); assert.ok(/calendars\.write/.test(e.message)); return true; }
+  );
+});
+
+// ── note — usage errors ──────────────────────────────────────────────────────
+
+test('appointment note: missing apptId → USAGE error', async () => {
+  const { ctx } = makeFakeCtx();
+  await assert.rejects(() => run({ _: ['note'], text: 'hi' }, ctx), /usage/i);
+});
+
+test('appointment note: missing --text → USAGE error', async () => {
+  const { ctx } = makeFakeCtx();
+  await assert.rejects(() => run({ _: ['note', APPT_ID] }, ctx), /--text/i);
+});
+
+test('appointment note: empty --text → USAGE error', async () => {
+  const { ctx } = makeFakeCtx();
+  await assert.rejects(() => run({ _: ['note', APPT_ID], text: '   ' }, ctx), /--text/i);
+});
+
 // ── usage errors ──────────────────────────────────────────────────────────────
 
 test('appointment: no subcommand → USAGE error', async () => {
