@@ -300,3 +300,41 @@ test('opp update: no --value or --status → USAGE error', async () => {
   const { ctx } = makeFakeCtx();
   await assert.rejects(() => run({ _: ['update', 'opp-x'] }, ctx), /--value|--status/i);
 });
+
+// ── delete — single-target, fetch-first ─────────────────────────────────────
+
+test('opp delete: no id → USAGE (never bulk)', async () => {
+  const { ctx } = makeFakeCtx({ confirmed: true });
+  await assert.rejects(() => run({ _: ['delete'] }, ctx), /exactly one id/i);
+});
+
+test('opp delete: wrong id → NOTFOUND, nothing deleted', async () => {
+  const fixture = { 'GET /opportunities/nope': { status: 404, j: {} } };
+  const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true, fixture });
+  await assert.rejects(() => run({ _: ['delete', 'nope'] }, ctx),
+    (e) => { assert.equal(e.code, EXIT.NOTFOUND); return true; });
+  assert.equal(getCalledWrites().filter(w => w.startsWith('DELETE')).length, 0, 'no DELETE on a bad id');
+});
+
+test('opp delete: --confirm → fetch-then-delete, names it, single DELETE', async () => {
+  const fixture = {
+    'GET /opportunities/opp-9': { status: 200, j: { opportunity: { id: 'opp-9', name: 'Big Deal' } } },
+    'DELETE /opportunities/opp-9': { status: 200, j: {} },
+  };
+  const { ctx, getPrinted, getCalledWrites } = makeFakeCtx({ confirmed: true, fixture });
+  const code = await run({ _: ['delete', 'opp-9'] }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.OK);
+  assert.deepEqual(getCalledWrites().filter(w => w.startsWith('DELETE')), ['DELETE /opportunities/opp-9']);
+  assert.equal(JSON.parse(getPrinted()).data.name, 'Big Deal');
+});
+
+test('opp delete: no --confirm → CONFIRM (5), names the target, no DELETE', async () => {
+  const fixture = { 'GET /opportunities/opp-9': { status: 200, j: { opportunity: { id: 'opp-9', name: 'Big Deal' } } } };
+  const { ctx, getPrinted, getCalledWrites } = makeFakeCtx({ confirmed: false, fixture });
+  const code = await run({ _: ['delete', 'opp-9'] }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  assert.equal(getCalledWrites().filter(w => w.startsWith('DELETE')).length, 0);
+  assert.ok(JSON.parse(getPrinted()).data.changes.some(c => /Delete opportunity "Big Deal"/.test(c)));
+});

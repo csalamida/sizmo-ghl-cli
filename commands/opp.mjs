@@ -1,17 +1,23 @@
-// commands/opp.mjs — create, move, or update a pipeline opportunity.
+// commands/opp.mjs — create, move, update, or delete a pipeline opportunity.
 // Scope required: opportunities.write
 // Pipeline and stage names are resolved to IDs via the CRM model, falling back to a live fetch
 // on a cache miss — verified live 2026-07-05: same gap as appointment.mjs's calendar resolution
 // and sizmo ask's field/calendar/business resolution, just for pipelines/stages here.
 // NEVER fires without --confirm. No-confirm → exit 5 (CONFIRM) + envelope.
 // 401/403 → exit 3 with scope guidance.
+//
+// `delete` added 2026-07-08 — found via search_operations that DELETE /opportunities/{id}
+// exists; sizmo previously had no way to remove one, meaning every SIZMO-VERIFY-* test
+// opportunity created during live-fire sweeps had to be left behind permanently. Matches
+// commands/contact.mjs's delete pattern exactly: fetch first (names it in the preview, a wrong
+// id 404s before touching anything), single-target only, never bulk.
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
 import { isStale, fetchLiveEntity } from '../lib/model.mjs';
 
 export const meta = {
   name: 'opp',
-  summary: 'create, move, or update a pipeline opportunity',
+  summary: 'create, move, update, or delete a pipeline opportunity',
   flags: [
     { name: '--name',     type: 'string', desc: 'opportunity title (create)' },
     { name: '--pipeline', type: 'string', desc: 'pipeline name (create)' },
@@ -58,12 +64,13 @@ function pipelineAgeNote(model, now) {
 }
 
 export async function run(args, ctx) {
-  const sub = args._?.[0]; // 'create' | 'move' | 'update'
-  if (!sub || !['create', 'move', 'update'].includes(sub)) {
+  const sub = args._?.[0]; // 'create' | 'move' | 'update' | 'delete'
+  if (!sub || !['create', 'move', 'update', 'delete'].includes(sub)) {
     throw new GhlError(
       'usage: sizmo opp create --name --pipeline --stage [--value] --contact <id>\n' +
       '       sizmo opp move <oppId> --stage <name>\n' +
-      '       sizmo opp update <oppId> [--value --status]',
+      '       sizmo opp update <oppId> [--value --status]\n' +
+      '       sizmo opp delete <oppId>',
       EXIT.USAGE, 'sizmo schema'
     );
   }
@@ -273,6 +280,45 @@ export async function run(args, ctx) {
 
     ctx.out.data({ status: 'ok', command: 'opp update', opportunityId: oppId });
     ctx.out.line(`  opportunity ${oppId} updated`);
+    return EXIT.OK;
+  }
+
+  // ── delete ───────────────────────────────────────────────────────────────────
+  if (sub === 'delete') {
+    const oppId = args._?.[1];
+    if (!oppId || !String(oppId).trim()) {
+      throw new GhlError('usage: sizmo opp delete <oppId> — exactly one id, never bulk', EXIT.USAGE, 'sizmo pipeline …  # to find the id');
+    }
+
+    // SAFETY: fetch the single opportunity first so the preview names it, and a wrong id 404s
+    // here (nothing deleted) instead of touching anything — matches commands/contact.mjs.
+    const got = await ctx.http.get(`/opportunities/${encodeURIComponent(oppId)}`);
+    if (got.code === 401 || got.code === 403) {
+      throw new GhlError(`HTTP ${got.code} — your PIT lacks opportunities.write`, EXIT.AUTH,
+        'GoHighLevel → Settings → Private Integrations → edit your PIT → add opportunities.write scope');
+    }
+    if (got.code === 404) throw new GhlError(`no opportunity with id ${oppId} — nothing deleted`, EXIT.NOTFOUND);
+    if (!got.ok) throw new GhlError(`opp delete: could not read opportunity ${oppId} — HTTP ${got.code}`, EXIT.API);
+    const o = got.j?.opportunity ?? got.j ?? {};
+    const who = o.name || '(unnamed)';
+
+    const changes = [
+      `Delete opportunity "${who}" (id ${oppId})`,
+      '  ⚠ removes THIS ONE opportunity only — sizmo deletes a single record by id, never in bulk',
+    ];
+    const rerunCommand = `sizmo opp delete ${oppId} --confirm`;
+    const gate = requireConfirm({ command: 'opp delete', changes, rerunCommand }, ctx);
+    if (!gate.proceed) return gate.code;
+
+    const r = await ctx.http.delete(`/opportunities/${encodeURIComponent(oppId)}`);
+    if (r.code === 401 || r.code === 403) {
+      throw new GhlError(`HTTP ${r.code} — your PIT lacks opportunities.write`, EXIT.AUTH,
+        'GoHighLevel → Settings → Private Integrations → edit your PIT → add opportunities.write scope');
+    }
+    if (!r.ok) throw new GhlError(`opp delete failed — HTTP ${r.code}: ${(r.txt || '').slice(0, 200)}`, EXIT.API);
+
+    ctx.out.data({ status: 'ok', command: 'opp delete', opportunityId: oppId, name: who });
+    ctx.out.line(`  opportunity "${who}" (id ${oppId}) deleted`);
     return EXIT.OK;
   }
 }

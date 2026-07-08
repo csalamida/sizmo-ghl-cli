@@ -180,3 +180,70 @@ test('send: empty --message → USAGE error', async () => {
   const { ctx } = makeFakeCtx();
   await assert.rejects(() => run({ _: [CONTACT], channel: 'sms', message: '   ' }, ctx), /--message/i);
 });
+
+// ── cancel — scheduled SMS/email ─────────────────────────────────────────────
+
+test('send cancel: no --confirm → CONFIRM (5), no write fired', async () => {
+  const { ctx, getPrinted, getCalledWrites } = makeFakeCtx({ confirmed: false });
+  const code = await run({ _: ['cancel', 'msg-123'], channel: 'sms' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  assert.equal(getCalledWrites().length, 0);
+  assert.ok(JSON.parse(getPrinted()).data.changes.some(c => /Cancel scheduled SMS message msg-123/.test(c)));
+});
+
+test('send cancel sms: --confirm → DELETE on the generic schedule path fires once, exit 0', async () => {
+  const fixture = { 'DELETE /conversations/messages/msg-123/schedule': { status: 200, j: {} } };
+  const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true, fixture });
+  const code = await run({ _: ['cancel', 'msg-123'], channel: 'sms' }, ctx);
+  assert.equal(code, EXIT.OK);
+  assert.deepEqual(getCalledWrites(), ['DELETE /conversations/messages/msg-123/schedule']);
+});
+
+test('send cancel email: --confirm → DELETE on the SEPARATE email schedule path — verified via describe_operation, GHL splits this by channel', async () => {
+  const fixture = { 'DELETE /conversations/messages/email/msg-456/schedule': { status: 200, j: {} } };
+  const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true, fixture });
+  const code = await run({ _: ['cancel', 'msg-456'], channel: 'email' }, ctx);
+  assert.equal(code, EXIT.OK);
+  assert.deepEqual(getCalledWrites(), ['DELETE /conversations/messages/email/msg-456/schedule']);
+});
+
+test('send cancel: 404 → NOTFOUND, nothing cancelled', async () => {
+  const fixture = { 'DELETE /conversations/messages/msg-123/schedule': { status: 404, j: {} } };
+  const { ctx } = makeFakeCtx({ confirmed: true, fixture });
+  await assert.rejects(() => run({ _: ['cancel', 'msg-123'], channel: 'sms' }, ctx),
+    (e) => { assert.equal(e.code, EXIT.NOTFOUND); return true; });
+});
+
+test('send cancel sms: 400 with CONVERSATIONS_MSG_NOT_FOUND → still NOTFOUND, not a generic API error — verified live, GHL\'s two cancel endpoints disagree on status code', async () => {
+  const fixture = {
+    'DELETE /conversations/messages/msg-123/schedule': {
+      status: 400, j: { canonicalCode: 'CONVERSATIONS_MSG_NOT_FOUND', message: 'No message found with id: msg-123' },
+    },
+  };
+  const { ctx } = makeFakeCtx({ confirmed: true, fixture });
+  await assert.rejects(() => run({ _: ['cancel', 'msg-123'], channel: 'sms' }, ctx),
+    (e) => { assert.equal(e.code, EXIT.NOTFOUND); return true; });
+});
+
+test('send cancel: 401 → AUTH + scope message', async () => {
+  const fixture = { 'DELETE /conversations/messages/msg-123/schedule': { status: 401, j: {} } };
+  const { ctx } = makeFakeCtx({ confirmed: true, fixture });
+  await assert.rejects(() => run({ _: ['cancel', 'msg-123'], channel: 'sms' }, ctx),
+    (e) => { assert.equal(e.code, EXIT.AUTH); assert.match(e.message, /conversations\/message\.write/); return true; });
+});
+
+test('send cancel: missing messageId → USAGE error', async () => {
+  const { ctx } = makeFakeCtx();
+  await assert.rejects(() => run({ _: ['cancel'], channel: 'sms' }, ctx), /usage/i);
+});
+
+test('send cancel: missing --channel → USAGE error', async () => {
+  const { ctx } = makeFakeCtx();
+  await assert.rejects(() => run({ _: ['cancel', 'msg-123'] }, ctx), /--channel/i);
+});
+
+test('send cancel: unknown channel → USAGE error', async () => {
+  const { ctx } = makeFakeCtx();
+  await assert.rejects(() => run({ _: ['cancel', 'msg-123'], channel: 'fax' }, ctx), /channel/i);
+});
