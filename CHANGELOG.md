@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.8] — 2026-07-08
+
+**Found via the new HighLevel LeadConnector MCP for Anthropic (`/mcp/anthropic/v2`) — used
+strictly for introspection (`search_operations`/`describe_operation`), never `execute_operation`,
+to run a real gap audit against sizmo's existing command surface. 3 new commands shipped, all
+wired into `sizmo ask` too, plus a real doc-accuracy pass that found SKILL.md had been teaching
+wrong CLI syntax.**
+
+### Added
+- **`sizmo opp delete <oppId>`** — opportunities could be created, moved, and updated, but never
+  deleted. Every `SIZMO-VERIFY-*` test opportunity created during live-fire sweeps had to be left
+  behind permanently until now. Single-target, fetch-first, same pattern as every other delete.
+- **`sizmo appointment note <apptId> --text "..."`** — appointments had zero note support. Scoped
+  to create-only, matching `sizmo note`'s existing contact-note precedent exactly.
+- **`sizmo send cancel <messageId> --channel sms|email`** — cancel a scheduled message before it
+  goes out. GHL splits this into two endpoints by channel; both verified live.
+- **`sizmo link create --name --redirect-to`** / **`sizmo link delete <linkId>`** — trigger links
+  were read-only (`sizmo list links`); now full create/delete.
+- **`sizmo ask` wired for the above** where it makes sense: `opp delete` and `link create` fire
+  directly (same resolution mechanisms already in place — `opp delete` resolves by contact name
+  exactly like `opp move` does). `send cancel`, `link delete`, and `appointment note` are
+  deliberately print-only — each needs a bare id that isn't resolvable from a natural-language
+  query, same reasoning already established for `value delete`.
+- **`docs/how-to/ask.md`** — full tutorial for `sizmo ask`: setup, the three-rule mental model,
+  walkthrough examples (simple read → single write → multi-step chaining → pronoun follow-ups →
+  disambiguation), the complete fires-directly-vs-print-only table with the reasoning behind the
+  split, troubleshooting, and prompt-writing tips. No dedicated `ask` tutorial existed before this.
+
+### Fixed
+- **`GET /links/id/{id}` requires `locationId` as a query param** — the opposite problem from the
+  2.4.7 `/contacts/:id/notes` case, where an auto-injected `locationId` broke things. Confirms
+  `locationId` handling is genuinely inconsistent per-endpoint in GHL's API, not guessable from one
+  prior example. Caught live during `link delete` verification.
+- **`send cancel`'s two endpoints disagree on "not found" status code** — email genuinely 404s,
+  SMS/generic 400s with `canonicalCode: CONVERSATIONS_MSG_NOT_FOUND`. Both now correctly classify
+  as `NOTFOUND`, not a generic API error.
+- **SKILL.md — the file Claude Code loads as its full agent command briefing — had fabricated flag
+  syntax that never matched the real CLI:** `tag add`/`note add` (both are flat commands, no
+  subcommand exists), `--stage-id`/`--pipeline-id` (real flags take names, not ids), `send email
+  <id> --subject` (real: `--channel email --message`, subject auto-generates from the first line),
+  `invoice draft --title --amount` (real: `--item "Name:amount"`). Also documented an `invoice
+  void` command that has never existed, the wrong PIT storage path, a stale hardcoded version
+  number, a stale pre-rename GitHub org name, and pre-2.0 money-safety language. Every replacement
+  verified against the actual source file before writing it.
+- **README's write-command tables** — updated with all 4 commands above.
+
+588/588 tests green.
+
 ## [2.4.7] — 2026-07-06
 
 **A full live-fire sweep of every single command in the CLI — all 16 reads, all 12 `list` entities,
