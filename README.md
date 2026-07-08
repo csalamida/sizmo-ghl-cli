@@ -33,7 +33,7 @@ Three things it does that nothing else in the ecosystem does:
 
 - **Diff a location.** `sizmo export` turns a GoHighLevel location into one deterministic file; `sizmo diff` shows exactly what changed — or what a push *would* change. GHL snapshots are structurally incapable of this (the single loudest voted GHL fear is push-overwrite anxiety); a file is not. [See the 30-second demo →](examples/demo/)
 - **Answer the Monday questions.** `sizmo brief` prints where money is leaking and who needs a reply today — and never invents a number to do it. A blocked data source is reported as *unknown*, never as zero.
-- **Speak plain English to your CRM — two paths, pick what you already have.** Most people driving sizmo already run an AI coding agent (Claude Code, Codex, Cursor). Point it at this repo — hand it `SKILL.md` — and it drives sizmo's documented flag commands directly (`sizmo tag …`, `sizmo opp move …`): zero extra AI key, zero extra cost, and it's the subscription you're already paying for. If you want the CLI itself to understand plain English with no agent in the loop, that's `sizmo ask`: it runs, not just resolves. `sizmo ask "tag Ana as follow-up"` runs a read immediately; a write previews then fires on a bare `sizmo ask --confirm` (no retyping). Chain steps in one sentence — `sizmo ask "tag Ana as follow-up and book her Friday at 2pm"` — and one `--confirm` fires the whole batch in order, resolving every name (fields, calendars, businesses, contacts) live against the account, never a stale local guess. Bare command names ("brief", "list forms") skip the AI call entirely. `ask` needs its own AI key (`sizmo config set --ai-key`); zero LLM calls without one, and your PIT/contacts/money never leave the machine — pronoun follow-ups ("her") resolve locally, the AI only ever sees a placeholder token, never the real name (see `SECURITY.md`).
+- **Speak plain English to your CRM — two paths, pick what you already have.** Most people driving sizmo already run an AI coding agent (Claude Code, Codex, Cursor). Point it at this repo — hand it `SKILL.md` — and it drives sizmo's documented flag commands directly (`sizmo tag …`, `sizmo opp move …`): zero extra AI key, zero extra cost, and it's the subscription you're already paying for. If you want the CLI itself to understand plain English with no agent in the loop, that's `sizmo ask`: it runs, not just resolves. `sizmo ask "tag Ana as follow-up"` runs a read immediately; a write previews then fires on a bare `sizmo ask --confirm` (no retyping). Chain steps in one sentence — `sizmo ask "tag Ana as follow-up and book her Friday at 2pm"` — and one `--confirm` fires the whole batch in order, resolving every name (fields, calendars, businesses, contacts) live against the account, never a stale local guess. Bare command names ("brief", "list forms") skip the AI call entirely. `ask` needs its own AI key (`sizmo config set --ai-key`); zero LLM calls without one, and your PIT/contacts/money never leave the machine — pronoun follow-ups ("her") resolve locally, the AI only ever sees a placeholder token, never the real name (see `SECURITY.md`). Full walkthrough with real examples, what fires directly vs. what only prints, and troubleshooting: [`docs/how-to/ask.md`](docs/how-to/ask.md).
 
 Why not the tools you already have:
 
@@ -158,9 +158,12 @@ These commands change data in GoHighLevel. Every write requires `--confirm`; wit
 | `sizmo opp create --name --pipeline --stage --contact` | Create a pipeline opportunity | `--name`, `--pipeline`, `--stage`, `--contact` | `opportunities.write` |
 | `sizmo opp move <oppId> --stage <name>` | Move an opportunity to a stage | `--stage` | `opportunities.write` |
 | `sizmo opp update <oppId> [--value --status]` | Update value or status of an opportunity | `--value` or `--status` | `opportunities.write` |
+| `sizmo opp delete <oppId>` | Delete **one** opportunity by id | oppId positional | `opportunities.write` |
 | `sizmo appointment book --calendar --contact --start` | Book an appointment | `--calendar`, `--contact`, `--start` | `calendars.write` |
 | `sizmo appointment cancel <apptId>` | Cancel an appointment | apptId positional | `calendars.write` |
+| `sizmo appointment note <apptId> --text "..."` | Add a note to an appointment | `--text` | `calendars.write` |
 | `sizmo send <contactId> --channel sms\|email --message "..."` | Send an SMS or email (email subject auto-generated from the message's first line — no separate `--subject` flag) | `--channel`, `--message` | `conversations/message.write` |
+| `sizmo send cancel <messageId> --channel sms\|email` | Cancel a scheduled SMS or email before it goes out | `--channel` | `conversations/message.write` |
 
 **Build / scaffold writes** — stand up a location from the terminal instead of clicking. The PIT scope is the gate: if your token carries the write scope, the command works; if not, it fails with `AUTH` + the exact scope to add.
 
@@ -177,6 +180,8 @@ These commands change data in GoHighLevel. Every write requires `--confirm`; wit
 | `sizmo calendar delete <calendarId>` | Delete **one** calendar by id | `calendars.write` |
 | `sizmo business create --name "..." [--email --phone --website]` | Create a B2B company record | `businesses.write` |
 | `sizmo business delete <id>` | Delete **one** business by id | `businesses.write` |
+| `sizmo link create --name "..." --redirect-to <url>` | Create a trigger link | `links.write` |
+| `sizmo link delete <linkId>` | Delete **one** trigger link by id | `links.write` |
 
 **Deletion is single-target by design.** `delete` takes exactly **one id** — there is no `--all`, no
 wildcard, no batch. Before it deletes, it **fetches the resource and shows you its name** in the
