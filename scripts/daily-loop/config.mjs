@@ -35,7 +35,7 @@ const SAFE_READ_CMDS = [
 ];
 // Write commands — reversible, test-entity-only per the safety preamble below.
 // invoice / send / appointment are deliberately absent — not blocked by a rule, just never granted.
-const SAFE_WRITE_CMDS = ['contact', 'tag', 'note', 'field', 'value', 'calendar', 'business', 'opp'];
+const SAFE_WRITE_CMDS = ['contact', 'tag', 'note', 'field', 'value', 'calendar', 'business', 'opp', 'link'];
 
 export const SAFETY_ALLOWED_TOOLS = [
   'Read', 'Grep', 'Glob', 'Edit', 'Write',
@@ -51,8 +51,8 @@ You are running UNATTENDED, on a schedule, with nobody watching in real time. Th
 safe to do compared to a supervised session:
 - You may test read commands and the following writes ONLY, always against a test entity you
   create yourself, always named with a "SIZMO-VERIFY-" or "DAILY-LOOP-" prefix so it's identifiable
-  and safe to leave behind: contact create/upsert/delete, tag, note, field/value/calendar/business
-  create+delete, opp create/move/update.
+  and safe to leave behind: contact create/upsert/delete, tag, note, field/value/calendar/business/
+  link create+delete, opp create/move/update/delete.
 - You must NEVER run \`sizmo invoice send\`, \`sizmo send\`, or \`sizmo appointment book\` — these
   reach a real payment request, a real message, or a real calendar. They are hard-blocked at the
   runtime level regardless, but do not attempt them.
@@ -77,8 +77,8 @@ for what was recently touched, or what's never been live-fire tested before) and
 against the real GoHighLevel account the same way the 2026-07-05/06 sweep did: run the real
 command, then independently verify the result via a SEPARATE method (a raw \`sizmo api\` read-back,
 or a different command), never trusting sizmo's own success message alone. Fix anything broken,
-with a regression test. Clean up every test entity you create except opportunities (no delete
-command exists for those — leave them clearly named).`,
+with a regression test. Clean up every test entity you create, including opportunities — \`sizmo
+opp delete <oppId>\` exists, use it.`,
   },
   {
     key: 'feature-development',
