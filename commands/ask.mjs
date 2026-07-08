@@ -49,9 +49,10 @@ const RECENT_CONTACT_TOKEN = '<recent-contact>';
 
 // Commands sizmo ask can fire directly once concretized. Anything else (invoice, appointment,
 // opp update) falls back to resolve-and-print — see the file header for why.
-const EXECUTABLE_WRITE_COMMANDS = new Set(['tag', 'note', 'send', 'contact', 'opp', 'value', 'field', 'calendar', 'business']);
-// Only these two opp subcommands are executable; opp update stays print-only.
-const EXECUTABLE_OPP_SUBCOMMANDS = new Set(['create', 'move']);
+const EXECUTABLE_WRITE_COMMANDS = new Set(['tag', 'note', 'send', 'contact', 'opp', 'value', 'field', 'calendar', 'business', 'link']);
+// opp update stays print-only. opp delete added 2026-07-08 — resolves via the same oppQuery
+// mechanism as move, no new resolution machinery needed.
+const EXECUTABLE_OPP_SUBCOMMANDS = new Set(['create', 'move', 'delete']);
 
 const SCHEMA_PROMPT = `
 READ COMMANDS (run immediately, no --confirm):
@@ -85,17 +86,22 @@ WRITE COMMANDS THIS TOOL CAN FIRE DIRECTLY (still confirm-gated — see steps sc
   note       — add a note to a contact
   send       — sms or email a contact
   contact    — create | upsert (de-dupe on email/phone) | delete
-  opp        — create | move (an existing deal to a new stage)
+  opp        — create | move (an existing deal to a new stage) | delete
   value      — create a custom value (delete needs an id you already have — not resolvable by name)
   field      — create | delete a custom field
   calendar   — create | delete a calendar
   business   — create | delete a B2B company
+  link       — create a trigger link (delete needs an id you already have — not resolvable by name)
 
 WRITE COMMANDS THIS TOOL ONLY RESOLVES (prints the exact command — you run it yourself; money and
-scheduling stay a deliberate manual step):
+scheduling stay a deliberate manual step, and anything needing a bare id instead of a name can't
+be resolved from a natural-language query):
   opp update <oppId> [--value --status]
   appointment book --calendar --contact --start ISO8601
   appointment cancel <apptId>
+  appointment note <apptId> --text "..."
+  send cancel <messageId> --channel sms|email
+  link delete <linkId>
   invoice draft --contact <id> --item "Name:amount[:qty]" --currency PHP
   invoice send <invoiceId>
 `.trim();
@@ -134,7 +140,7 @@ Return ONLY this JSON, no other text:
 Rules:
 - One step per distinct action. "tag Ana VIP and book her Friday 2pm" is TWO steps.
 - "command" is the bare registry word (tag, note, send, contact, opp, value, field, calendar,
-  business, invoice, appointment, or a read command like brief/triage/list).
+  business, link, invoice, appointment, or a read command like brief/triage/list).
 - "subcommand" is create|upsert|delete|move|update|book|cancel|list when the command needs one,
   else null.
 - contactQuery: the person's name or email this step acts on. If a LATER step in THIS SAME
@@ -150,7 +156,7 @@ Rules:
   (for delete only) — must match a name shown in CRM STRUCTURE above, never invented.
 - fields: every other named value as plain keys matching CLI flag names exactly — add, remove,
   text, channel, message, email, phone, name, first, last, tag, pipeline, stage, value, status,
-  type, model, "slot-min", website, item, currency.
+  type, model, "slot-min", website, item, currency, "redirect-to".
 - confidence < 0.7 means you are unsure — explain why in "explanation".
 - Never invent an id — only use ids/names shown in CRM STRUCTURE, or the ${RECENT_CONTACT_TOKEN} token.`;
 }
@@ -363,7 +369,11 @@ const STEP_BUILDERS = {
       if (!f.stage) return { error: 'missing --stage' };
       return { parsed: { _: ['move', ids.oppId], stage: f.stage }, describe: `Move ${ids.oppLabel} to ${f.stage}` };
     }
-    return { error: `unsupported opp subcommand "${sub}" — sizmo ask can only fire opp create/move directly` };
+    if (sub === 'delete') {
+      if (!ids.oppId) return { error: 'no opportunity resolved' };
+      return { parsed: { _: ['delete', ids.oppId] }, describe: `Delete opportunity ${ids.oppLabel}` };
+    }
+    return { error: `unsupported opp subcommand "${sub}" — sizmo ask can only fire opp create/move/delete directly` };
   },
   value: (step, ids) => {
     const f = step.fields ?? {};
@@ -408,6 +418,15 @@ const STEP_BUILDERS = {
     }
     return { error: `unsupported business subcommand "${step.subcommand}"` };
   },
+  link: (step, ids) => {
+    const f = step.fields ?? {};
+    if (step.subcommand !== 'create') {
+      return { error: 'sizmo ask can only fire link create directly — link delete needs an id (run sizmo list links)' };
+    }
+    const err = need(f, ['name', 'redirect-to']);
+    if (err) return { error: err };
+    return { parsed: { _: ['create'], name: f.name, 'redirect-to': f['redirect-to'] }, describe: `Create trigger link "${f.name}" → ${f['redirect-to']}` };
+  },
 };
 
 const READ_COMMANDS = new Set([
@@ -419,6 +438,11 @@ function isExecutable(step) {
   if (READ_COMMANDS.has(step.command)) return true;
   if (!EXECUTABLE_WRITE_COMMANDS.has(step.command)) return false;
   if (step.command === 'opp') return EXECUTABLE_OPP_SUBCOMMANDS.has(step.subcommand);
+  // send cancel and link delete both need a bare id (messageId/linkId) that isn't resolvable
+  // from a natural-language query — same reasoning as value delete. Print-only, matching that
+  // existing precedent rather than inventing new id-resolution machinery for them.
+  if (step.command === 'send' && step.subcommand === 'cancel') return false;
+  if (step.command === 'link' && step.subcommand !== 'create') return false;
   return true;
 }
 

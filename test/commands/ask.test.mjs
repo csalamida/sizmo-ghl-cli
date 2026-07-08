@@ -233,6 +233,17 @@ test('concretize: opp move pipeline hint disambiguates multiple opportunities', 
   assert.deepEqual(r.concrete[0].parsed._, ['move', 'o2']);
 });
 
+test('concretize: opp delete resolves contact then the single open opportunity, same mechanism as move', async () => {
+  const { ctx } = makeCtx({
+    contactsByQuery: { 'Ana Cruz': [{ id: 'c1', firstName: 'Ana', lastName: 'Cruz' }] },
+    oppsByContact: { c1: [{ id: 'o1', name: 'Website Package', pipelineId: 'pl_1', pipelineStageId: 'st_prop' }] },
+  });
+  const steps = [{ command: 'opp', subcommand: 'delete', oppQuery: 'Ana Cruz' }];
+  const r = await concretize(steps, ctx, NOW);
+  assert.equal(r.ok, true, r.ok ? '' : r.error);
+  assert.deepEqual(r.concrete[0].parsed, { _: ['delete', 'o1'] });
+});
+
 // ── local (cached-model) lookups: field / calendar / business — no live call ────────────────
 
 test('concretize: field/calendar/business delete resolve by a LIVE fetch, not the (possibly stale) model cache', async () => {
@@ -310,19 +321,33 @@ test('concretize: missing required field aborts the batch before execution, not 
   assert.match(r.error, /missing --add or --remove/);
 });
 
-test('concretize: no-search direct-field commands (value/field/calendar/business create) need no contact', async () => {
+test('concretize: no-search direct-field commands (value/field/calendar/business/link create) need no contact', async () => {
   const { ctx } = makeCtx({});
   const steps = [
     { command: 'value', subcommand: 'create', fields: { name: 'Booking Link', value: 'https://cal.me/x' } },
     { command: 'field', subcommand: 'create', fields: { name: 'Budget', type: 'MONETORY' } },
     { command: 'business', subcommand: 'create', fields: { name: 'New Co' } },
+    { command: 'link', subcommand: 'create', fields: { name: 'Book a call', 'redirect-to': 'https://example.com/book' } },
   ];
   const r = await concretize(steps, ctx, NOW);
-  assert.equal(r.ok, true);
+  assert.equal(r.ok, true, r.ok ? '' : r.error);
   assert.deepEqual(r.concrete[0].parsed, { _: ['create'], name: 'Booking Link', value: 'https://cal.me/x' });
+  assert.deepEqual(r.concrete[3].parsed, { _: ['create'], name: 'Book a call', 'redirect-to': 'https://example.com/book' });
 });
 
 // ── non-executable commands (money / scheduling) marked print-only, never auto-fired ────────
+
+test('concretize: send cancel and link delete are marked executable:false — both need a bare id, not resolvable by name', async () => {
+  const { ctx } = makeCtx({});
+  const steps = [
+    { command: 'send', subcommand: 'cancel', intent: 'cancel scheduled sms', fields: { channel: 'sms' } },
+    { command: 'link', subcommand: 'delete', intent: 'delete the old promo link' },
+  ];
+  const r = await concretize(steps, ctx, NOW);
+  assert.equal(r.ok, true, r.ok ? '' : r.error);
+  assert.equal(r.concrete[0].executable, false, 'send cancel must not auto-fire');
+  assert.equal(r.concrete[1].executable, false, 'link delete must not auto-fire');
+});
 
 test('concretize: invoice/appointment/opp-update are marked executable:false, no builder invoked', async () => {
   const { ctx } = makeCtx({});
