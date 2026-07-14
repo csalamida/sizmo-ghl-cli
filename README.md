@@ -413,11 +413,19 @@ Once installed, load it in any Claude session:
 /sizmo-cli
 ```
 
-**Codex, Cursor, or any other coding agent:** `SKILL.md` is plain markdown — no Claude-specific format. Paste it into the agent's context (system prompt, project instructions file, or just tell it to read `SKILL.md` in this repo) and it works the same way: the agent knows every command, every flag, the confirm-gate pattern, how to read the JSON envelope, and when to stop and ask you before firing a write.
+**Codex, Cursor, or any other coding agent:** `AGENTS.md` in this repo is the same command reference
+without Claude-specific frontmatter. Codex picks it up automatically from the repo root; Cursor users
+can point their project instructions at it. No manual briefing needed.
+
+If you cloned the repo, it's already there. If you're running via `npx sizmo`, copy it once:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/csalamida/sizmo-ghl-cli/main/AGENTS.md > AGENTS.md
+```
 
 Either way, your agent will know every command, every flag, the confirm-gate pattern, how to read the JSON envelope, and when to stop and ask the human before firing a write. No extra prompting required.
 
-If you update sizmo (new commands, changed flags), pull the repo and re-copy `SKILL.md` — the skill tracks the CLI version.
+If you update sizmo (new commands, changed flags), pull the repo — `AGENTS.md` and `SKILL.md` both track the CLI version.
 
 ## License
 

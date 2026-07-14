@@ -1,161 +1,99 @@
-# Daily Loop — Correctness Sweep
-**Date:** 2026-07-06
-**Branch:** daily-loop/2026-07-06-correctness
-**Version:** 2.4.7
-**Result: ALL CLEAN — no bugs found, no fixes applied**
+# Daily Loop — Distribution / DX
+**Date:** 2026-07-15
+**Branch:** daily-loop/2026-07-14-distribution-dx
+**Lane:** DISTRIBUTION / DX
 
 ---
 
-## Commands Tested
+## What was done
 
-Picked based on recency of fixes (CHANGELOG 2.4.7/2.4.1) and coverage gaps. Each verified via an
-independent read-back method — never trusting sizmo's own success message alone.
-
----
-
-### Test 1 — `sizmo note`: noteId correctness (2.4.7 fix)
-
-**What 2.4.7 fixed:** `noteId` in `--json` was always `null` because code read `r.j?.id` (flat)
-instead of `r.j?.note?.id` (GHL's nested envelope).
-
-**Command run:**
-```
-sizmo note 1nCua6LUkJZyHcGpleBs --text "SIZMO-VERIFY daily-loop correctness 2026-07-06" --confirm --json
-```
-
-**Output:**
-```json
-{ "status": "ok", "command": "note", "contactId": "1nCua6LUkJZyHcGpleBs", "noteId": "l8wVljjIdiYmNyHYXmnt" }
-```
-
-**Independent verification** (raw API read-back via `sizmo api --no-loc`):
-```
-sizmo api "/contacts/1nCua6LUkJZyHcGpleBs/notes" --no-loc --json
-```
-Response: `notes[0].id = "l8wVljjIdiYmNyHYXmnt"` — matches exactly.
-
-**Result: PASS.** `noteId` is non-null and matches the real GHL record id.
+Created `AGENTS.md` and updated `README.md`'s agent-onboarding section.
 
 ---
 
-### Test 2 — `sizmo contact upsert --tag`: tag merge not replace (2.4.7 fix)
+## Problem identified
 
-**What 2.4.7 fixed:** Upserting an existing contact with `--tag X` replaced its entire tag list
-with just `[X]` — verified live as data-loss. Fixed: upsert now looks up existing tags and merges.
-
-**Setup:** Contact created with tags `verify-tag-A, verify-tag-B`.
-
-**Command run:**
-```
-sizmo contact upsert --email "sizmo-verify-correctness-07-06@test.invalid" --tag "verify-tag-C" --confirm --json
-```
-
-**Output:**
-```json
-{ "status": "ok", "command": "contact upsert", "contactId": "1nCua6LUkJZyHcGpleBs", "created": false, "updated": true }
-```
-
-**Independent verification** (raw API read-back):
-```
-sizmo api "/contacts/1nCua6LUkJZyHcGpleBs" --no-loc --json
-```
-Response: `"tags": ["verify-tag-a", "verify-tag-b", "verify-tag-c"]` — 3 tags, all 3 preserved.
-
-**Result: PASS.** Tag merge works. Pre-fix behavior (replace with 1 tag) is gone.
+The README told Codex/Cursor users to "paste SKILL.md into the agent's context". That's a manual
+step — and it's wrong now. Codex automatically checks `AGENTS.md` at the repo root (standard
+convention since mid-2025). No `AGENTS.md` existed, so Codex users got zero automatic context.
+Cursor users had no standard path either.
 
 ---
 
-### Test 3 — `sizmo api --no-loc`: locationId injection suppression (2.4.7 feature)
+## Change 1: Created `AGENTS.md`
 
-**What 2.4.7 added:** `--no-loc` flag prevents auto-injection of `locationId` query param, which
-causes 422 on sub-resource endpoints that reject unknown params.
+**File:** `AGENTS.md` (new, 165 lines)
 
-**Without `--no-loc`** (control — confirms the problem):
-```
-sizmo api "/contacts/1nCua6LUkJZyHcGpleBs/notes" --json
-```
-Response: `HTTP 422 — {"message":["property locationId should not exist"],"error":"Unprocessable Entity"}`
+Content mirrors `SKILL.md` but:
+- No Claude Code frontmatter (`---\nname/description\n---`)
+- Broader read-command table (added `triage`, `receivables`, `noshow`, `booked-not-paid`, `focus`,
+  `snapshot`, `crm`, `forms`, `surveys`, `transactions` — all present in the CLI, missing from
+  SKILL.md's read-command list)
+- Same write commands, same safety rules, same exit codes, same JSON envelope docs
+- Explicit "Calling Pattern for Agents" section with multi-step pattern (resolve IDs first, then
+  write) — makes it easier for a Codex/Cursor agent to chain commands without hallucinating IDs
 
-**With `--no-loc`:**
+**Evidence:**
 ```
-sizmo api "/contacts/1nCua6LUkJZyHcGpleBs/notes" --no-loc --json
-```
-Response: `{ "notes": [{ "id": "l8wVljjIdiYmNyHYXmnt", ... }] }` — 200 OK.
+$ ls AGENTS.md
+AGENTS.md
 
-**Result: PASS.** `--no-loc` correctly suppresses injection; without it, 422 confirms injection
-happens by default on paths without `locationId`.
+$ wc -l AGENTS.md
+165 AGENTS.md
+```
+
+No code changed. No commands ran against GHL. Docs-only.
 
 ---
 
-### Test 4 — `sizmo opp create` + `sizmo opp move` (2.4.1 + 2.4.7 fix area)
+## Change 2: Updated README `## Driving sizmo with an AI agent` section
 
-**What 2.4.1 fixed:** Both commands never worked — wrong field name `stageId` (GHL requires
-`pipelineStageId`) and missing `locationId` in body.
-**What 2.4.7 added:** stale-cache fallback for pipeline/stage resolution.
+**File:** `README.md` (lines ~416-420)
 
-**Command run (create):**
+**Before (exact text removed):**
 ```
-sizmo opp create --name "DAILY-LOOP-verify-2026-07-06" --pipeline "Sizmo Sales Pipeline" --stage "New Lead" --contact 1nCua6LUkJZyHcGpleBs --value 1 --confirm --json
-```
-Output: `opportunityId: "9US6Wc5S4kok1I8oy72x"`
+**Codex, Cursor, or any other coding agent:** `SKILL.md` is plain markdown — no Claude-specific
+format. Paste it into the agent's context (system prompt, project instructions file, or just tell
+it to read `SKILL.md` in this repo) and it works the same way: the agent knows every command,
+every flag, the confirm-gate pattern, how to read the JSON envelope, and when to stop and ask
+you before firing a write.
 
-**Independent verification (create):**
-```
-sizmo api "/opportunities/9US6Wc5S4kok1I8oy72x" --no-loc --json
-```
-Response:
-- `pipelineId: "N8PQjl7SGeCbfKofmoZR"` = Sizmo Sales Pipeline ✓
-- `pipelineStageId: "51bd76e1-8cf2-431d-8768-86dec0e6e575"` = New Lead ✓
-- `monetaryValue: 1` ✓
-- `contactId: "1nCua6LUkJZyHcGpleBs"` ✓
+Either way, your agent will know every command, every flag, the confirm-gate pattern, how to read
+the JSON envelope, and when to stop and ask the human before firing a write. No extra prompting
+required.
 
-**Command run (move):**
+If you update sizmo (new commands, changed flags), pull the repo and re-copy `SKILL.md` — the
+skill tracks the CLI version.
 ```
-sizmo opp move 9US6Wc5S4kok1I8oy72x --stage "Engaged/Replied" --confirm --json
-```
-Output: `stageId: "1620876c-dd59-4057-9cdb-785f6ed200f7"`
 
-**Independent verification (move):**
+**After (exact text added):**
 ```
-sizmo api "/opportunities/9US6Wc5S4kok1I8oy72x" --no-loc --json
+**Codex, Cursor, or any other coding agent:** `AGENTS.md` in this repo is the same command
+reference without Claude-specific frontmatter. Codex picks it up automatically from the repo
+root; Cursor users can point their project instructions at it. No manual briefing needed.
+
+If you cloned the repo, it's already there. If you're running via `npx sizmo`, copy it once:
+
+    curl -fsSL https://raw.githubusercontent.com/csalamida/sizmo-ghl-cli/main/AGENTS.md > AGENTS.md
+
+Either way, your agent will know every command, every flag, the confirm-gate pattern, how to
+read the JSON envelope, and when to stop and ask the human before firing a write. No extra
+prompting required.
+
+If you update sizmo (new commands, changed flags), pull the repo — `AGENTS.md` and `SKILL.md`
+both track the CLI version.
 ```
-Response: `pipelineStageId: "1620876c-dd59-4057-9cdb-785f6ed200f7"` = Engaged/Replied ✓
 
-**Result: PASS.** Both create and move work end-to-end; stage change reflected in GHL.
-
-*Note: Opportunity `9US6Wc5S4kok1I8oy72x` ("DAILY-LOOP-verify-2026-07-06") left in Sizmo Sales
-Pipeline — no delete command exists for opportunities.*
+**Why:** The old text required a manual paste step and pointed at the wrong file for non-Claude
+agents. The new text matches actual Codex/Cursor auto-load behavior.
 
 ---
 
-### Test 5 — `sizmo list` custom values display (2.4.7 fix)
+## Files changed
 
-**What 2.4.7 fixed:** Custom Values showed `✖` (the "missing scope" glyph) because it's fetched
-live (not cached), not because scope was missing. Fixed to show `·`.
+| File | Change |
+|------|--------|
+| `AGENTS.md` | Created (new, 165 lines) |
+| `README.md` | ~lines 416-429: Codex/Cursor onboarding instructions updated |
 
-**Command run:**
-```
-sizmo list
-```
-
-**Output (relevant line):**
-```
-Custom Values      ·    sizmo list values  (live)
-```
-
-**Result: PASS.** Shows `·`, not `✖`.
-
----
-
-## Cleanup
-
-- Contact `1nCua6LUkJZyHcGpleBs` (SIZMO-VERIFY-correctness-07-06) — **deleted**
-- Opportunity `9US6Wc5S4kok1I8oy72x` (DAILY-LOOP-verify-2026-07-06) — **left in place** (no delete
-  command; clearly prefixed for identification)
-
----
-
-## Summary
-
-5 commands tested, 5 PASS. All 2.4.7 and 2.4.1 fixes confirmed working against a real GoHighLevel
-account. No regressions detected, no new bugs found. No code changes this run.
+No code changes. No test changes. No package.json changes. No GHL API calls made this run.
