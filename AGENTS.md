@@ -67,6 +67,7 @@ Tags
 - `sizmo focus` — today's appointments + follow-up tasks
 - `sizmo snapshot` — full brief as a single printable snapshot
 - `sizmo segment --tag X` — find contacts by tag, phone, created-days, etc.
+- `sizmo reconcile` — money reconciliation: collected by source, flags, recurring (`--days N`, `--top N`)
 - `sizmo crm` — model overview: entity counts + cache age
 - `sizmo export` — full location dump to JSON (deterministic, key-sorted, byte-identical re-exports)
 - `sizmo diff <file> [file2]` — what changed between saved state and live, or two saved states
@@ -78,7 +79,8 @@ Tags
 ## Write Commands (all require `--confirm`)
 
 Every write prints a preview and exits `5` (confirmation-required) without `--confirm`. Nothing fires
-silently — safe to call without `--confirm` to preview first.
+silently — safe to call without `--confirm` to preview first. Use `--dry-run` to print the change
+description without executing and exit `0` (useful in scripts that only need to inspect the plan).
 
 Every flag name below is verified against the actual source. If a flag ever looks wrong,
 `sizmo help <command>` is the ground truth.
@@ -195,6 +197,42 @@ Every command supports `--json`. Shape is stable across minor/patch versions:
 | 3 | Auth error / no location resolved |
 | 4 | Not found (unknown pipeline/stage/calendar name) |
 | 5 | Confirmation required — rerun with `--confirm` to execute |
+
+---
+
+## Global Flags (work with every command)
+
+```
+--profile <name>     use a named credential profile (or set SIZMO_PROFILE env var)
+--json               machine-readable output — stable JSON envelope (see JSON Envelope section)
+--ndjson             streaming machine output: one meta line + one JSON object per list item
+--fields a,b,c       (with --json / --ndjson) keep only these keys per list item — trims payload
+--concise            leaner payload — currently trims brief only
+--fresh              bypass 60-second read cache — re-fetches live data
+--no-cache           alias for --fresh
+--dry-run            (write commands) print the change description without executing, exit 0
+--confirm            (write commands) execute the previewed change
+```
+
+**`--ndjson` for streaming/agents.** Instead of one JSON array, emits a leading meta line (with
+`command`, `location`, `degraded`, `warnings`, `count`) then one JSON object per list item —
+process rows line-by-line without buffering. The `degraded` signal rides the meta line, never lost.
+
+```sh
+sizmo receivables --ndjson --fields name,due
+# {"_meta":true,"command":"receivables","degraded":false,"warnings":[],"count":2,...}
+# {"name":"Acme Co","due":5000}
+# {"name":"Beta LLC","due":3000}
+```
+
+**`--fields` for token-lean payloads.** Projects each list item to only the named keys — often an
+80-90% smaller payload. Works with `receivables`, `segment`, `triage`, `noshow`, `focus`, `crm`,
+`brief`, and `pipeline`.
+
+```sh
+sizmo receivables --json --fields name,due    # just the two fields, full envelope
+sizmo triage --ndjson --fields name,lastReply # stream, one object per contact, two keys
+```
 
 ---
 
