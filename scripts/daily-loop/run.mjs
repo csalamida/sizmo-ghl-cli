@@ -71,7 +71,16 @@ function resolveClaudeBin() {
 
 async function main() {
   const today = new Date();
-  const dateStr = today.toISOString().slice(0, 10);
+  // Local date, not UTC — laneForDate() below uses date.getDay() (local), so the branch/log
+  // date string must match it. toISOString() is UTC and drifts a day behind local time for any
+  // hour before UTC midnight (e.g. 7am in UTC+8 is still "yesterday" in UTC), which caused the
+  // 2026-07-15 run to recompute 2026-07-14's exact branch name and collide with the already-
+  // merged PR #2 branch — real push failure, not cosmetic.
+  const dateStr = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
 
   if (existsSync(PAUSE_FLAG)) {
     console.log('PAUSED flag present — skipping run.');
