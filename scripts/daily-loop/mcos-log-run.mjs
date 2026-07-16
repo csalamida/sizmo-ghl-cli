@@ -47,7 +47,14 @@ if (!mission) {
 
 const OUTCOME_LABEL = { pr: 'PR opened', clean: 'clean — nothing found', failed: 'FAILED', timeout: 'TIMED OUT' };
 const label = OUTCOME_LABEL[outcome] || outcome;
-const dateStr = new Date(now).toISOString().slice(0, 10);
+// Local date, not UTC — must match run.mjs's dateStr (same bug class: toISOString() is UTC and
+// drifts a day behind local time before UTC midnight, e.g. a 7am fire in UTC+8).
+const nowDate = new Date(now);
+const dateStr = [
+  nowDate.getFullYear(),
+  String(nowDate.getMonth() + 1).padStart(2, '0'),
+  String(nowDate.getDate()).padStart(2, '0'),
+].join('-');
 
 db.tasks.push({
   id: randomUUID(), created_at: iso(now), updated_at: iso(now), mission_id: mission.id, goal_id: goal.id,
