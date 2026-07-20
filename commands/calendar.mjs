@@ -9,9 +9,10 @@ export const meta = {
   name: 'calendar',
   summary: 'create or delete a calendar (delete is single-target, never bulk)',
   flags: [
-    { name: '--name',     type: 'string', desc: 'calendar name (create)' },
-    { name: '--type',     type: 'string', desc: 'calendar type (create) — default event' },
-    { name: '--slot-min', type: 'number', desc: 'slot duration in minutes (create) — default 30' },
+    { name: '--name',        type: 'string', desc: 'calendar name (create)' },
+    { name: '--type',        type: 'string', desc: 'calendar type (create) — default event' },
+    { name: '--slot-min',    type: 'number', desc: 'slot duration in minutes (create) — default 30' },
+    { name: '--team-member', type: 'string', desc: 'comma-separated user IDs to assign (create) — required for round_robin/collective types' },
   ],
   readOnly: false,
 };
@@ -30,21 +31,38 @@ async function createCalendar(args, ctx) {
   if (!name || !String(name).trim()) {
     throw new GhlError('calendar create needs --name', EXIT.USAGE, 'sizmo calendar create --name "Discovery Calls"');
   }
+
+  const teamMemberArg = args['team-member'];
+  const teamMemberIds = teamMemberArg
+    ? String(teamMemberArg).split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+
+  if (teamMemberIds.length === 0 && args.type && /round.robin|collective/i.test(String(args.type))) {
+    throw new GhlError(
+      `calendar type "${args.type}" requires at least one team member`,
+      EXIT.USAGE,
+      'sizmo list users  # find user ids, then add: --team-member uid1,uid2',
+    );
+  }
+
   const body = {
     locationId: ctx.cfg.loc,
     name: String(name),
     ...(args.type ? { calendarType: String(args.type) } : {}),
     ...(args['slot-min'] != null ? { slotDuration: Number(args['slot-min']), slotDurationUnit: 'mins' } : {}),
+    ...(teamMemberIds.length > 0 ? { teamMembers: teamMemberIds.map(userId => ({ userId })) } : {}),
   };
 
   const changes = [
     `Create calendar "${name}"`,
     ...(args.type ? [`  type: ${args.type}`] : []),
     ...(args['slot-min'] != null ? [`  slot: ${args['slot-min']} mins`] : []),
+    ...(teamMemberIds.length > 0 ? [`  team members: ${teamMemberIds.join(', ')}`] : []),
   ];
   const parts = ['sizmo calendar create', `--name "${String(name).replace(/"/g, '\\"')}"`];
   if (args.type) parts.push(`--type "${args.type}"`);
   if (args['slot-min'] != null) parts.push(`--slot-min ${args['slot-min']}`);
+  if (teamMemberIds.length > 0) parts.push(`--team-member "${teamMemberIds.join(',')}"`);
   const rerunCommand = parts.join(' ') + ' --confirm';
 
   const gate = requireConfirm({ command: 'calendar create', changes, rerunCommand }, ctx);
@@ -52,7 +70,13 @@ async function createCalendar(args, ctx) {
 
   const r = await ctx.http.post('/calendars/', body);
   if (r.code === 401 || r.code === 403) throw new GhlError(`HTTP ${r.code} — your PIT lacks calendars.write`, EXIT.AUTH, SCOPE_FIX);
-  if (!r.ok) throw new GhlError(`calendar create failed — HTTP ${r.code}: ${(r.txt || '').slice(0, 200).replace(/\s+/g, ' ')}`, EXIT.API);
+  if (!r.ok) {
+    const body = (r.txt || '').slice(0, 300).replace(/\s+/g, ' ');
+    const teamHint = /team member/i.test(body)
+      ? 'sizmo list users  # find user ids, then add: --team-member uid1,uid2'
+      : undefined;
+    throw new GhlError(`calendar create failed — HTTP ${r.code}: ${body}`, EXIT.API, teamHint);
+  }
 
   const created = r.j?.calendar ?? r.j ?? {};
   const id = created.id || created._id || null;

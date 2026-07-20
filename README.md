@@ -176,7 +176,7 @@ These commands change data in GoHighLevel. Every write requires `--confirm`; wit
 | `sizmo field delete <fieldId>` | Delete **one** custom field by id | `locations/customFields.write` |
 | `sizmo value create --name "..." --value "..."` | Create a custom value | `locations/customValues.write` |
 | `sizmo value delete <valueId>` | Delete **one** custom value by id | `locations/customValues.write` |
-| `sizmo calendar create --name "..." [--type --slot-min]` | Create a calendar | `calendars.write` |
+| `sizmo calendar create --name "..." [--type --slot-min --team-member]` | Create a calendar — `--team-member uid1,uid2` required for `round_robin`/`collective` types | `calendars.write` |
 | `sizmo calendar delete <calendarId>` | Delete **one** calendar by id | `calendars.write` |
 | `sizmo business create --name "..." [--email --phone --website]` | Create a B2B company record | `businesses.write` |
 | `sizmo business delete <id>` | Delete **one** business by id | `businesses.write` |

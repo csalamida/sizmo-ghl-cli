@@ -84,7 +84,8 @@ sizmo tag <contactId> --remove cold-lead --confirm
 sizmo note <contactId> --text "Called, interested" --confirm
 
 # Calendar / Appointments
-sizmo calendar create --name "Discovery Calls" [--type --slot-min] --confirm
+sizmo calendar create --name "Discovery Calls" [--type --slot-min --team-member uid1,uid2] --confirm
+# --team-member <comma-separated userIds> is REQUIRED for round_robin and collective types
 sizmo calendar delete <id> --confirm
 sizmo appointment book --calendar "Discovery Calls" --contact <id> --start 2026-07-15T14:00:00Z --confirm
 sizmo appointment cancel <apptId> --confirm
