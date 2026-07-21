@@ -104,7 +104,9 @@ sizmo tag <contactId> --remove cold-lead --confirm
 sizmo note <contactId> --text "Called, interested" --confirm
 
 # Calendar / Appointments
-sizmo calendar create --name "Discovery Calls" [--type --slot-min] --confirm
+sizmo calendar create --name "Discovery Calls" [--type --slot-min --team-member uid1,uid2] --confirm
+# --team-member <comma-separated userIds> is required for round_robin / collective types
+# (run `sizmo list users` first to find user IDs)
 sizmo calendar delete <id> --confirm
 sizmo appointment book --calendar "Discovery Calls" --contact <id> --start 2026-07-15T14:00:00Z --confirm
 sizmo appointment cancel <apptId> --confirm
@@ -121,11 +123,12 @@ sizmo link create --name "Black Friday Promo" --redirect-to "https://..." --conf
 sizmo link delete <linkId> --confirm
 
 # Messaging — one flat command with --channel, not separate "send email"/"send sms"
-sizmo send <contactId> --channel email --message "Hi there" --confirm   # subject from first line
+sizmo send <contactId> --channel email --message "Hi there" --confirm   # subject auto-generated from first line
 sizmo send <contactId> --channel sms --message "Hi there" --confirm
-sizmo send cancel <messageId> --channel sms --confirm                   # stop a scheduled message
+sizmo send cancel <messageId> --channel sms|email --confirm             # stop a scheduled message
 
 # B2B companies
+sizmo business list                                                      # list companies (from cache, no confirm)
 sizmo business create --name "Acme" --website "https://..." --confirm
 sizmo business delete <id> --confirm
 
@@ -210,6 +213,7 @@ Every command supports `--json`. Shape is stable across minor/patch versions:
 --concise            leaner payload — currently trims brief only
 --fresh              bypass 60-second read cache — re-fetches live data
 --no-cache           alias for --fresh
+--no-update-check    skip the once-a-day "newer version available" check for this run
 --dry-run            (write commands) print the change description without executing, exit 0
 --confirm            (write commands) execute the previewed change
 ```
@@ -266,6 +270,8 @@ sizmo ask "who hasn't replied in 3 days"            # runs triage, shows real ou
 sizmo ask "tag Ana Cruz as follow-up"               # preview → exit 5
 sizmo ask --confirm                                 # fires the previewed plan (no re-asking)
 sizmo ask "tag Ana as follow-up and book her Friday at 2pm" --confirm  # two steps, one confirm
+sizmo ask "delete Marco's stalled deal" --confirm   # opp delete — resolves by contact name
+sizmo ask "create a trigger link for the black friday promo pointing to https://..." --confirm
 ```
 
 Setup:
@@ -275,7 +281,17 @@ sizmo config set --profile <name> --ai-key "sk-..." --ai-provider openai
 ```
 
 `sizmo ask` resolves names live. A bare `--confirm` replays the cached plan exactly — it can't fire
-something different from the preview. Providers: `anthropic` (claude-haiku-4-5-20251001) · `openai` (gpt-4o-mini).
+something different from the preview. Confidence < 70% → asks to rephrase rather than guessing.
+Pronoun follow-ups ("her", "that deal") resolve from a local cache; the AI only ever sees a
+placeholder token, never the real name. Providers: `anthropic` (claude-haiku-4-5-20251001) · `openai` (gpt-4o-mini).
+
+**Fires directly:** `tag`, `note`, `send`, `contact` (create/upsert/delete), `opp` (create/move/delete),
+`value create`, `field` (create/delete), `calendar` (create/delete), `business` (create/delete), `link create`.
+
+**Resolve-and-print only** (money + scheduling stay a deliberate manual step): `opp update`,
+`appointment` (book/cancel/note), `send cancel`, `link delete`, `invoice` (draft/send).
+
+Full walkthrough: `docs/how-to/ask.md`.
 
 ---
 

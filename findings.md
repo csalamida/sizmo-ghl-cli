@@ -1,100 +1,98 @@
-# findings — 2026-07-21 — feature-development
+# findings — 2026-07-22 — distribution/dx
 
-## Gap found
+## What was done
 
-`sizmo calendar create --type round_robin` (and `--type collective`) fails at the GHL API with
-"No team member found" (HTTP 422). The command had no flag to pass team members, so there was
-no way to create these calendar types through the CLI. This was the known example called out
-in the daily-loop prompt: "GHL rejects it with 'No team member found'".
+Brought `AGENTS.md` to parity with `SKILL.md` and the actual CLI source. Five targeted gaps fixed; no structural rewrites.
 
-Root cause: `commands/calendar.mjs` `createCalendar()` built the POST body with only
-`locationId`, `name`, `calendarType`, and `slotDuration` — no `teamMembers` field, and no
-flag in `meta.flags` to accept user IDs.
+---
 
-## What was built
+## Gaps found + evidence
 
-Added `--team-member <userId,...>` flag to `sizmo calendar create`. Bumped to 2.4.9.
+### 1. `calendar create` missing `--team-member` flag
 
-### Usage
-
-```sh
-# Find user IDs first
-sizmo list users
-
-# Create a round-robin calendar (--team-member required for this type)
-sizmo calendar create --name "Sales RR" --type round_robin --team-member uid1,uid2
-
-# Preview (no --confirm) shows team members in changes list:
-#   Create calendar "Sales RR"
-#     type: round_robin
-#     team members: uid1, uid2
-# Rerun with --confirm to execute.
-
-sizmo calendar create --name "Sales RR" --type round_robin --team-member uid1,uid2 --confirm
-
-# event / class_booking — flag optional, silently omitted if absent (no behavior change)
-sizmo calendar create --name "Webinar" --type class_booking --confirm
+Source: `commands/calendar.mjs:15`
 ```
-
-GHL POST body receives: `teamMembers: [{ userId: "uid1" }, { userId: "uid2" }]`
-
-### Early validation (new)
-
-If `--type round_robin` or `--type collective` is passed without `--team-member`, USAGE error
-is thrown immediately — no API call made:
-
+{ name: '--team-member', type: 'string', desc: 'comma-separated user IDs to assign (create) — required for round_robin/collective types' }
 ```
-calendar type "round_robin" requires at least one team member
-  fix: sizmo list users  # find user ids, then add: --team-member uid1,uid2
+`calendar.mjs:40` enforces this: if `args.type` matches `round.robin|collective` and `teamMemberIds.length === 0`, the command aborts.
+
+**Fix:** Added `[--team-member uid1,uid2]` to the `calendar create` line in AGENTS.md with a comment noting it is required for round_robin/collective types.
+
+---
+
+### 2. `sizmo business list` missing from AGENTS.md
+
+Source: `commands/business.mjs:2,24,27`
+```js
+// sizmo business list  → list companies (from model cache)
+const sub = parsed._?.[0] ?? 'list';
+case 'list':   return listBusinesses(ctx);
 ```
+Default subcommand is `list`. AGENTS.md had `business create` and `business delete` but not `list`.
 
-### 422 hint (new)
+**Fix:** Added `sizmo business list` as a read command (no `--confirm`) in the B2B block.
 
-If a request reaches GHL and comes back "No team member found" in the body, the API error
-now carries a remediation hint pointing to `sizmo list users` and `--team-member`.
+---
+
+### 3. `send cancel` missing `email` channel
+
+README (`README.md:166`):
+```
+sizmo send cancel <messageId> --channel sms|email
+```
+AGENTS.md showed only `--channel sms`.
+
+**Fix:** Updated to `--channel sms|email`.
+
+---
+
+### 4. `send` email subject wording inconsistency
+
+README: "email subject auto-generated from the message's first line — no separate `--subject` flag"
+AGENTS.md: "# subject from first line"
+
+**Fix:** Changed comment to "# subject auto-generated from first line".
+
+---
+
+### 5. `--no-update-check` missing from Global Flags
+
+README (`README.md:256`):
+```
+--no-update-check    skip the once-a-day "newer version available" check for this run
+```
+Present in README, absent from AGENTS.md Global Flags section.
+
+**Fix:** Added to AGENTS.md Global Flags block.
+
+---
+
+### 6. `ask` section — two examples + behavior details missing
+
+SKILL.md and `commands/ask.mjs` document behavior that AGENTS.md was missing:
+
+- Line 53 of ask.mjs: `// opp delete added 2026-07-08 — resolves via the same oppQuery`
+- Lines 692-694: `if (confidence < 0.7) { ctx.out.line('Low confidence...') }`
+- Line 18: `// Pronoun follow-ups ("her", ...) are resolved via a local-only placeholder`
+
+Missing from AGENTS.md:
+- `sizmo ask "delete Marco's stalled deal" --confirm` example
+- `sizmo ask "create a trigger link for the black friday promo..."` example
+- "Fires directly" vs "Resolve-and-print only" distinction
+- Confidence threshold note (< 70% → asks to rephrase)
+- Pronoun resolution detail (local cache, AI never sees real name)
+- `docs/how-to/ask.md` reference
+
+**Fix:** Added two examples, expanded `ask` section with the distinction table, confidence + pronoun notes, and docs reference.
+
+---
 
 ## Files changed
 
-| File | Change |
-|------|--------|
-| `commands/calendar.mjs` | Added `--team-member` to meta.flags; parse, validate, and include in body |
-| `test/commands/calendar.test.mjs` | 6 new tests (15 total, was 9) |
-| `README.md` | Updated calendar create table row to show `--team-member` flag |
-| `SKILL.md` | Updated cheatsheet with `--team-member` and requirement comment |
-| `lib/cli.mjs` | Added round-robin example to COMMAND_EXAMPLES |
-| `CHANGELOG.md` | Added [2.4.9] entry |
-| `package.json` | Bumped version 2.4.8 → 2.4.9 |
+- `AGENTS.md` — 5 gap areas fixed, ~25 lines added/modified. No structural rewrites. No new sections invented.
 
-## Evidence
+## Files NOT changed
 
-Calendar tests (15 total, 6 new):
-
-```
-$ node --test test/commands/calendar.test.mjs 2>&1 | tail -8
-1..15
-# tests 15
-# suites 0
-# pass 15
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 42.970542
-```
-
-Full suite (606 total, no regressions from prior 600):
-
-```
-$ node --test --test-concurrency=1 2>&1 | tail -8
-1..606
-# tests 606
-# suites 0
-# pass 606
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 3614.029167
-```
-
-No GHL API calls made this run. No test entities created.
+- `SKILL.md` — no changes needed (it was the reference source)
+- `README.md` — accurate as-is; no stale content actionable without a publish step
+- All source files — read-only for evidence gathering
