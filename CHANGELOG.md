@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.9] — 2026-07-21
+
+**Gap found by using the CLI: `sizmo calendar create --type round_robin` fails at the GHL API
+("No team member found") with no remediation path, because the command had no way to pass
+team members. Round-robin and collective calendars require at least one assigned user — the
+flag was just missing.**
+
+### Added
+- **`sizmo calendar create --team-member uid1,uid2`** — comma-separated user IDs to assign as
+  team members. Required for `round_robin` and `collective` calendar types; optional (and
+  silently omitted) for `event` and `class_booking`. The body sends
+  `teamMembers: [{ userId }]` which is what GHL's POST `/calendars/` expects.
+- **Early validation for team calendar types** — if `--type round_robin` or `--type collective`
+  is passed without `--team-member`, sizmo now throws USAGE immediately with a remediation hint
+  (`sizmo list users` to find ids) instead of sending a doomed request and surfacing a raw GHL
+  422 with no guidance.
+- **"No team member found" hint on 422** — if a `round_robin` request somehow reaches GHL and
+  gets a "No team member found" response (e.g. the user supplied an invalid id), the error
+  message now carries a remediation hint pointing to `--team-member`.
+
+### Changed
+- `README.md` command table and `SKILL.md` cheatsheet updated to show `--team-member` and note
+  that it is required for team calendar types.
+- `lib/cli.mjs` `COMMAND_EXAMPLES` updated with a round-robin example.
+
 ## [2.4.8] — 2026-07-08
 
 **Found via the new HighLevel LeadConnector MCP for Anthropic (`/mcp/anthropic/v2`) — used

@@ -77,3 +77,59 @@ test('calendar: unknown subcommand → USAGE', async () => {
   const { ctx } = makeFakeCtx({ confirmed: true });
   await assert.rejects(() => run({ _: ['frobnicate'] }, ctx), /usage/i);
 });
+
+test('calendar create: --team-member sends teamMembers in body', async () => {
+  const fixture = { 'POST /calendars/': { status: 200, j: { calendar: { id: 'cal-2', name: 'Round Robin' } } } };
+  const { ctx, getPrinted, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture });
+  const code = await run({ _: ['create'], name: 'Round Robin', type: 'round_robin', 'team-member': 'uid-a,uid-b' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.OK);
+  const body = getCalledBodies()[0].body;
+  assert.deepEqual(body.teamMembers, [{ userId: 'uid-a' }, { userId: 'uid-b' }]);
+  assert.equal(body.calendarType, 'round_robin');
+});
+
+test('calendar create: --team-member shows in changes preview', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ confirmed: false });
+  const code = await run({ _: ['create'], name: 'RR Cal', type: 'round_robin', 'team-member': 'uid-a' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  const changes = JSON.parse(getPrinted()).data.changes;
+  assert.ok(changes.some(c => /team members: uid-a/.test(c)));
+});
+
+test('calendar create: round_robin without --team-member → USAGE', async () => {
+  const { ctx } = makeFakeCtx({ confirmed: true });
+  await assert.rejects(
+    () => run({ _: ['create'], name: 'RR', type: 'round_robin' }, ctx),
+    (e) => { assert.equal(e.code, EXIT.USAGE); assert.match(e.message, /team member/i); return true; },
+  );
+});
+
+test('calendar create: collective without --team-member → USAGE', async () => {
+  const { ctx } = makeFakeCtx({ confirmed: true });
+  await assert.rejects(
+    () => run({ _: ['create'], name: 'Group', type: 'collective' }, ctx),
+    (e) => { assert.equal(e.code, EXIT.USAGE); assert.match(e.message, /team member/i); return true; },
+  );
+});
+
+test('calendar create: event type without --team-member is fine (no validation error)', async () => {
+  const fixture = { 'POST /calendars/': { status: 200, j: { calendar: { id: 'cal-3', name: 'Events' } } } };
+  const { ctx } = makeFakeCtx({ confirmed: true, fixture });
+  const code = await run({ _: ['create'], name: 'Events', type: 'event' }, ctx);
+  assert.equal(code, EXIT.OK);
+});
+
+test('calendar create: GHL "No team member found" 422 → API error with --team-member hint', async () => {
+  const fixture = { 'POST /calendars/': { status: 422, j: { message: 'No team member found' } } };
+  const { ctx } = makeFakeCtx({ confirmed: true, fixture });
+  await assert.rejects(
+    () => run({ _: ['create'], name: 'RR', type: 'round_robin', 'team-member': 'uid-x' }, ctx),
+    (e) => {
+      assert.equal(e.code, EXIT.API);
+      assert.match(e.remediation ?? '', /team-member/);
+      return true;
+    },
+  );
+});

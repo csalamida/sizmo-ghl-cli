@@ -1,78 +1,100 @@
-# Daily Loop — Docs/Test Hygiene — 2026-07-16
+# findings — 2026-07-21 — feature-development
 
-## Gap Found
+## Gap found
 
-`commands/forms.mjs` had **zero test coverage** despite being a shipped command with two distinct code paths:
-1. List mode (`sizmo forms`) — reads model cache via `ctx.ensureModel()`
-2. Submissions feed (`sizmo forms <formId>`) — live HTTP GET with 4 distinct error branches (401/403/404/5xx)
+`sizmo calendar create --type round_robin` (and `--type collective`) fails at the GHL API with
+"No team member found" (HTTP 422). The command had no flag to pass team members, so there was
+no way to create these calendar types through the CLI. This was the known example called out
+in the daily-loop prompt: "GHL rejects it with 'No team member found'".
 
-Evidence — commands with no corresponding test file:
-```
-commands/forms.mjs        ← FIXED THIS RUN (0 → 12 tests)
-commands/surveys.mjs      ← still untested (same structure as forms)
-commands/transactions.mjs ← still untested
-commands/business.mjs     ← still untested
-```
+Root cause: `commands/calendar.mjs` `createCalendar()` built the POST body with only
+`locationId`, `name`, `calendarType`, and `slotDuration` — no `teamMembers` field, and no
+flag in `meta.flags` to accept user IDs.
 
-`forms.mjs` was chosen first: highest branch count among the four (blocked/httpCode split on list path + 4 HTTP status branches on submissions path).
+## What was built
 
----
+Added `--team-member <userId,...>` flag to `sizmo calendar create`. Bumped to 2.4.9.
 
-## Fix Applied
+### Usage
 
-Added `test/commands/forms.test.mjs` — 12 tests, no mocks beyond the in-process `makeFakeCtx` helper already used by the rest of the suite.
+```sh
+# Find user IDs first
+sizmo list users
 
-| # | Test | Branch covered |
-|---|------|----------------|
-| 1 | list: items from model | happy path, envelope shape |
-| 2 | list: empty items array | zero-item edge case |
-| 3 | list: blocked (no httpCode) | EXIT.AUTH scope error |
-| 4 | list: blocked with httpCode | EXIT.API non-scope API error |
-| 5 | submissions: happy path | EXIT.OK + envelope shape |
-| 6 | submissions: empty list | "(no submissions yet)" text |
-| 7 | submissions: 401 | EXIT.AUTH |
-| 8 | submissions: 403 | EXIT.AUTH |
-| 9 | submissions: 404 | EXIT.NOTFOUND |
-| 10 | submissions: 500 | EXIT.API |
-| 11 | submissions: --top 5 | clamped limit in URL |
-| 12 | submissions: --top 999 | MAX_TOP=100 ceiling enforced |
+# Create a round-robin calendar (--team-member required for this type)
+sizmo calendar create --name "Sales RR" --type round_robin --team-member uid1,uid2
 
----
+# Preview (no --confirm) shows team members in changes list:
+#   Create calendar "Sales RR"
+#     type: round_robin
+#     team members: uid1, uid2
+# Rerun with --confirm to execute.
 
-## Evidence
+sizmo calendar create --name "Sales RR" --type round_robin --team-member uid1,uid2 --confirm
 
-New test file alone:
-```
-$ node --test --test-concurrency=1 test/commands/forms.test.mjs
-# tests 12
-# pass 12
-# fail 0
+# event / class_booking — flag optional, silently omitted if absent (no behavior change)
+sizmo calendar create --name "Webinar" --type class_booking --confirm
 ```
 
-Full suite after adding the file (no regressions):
+GHL POST body receives: `teamMembers: [{ userId: "uid1" }, { userId: "uid2" }]`
+
+### Early validation (new)
+
+If `--type round_robin` or `--type collective` is passed without `--team-member`, USAGE error
+is thrown immediately — no API call made:
+
 ```
-$ node --test --test-concurrency=1
-# tests 600
-# pass 600
-# fail 0
+calendar type "round_robin" requires at least one team member
+  fix: sizmo list users  # find user ids, then add: --team-member uid1,uid2
 ```
 
-Suite was 588 tests before this run (12 new tests added = 600 total).
+### 422 hint (new)
 
----
+If a request reaches GHL and comes back "No team member found" in the body, the API error
+now carries a remediation hint pointing to `sizmo list users` and `--team-member`.
 
-## Files Changed
+## Files changed
 
 | File | Change |
 |------|--------|
-| `test/commands/forms.test.mjs` | New file — 12 tests covering list + submissions paths |
+| `commands/calendar.mjs` | Added `--team-member` to meta.flags; parse, validate, and include in body |
+| `test/commands/calendar.test.mjs` | 6 new tests (15 total, was 9) |
+| `README.md` | Updated calendar create table row to show `--team-member` flag |
+| `SKILL.md` | Updated cheatsheet with `--team-member` and requirement comment |
+| `lib/cli.mjs` | Added round-robin example to COMMAND_EXAMPLES |
+| `CHANGELOG.md` | Added [2.4.9] entry |
+| `package.json` | Bumped version 2.4.8 → 2.4.9 |
 
-No doc changes. No code changes. No package.json changes. No GHL API calls made this run.
+## Evidence
 
----
+Calendar tests (15 total, 6 new):
 
-## Remaining Coverage Gaps (not fixed this run — one gap per loop)
+```
+$ node --test test/commands/calendar.test.mjs 2>&1 | tail -8
+1..15
+# tests 15
+# suites 0
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 42.970542
+```
 
-- `commands/surveys.mjs` — identical structure to forms; same paths untested
-- `commands/transactions.mjs` — untested
-- `commands/business.mjs` — untested
+Full suite (606 total, no regressions from prior 600):
+
+```
+$ node --test --test-concurrency=1 2>&1 | tail -8
+1..606
+# tests 606
+# suites 0
+# pass 606
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3614.029167
+```
+
+No GHL API calls made this run. No test entities created.
