@@ -87,11 +87,22 @@ opp delete <oppId>\` exists, use it.`,
     prompt: `${SAFETY_PREAMBLE}
 
 Today's lane: FEATURE DEVELOPMENT. Look for a capability gap surfaced by actually USING the CLI,
-not a speculative feature. Known example not yet built: \`sizmo calendar create\` has no
---team-member flag, so a round_robin calendar can't be created at all (GHL rejects it with "No
-team member found"). Find one gap like that — grep CHANGELOG.md and README.md "Honest limitations"
-for hints — and either build it (small, scoped, tested) or write up exactly what's missing and why
-it matters if it's too large for one run.`,
+not a speculative feature.
+
+Do NOT treat any example in this prompt as your assignment — find a gap yourself. (A prior run
+named \`calendar create --team-member\` here as an illustration and the agent simply built that
+instead of looking; it shipped in v2.4.9 and is DONE. Illustrations are the shape to look for,
+never the task.)
+
+The shape: a command that cannot express something GHL's API supports, so a real workflow is
+impossible through the CLI — not merely inconvenient. Find one by reading source rather than docs:
+compare a command's flag list in \`commands/*.mjs\` against the request body the GHL endpoint
+actually accepts, and look for fields with no flag. \`sizmo schema\` and \`sizmo api\` let you
+check the real endpoint shape. Cross-check CHANGELOG.md and README.md "Honest limitations" only to
+confirm it isn't already known/shipped.
+
+Build it (small, scoped, tested), or if too large for one run, write up exactly what's missing,
+what it blocks, and the endpoint evidence.`,
   },
   {
     key: 'distribution-dx',
