@@ -300,3 +300,61 @@ test('brief --concise: snapshot numbers unchanged vs default', async () => {
       `metric[${i}] value matches`);
   }
 });
+
+// ── exit-code honesty: "looked, found nothing" vs "could not look at all" ─────
+// Added 2026-07-27 after inducing a real failure: with an invalid PIT, all four lanes returned
+// HTTP 401 and brief exited 0 — while `sizmo transactions` correctly exited 3 on the identical
+// 401. `sizmo brief && deploy` would proceed, and an agent checking $? would read a dead token
+// as a healthy account. brief is documented as "start here", so it is the most-run command.
+
+test('brief: denied on every lane (401) → EXIT.AUTH, not 0', async () => {
+  const http = { get: async () => ({ code: 401, ok: false, j: { message: 'unauthorized' } }) };
+  const { ctx } = makeCtx(http);
+  const code = await run({ days: 7 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 3, 'total permission failure must not report success');
+});
+
+test('brief: denied everywhere still emits a valid, honest JSON envelope', async () => {
+  // Non-zero exit must not come at the cost of machine-readability — an agent needs both the
+  // code AND the reason.
+  const http = { get: async () => ({ code: 403, ok: false, j: {} }) };
+  const { ctx, getPrinted } = makeCtx(http);
+  await run({ days: 7 }, ctx);
+  ctx.out.flush();
+  const envelope = JSON.parse(getPrinted());
+  assert.equal(envelope.degraded, true, 'envelope must admit degradation');
+  assert.ok(envelope.warnings.length > 0, 'warnings must say what could not be seen');
+});
+
+test('brief: healthy but genuinely empty account → still 0 (not a failure)', async () => {
+  // The inverse guard. An empty account is a real, successful answer — it must never be
+  // conflated with blindness, or every new/quiet account looks broken.
+  const { ctx } = makeCtx(makeAllClearHttp());
+  const code = await run({ days: 7 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 0);
+});
+
+test('brief: human render never says "All clear" while degraded', async () => {
+  // The fake-green this pairs with: "All clear — nobody waiting, nothing stuck, nothing owed"
+  // was printed whenever the action list was empty, including when it was empty because every
+  // source was blocked. The money section already guarded this; "Needs you today" did not.
+  const http = { get: async () => ({ code: 401, ok: false, j: {} }) };
+  const { ctx, getPrinted } = makeCtx(http, 1_700_000_000_000, false); // human render
+  await run({ days: 7 }, ctx);
+  ctx.out.flush();
+  const printed = getPrinted();
+  assert.ok(!/All clear — nobody waiting/.test(printed),
+    'must not claim all-clear when it could not see anything');
+  assert.ok(/NOT a clean bill of health/.test(printed),
+    'must say plainly that this is not a clean bill of health');
+});
+
+test('out.warnings is exposed and copied (brief classifies auth vs outage from it)', async () => {
+  const out = makeOut({ json: true, tty: false, command: 't', location: 'L', write: () => {}, writeErr: () => {} });
+  out.warn('can\'t see invoices → HTTP 401', { degraded: true });
+  assert.deepEqual(out.warnings, ["can't see invoices → HTTP 401"]);
+  out.warnings.push('mutated');
+  assert.equal(out.warnings.length, 1, 'getter must return a copy — callers cannot corrupt the real list');
+});

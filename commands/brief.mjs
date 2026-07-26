@@ -9,6 +9,7 @@ import { collect as noshowCollect } from './noshow.mjs';
 import { collect as pipeCollect } from './pipeline.mjs';
 import { collect as arCollect } from './receivables.mjs';
 import { rankActions, hasMixedCurrencies } from '../lib/prioritize.mjs';
+import { EXIT } from '../lib/errors.mjs';
 import { SYM } from '../lib/money.mjs';
 import { timezoneFromModel } from '../lib/model.mjs';
 import {
@@ -380,7 +381,15 @@ function renderPretty(rm, data, DAYS, ctx) {
   ctx.out.line('  ' + bar());
   const actions = data.actions || [];
   if (!actions.length) {
-    ctx.out.line('  All clear — nobody waiting, nothing stuck, nothing owed. ✅');
+    // "All clear" is a claim about what we SAW. An empty action list because every source was
+    // blocked is not all-clear, it is blindness — and stating it flatly is the same fake-green
+    // the money section already guards against with its degraded footnote. Match that honesty.
+    if (ctx?.out?.degraded) {
+      ctx.out.line('  Nothing actionable in readable data — but a source was degraded, so this');
+      ctx.out.line('  is NOT a clean bill of health. Run `sizmo doctor` to see what is blocked.');
+    } else {
+      ctx.out.line('  All clear — nobody waiting, nothing stuck, nothing owed. ✅');
+    }
   } else {
     actions.forEach((action, i) => {
       const label = action.inputs || action.name || action.kind;
@@ -473,5 +482,48 @@ export async function run(args, ctx) {
     else renderPretty(rm, data, DAYS, ctx);
   });
 
-  return 0;
+  // Exit code must distinguish "looked, found nothing" from "could not look at all."
+  //
+  // brief is a dashboard: it aggregates 4 independent lanes and degrades gracefully, so ONE
+  // blocked source is still a useful report and correctly exits 0 (with degraded:true + warnings
+  // in the JSON envelope). But when EVERY lane failed, brief saw nothing whatsoever and returning
+  // 0 is a fake-green: `sizmo brief && deploy` proceeds, and an agent checking $? concludes the
+  // account is healthy. Verified 2026-07-27 with an invalid PIT — all 4 lanes returned HTTP 401
+  // and brief still exited 0, while `sizmo transactions` correctly exited 3 on the identical 401.
+  // Detection note: a blocked lane does NOT arrive as { __error }. The sub-collects swallow a 401
+  // into a well-formed zero result (receivables → totalOwed:0, pipeline → totalValue:0/openCount:0)
+  // and only emit a warning, so a lane that was denied is shape-identical to a lane that genuinely
+  // found nothing. That is the root of this bug: `sources.receivables.totalOwed === 0` reads as
+  // "nobody owes anything" when it actually means "we were not allowed to look." So blindness =
+  // degraded AND every lane came back completely empty.
+  const laneIsEmpty = (lane) => {
+    if (!lane || typeof lane !== 'object') return true;
+    if (lane.__error) return true;
+    return Object.values(lane).every(v => {
+      if (Array.isArray(v)) return v.length === 0;
+      if (typeof v === 'number') return v === 0;
+      return true; // strings (location, currency) and nested meta carry no evidence of data
+    });
+  };
+  //
+  // The bar for exiting non-zero is deliberately "we were DENIED everywhere", not merely
+  // "everything is empty". An earlier version of this check used degraded + all-lanes-empty and
+  // wrongly failed a legitimate case that the existing suite already covered: one source 500s
+  // while the account is genuinely empty. That would report broken auth to someone whose auth is
+  // fine — a worse bug than the one being fixed. Requiring permission-shaped failures is the
+  // signal we can actually stand behind.
+  //
+  // KNOWN LIMITATION, stated rather than hidden: if all four lanes fail for a NON-auth reason
+  // (total API outage), brief still exits 0. It is visibly degraded in both renders and carries
+  // degraded:true + warnings in the envelope, but the exit code alone will not catch it. Closing
+  // that needs the sub-collects to mark their own lane as blocked instead of swallowing the
+  // failure into a well-formed zero — a real refactor, not a heuristic.
+  const lanes = Object.values(sources);
+  const deniedEverywhere =
+    ctx.out.degraded &&
+    lanes.length > 0 &&
+    lanes.every(laneIsEmpty) &&
+    (ctx.out.warnings ?? []).some(w => /\b401\b|\b403\b|scope|unauthor/i.test(w));
+
+  return deniedEverywhere ? EXIT.AUTH : EXIT.OK;
 }
