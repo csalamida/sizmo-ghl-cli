@@ -30,6 +30,7 @@ const REPO_ROOT = join(__dirname, '..', '..');
 const PAUSE_FLAG = join(__dirname, 'PAUSED');
 const MAX_RUNTIME_MS = 20 * 60 * 1000; // 20 min hard kill
 const MAX_BUDGET_USD = '3';
+const MAX_OPEN_PRS = 3; // review-queue backpressure — see the gate below for why this isn't 1
 
 async function notify({ title, body, kind }) {
   try {
@@ -90,13 +91,20 @@ async function main() {
 
   const lane = laneForDate(today);
   if (!lane) {
-    console.log(`No lane scheduled for ${dateStr} (weekend) — skipping.`);
-    return; // no notify — weekends are expected silence, not a failure
+    // All 7 days have lanes now, so this is a real config error (a lane lost its dayOfWeek, or
+    // two lanes collided on one day), not the expected weekend silence it used to be. Notify.
+    const summary = `No lane found for ${dateStr} (dow=${today.getDay()}) — every day should have one. Check LANES in config.mjs.`;
+    console.error(summary);
+    await notify({ title: 'Daily loop — no lane configured', body: summary, kind: 'error' });
+    return;
   }
 
   console.log(`=== Daily loop: ${dateStr} · lane=${lane.key} ===`);
 
-  // Idempotency: skip if a prior daily-loop PR is still open awaiting review.
+  // Backpressure: skip only once the review queue is genuinely deep. This was 1, which meant a
+  // single unmerged PR deleted the entire next day's run — CJ's merge latency, not agent capacity,
+  // was the throughput ceiling (07-23 was lost exactly this way). 3 keeps a real cap on unreviewed
+  // work without letting one slow review cost a whole day.
   let openPrs = [];
   try {
     const json = sh('gh', ['pr', 'list', '--repo', REPO_SLUG, '--state', 'open', '--json', 'headRefName,url']);
@@ -104,8 +112,8 @@ async function main() {
   } catch (e) {
     console.error('gh pr list failed — proceeding anyway:', e.message);
   }
-  if (openPrs.length > 0) {
-    const summary = `${openPrs.length} daily-loop PR(s) still open awaiting review — skipping today's run.`;
+  if (openPrs.length >= MAX_OPEN_PRS) {
+    const summary = `${openPrs.length} daily-loop PR(s) open (cap ${MAX_OPEN_PRS}) — skipping today's run until some are reviewed.`;
     console.log(summary);
     await notify({ title: `Daily loop [${lane.key}] — skipped`, body: `${summary}\n${openPrs.map(p => p.url).join('\n')}`, kind: 'info' });
     logToMcos(lane.key, 'clean', summary);
@@ -138,7 +146,10 @@ async function main() {
       '-p', lane.prompt,
       '--permission-mode', 'default',
       '--allowedTools', SAFETY_ALLOWED_TOOLS,
-      '--model', 'sonnet',
+      // Per-lane model. Enumeration lanes (docs/tests/distribution) perform well on sonnet — the
+      // work is diffing file A against file B, not reasoning. Lanes that must SEARCH for something
+      // nobody has named yet get opus. Default stays sonnet so a new lane never silently costs more.
+      '--model', lane.model ?? 'sonnet',
       '--max-budget-usd', MAX_BUDGET_USD,
       '--no-session-persistence',
     ], { cwd: worktreeDir, stdio: ['ignore', 'pipe', 'pipe'] });
