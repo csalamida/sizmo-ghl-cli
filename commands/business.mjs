@@ -7,6 +7,7 @@
 // Businesses link to contacts as accounts (B2B use case).
 
 import { EXIT } from '../lib/errors.mjs';
+import { requireConfirm } from '../lib/confirm.mjs';
 
 export const meta = {
   name: 'business',
@@ -16,7 +17,6 @@ export const meta = {
     { name: '--email',   type: 'string', desc: 'company email' },
     { name: '--phone',   type: 'string', desc: 'company phone' },
     { name: '--website', type: 'string', desc: 'company website URL' },
-    { name: '--confirm', type: 'bool',   desc: 'execute write (required for create/delete)' },
   ],
 };
 
@@ -88,20 +88,19 @@ async function createBusiness(parsed, ctx) {
     ...(parsed.website && { website: parsed.website }),
   };
 
-  ctx.out.line('');
-  ctx.out.line('  CREATE BUSINESS');
-  ctx.out.line('  ' + '─'.repeat(50));
-  ctx.out.line(`  Name:     ${name}`);
-  if (parsed.email)   ctx.out.line(`  Email:    ${parsed.email}`);
-  if (parsed.phone)   ctx.out.line(`  Phone:    ${parsed.phone}`);
-  if (parsed.website) ctx.out.line(`  Website:  ${parsed.website}`);
-  ctx.out.line('  ' + '─'.repeat(50));
-
-  if (!ctx.confirmed) {
-    ctx.out.line(`  rerun with --confirm to create`);
-    ctx.out.line('');
-    return EXIT.CONFIRM;
-  }
+  const changes = [
+    `Create business "${name}"`,
+    ...(parsed.email   ? [`  email:   ${parsed.email}`]   : []),
+    ...(parsed.phone   ? [`  phone:   ${parsed.phone}`]   : []),
+    ...(parsed.website ? [`  website: ${parsed.website}`] : []),
+  ];
+  const rerunParts = [`sizmo business create --name "${name.replace(/"/g, '\\"')}"`];
+  if (parsed.email)   rerunParts.push(`--email "${parsed.email}"`);
+  if (parsed.phone)   rerunParts.push(`--phone "${parsed.phone}"`);
+  if (parsed.website) rerunParts.push(`--website "${parsed.website}"`);
+  rerunParts.push('--confirm');
+  const gate = requireConfirm({ command: 'business create', changes, rerunCommand: rerunParts.join(' ') }, ctx);
+  if (!gate.proceed) return gate.code;
 
   let result;
   try {
@@ -164,19 +163,12 @@ async function deleteBusiness(parsed, ctx) {
 
   const name = biz?.name ?? id;
 
-  ctx.out.line('');
-  ctx.out.line('  DELETE BUSINESS');
-  ctx.out.line('  ' + '─'.repeat(50));
-  ctx.out.line(`  Name: ${name}`);
-  ctx.out.line(`  ID:   ${id}`);
-  ctx.out.line('  ' + '─'.repeat(50));
-  ctx.out.line('  ⚠  This is permanent and cannot be undone.');
-
-  if (!ctx.confirmed) {
-    ctx.out.line(`  rerun with --confirm to delete`);
-    ctx.out.line('');
-    return EXIT.CONFIRM;
-  }
+  const changes = [
+    `Delete business "${name}" (id ${id})`,
+    '  ⚠  This is permanent and cannot be undone.',
+  ];
+  const gate = requireConfirm({ command: 'business delete', changes, rerunCommand: `sizmo business delete ${id} --confirm` }, ctx);
+  if (!gate.proceed) return gate.code;
 
   try {
     const r = await ctx.http.delete(`/businesses/${encodeURIComponent(id)}`);
