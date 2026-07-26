@@ -499,10 +499,16 @@ export async function run(args, ctx) {
   const laneIsEmpty = (lane) => {
     if (!lane || typeof lane !== 'object') return true;
     if (lane.__error) return true;
-    return Object.values(lane).every(v => {
+    // An explicit `blocked` marker is proof we saw nothing — strongest possible signal. It is
+    // checked BEFORE the numeric scan because its value is an HTTP status (401), and a naive
+    // "any non-zero number means data" scan reads that as evidence of data. Caught by this
+    // file's own denied-on-every-lane test the moment receivables started reporting it.
+    if (lane.blocked) return true;
+    return Object.entries(lane).every(([k, v]) => {
+      if (k === 'blocked') return true;
       if (Array.isArray(v)) return v.length === 0;
       if (typeof v === 'number') return v === 0;
-      return true; // strings (location, currency) and nested meta carry no evidence of data
+      return true; // strings/nulls (location, currency, unknown totals) carry no evidence of data
     });
   };
   //

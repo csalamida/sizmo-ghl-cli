@@ -107,3 +107,59 @@ test('receivables: golden data keys present', () => {
     assert.ok(k in data, `golden must have key: ${k}`);
   }
 });
+
+// ── blocked ≠ zero ────────────────────────────────────────────────────────────
+// README promises this twice: "a blocked data source is reported as unknown, never as zero" and
+// "a blocked source is not zero — treat it as unknown". It was false here until 2026-07-27:
+// the blocked branch returned totalOwed:0 while holding the HTTP code proving the invoices were
+// never read. A consumer summing totalOwed across locations silently under-counted real money
+// owed, with nothing in the payload separating "settled" from "denied".
+
+const INVOICES_URL = 'GET /invoices/?altId=L-TEST&altType=location&limit=100&offset=0';
+
+test('receivables: blocked → totalOwed is null (unknown), never 0', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [INVOICES_URL]: { status: 401, j: {} } } });
+  await run({ top: 20 }, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.totalOwed, null, 'a denied read must not report 0 owed');
+  assert.equal(d.outstanding, null);
+  assert.equal(d.scanned, null);
+  assert.equal(d.blocked, 401, 'the reason must travel with the unknown');
+});
+
+test('receivables: blocked → envelope is marked degraded with a warning', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [INVOICES_URL]: { status: 403, j: {} } } });
+  await run({ top: 20 }, ctx);
+  ctx.out.flush();
+  const envelope = JSON.parse(getPrinted());
+  assert.equal(envelope.degraded, true);
+  assert.ok(envelope.warnings.some(w => /can't see invoices/.test(w)));
+});
+
+test('receivables: blocked human render never says "All settled"', async () => {
+  // The money-side fake-green: an empty list because we were denied looked identical to an
+  // empty list because the books are clear.
+  const { ctx, getPrinted } = makeFakeCtx({
+    fixture: { [INVOICES_URL]: { status: 401, j: {} } }, json: false,
+  });
+  await run({ top: 20 }, ctx);
+  ctx.out.flush();
+  const printed = getPrinted();
+  assert.ok(!/All settled/.test(printed), 'must not claim settled books it could not read');
+  assert.ok(/UNKNOWN/.test(printed));
+  assert.ok(/NOT "nothing outstanding"/.test(printed), 'must say plainly what the empty state means');
+});
+
+test('receivables: a genuinely empty (but readable) account still reports 0, not unknown', async () => {
+  // The inverse guard. Zero is the correct answer when we actually looked — conflating the two
+  // in the other direction would make every settled account look broken.
+  const { ctx, getPrinted } = makeFakeCtx({
+    fixture: { [INVOICES_URL]: { status: 200, j: { invoices: [] } } },
+  });
+  await run({ top: 20 }, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.blocked, undefined, 'a successful read must not be marked blocked');
+  assert.equal(d.totalOwed, 0, 'genuinely nothing owed is 0, not null');
+});

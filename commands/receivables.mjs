@@ -49,7 +49,15 @@ export async function collect(args, ctx) {
 
   if (firstErr && inv.length === 0) {
     ctx.out.warn(`can't see invoices → HTTP ${firstErr}`, { degraded: true });
-    return { location: LOC, scanned: 0, outstanding: 0, totalOwed: 0, currency: 'PHP', list: [] };
+    // UNKNOWN, not zero. README states this twice as a core promise ("a blocked data source is
+    // reported as unknown, never as zero" / "a blocked source is not zero — treat it as unknown")
+    // and it was false here: this branch returned totalOwed:0 while holding the HTTP code that
+    // proves we never saw the invoices. A consumer summing totalOwed across locations silently
+    // under-counted real money owed, with nothing in the payload to distinguish "settled" from
+    // "denied". null is the honest value; `blocked` carries the reason.
+    // Same pattern booked-not-paid.mjs already uses (invoicesBlocked/paymentsBlocked → suppress
+    // the bucket rather than assert a false zero).
+    return { location: LOC, blocked: firstErr, scanned: null, outstanding: null, totalOwed: null, currency: null, list: [] };
   }
 
   const owed = inv
@@ -100,6 +108,16 @@ export async function run(args, ctx) {
 
   const TOP = args.top ?? 20;
   ctx.out.card(() => {
+    // Blocked → say so. Rendering money(null) or "Nothing outstanding. All settled. ✅" here
+    // would tell the user their books are clear when the truth is we were denied the read.
+    if (data.blocked) {
+      ctx.out.line(`\n  RECEIVABLES — UNKNOWN · can't see invoices (HTTP ${data.blocked})  ·  loc ${data.location}`);
+      ctx.out.line('  ' + '─'.repeat(72));
+      ctx.out.line('  This is NOT "nothing outstanding" — the invoices could not be read at all.');
+      ctx.out.line('  Add the invoices.readonly scope in GoHighLevel → Private Integrations,');
+      ctx.out.line('  then rerun. `sizmo doctor` shows every blocked scope.\n');
+      return;
+    }
     ctx.out.line(`\n  RECEIVABLES — ${money(data.totalOwed, data.currency)} outstanding across ${data.outstanding} invoice(s)  ·  ${data.scanned} scanned  ·  loc ${data.location}`);
     ctx.out.line('  ' + '─'.repeat(72));
     if (!data.list.length) {

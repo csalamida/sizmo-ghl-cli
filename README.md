@@ -297,7 +297,12 @@ Every command supports `--json`. The envelope shape is stable:
 }
 ```
 
-`degraded: true` means at least one data source was blocked (scope or auth). Read `warnings`. A blocked source is not zero — treat it as unknown.
+`degraded: true` means at least one data source was blocked (scope or auth). Read `warnings`. **A blocked source is not zero — treat it as unknown.**
+
+How that reads in the payload depends on the command, and it's worth knowing exactly which:
+
+- **`receivables`** reports it properly: the totals come back `null` with a `blocked: <httpStatus>` marker, so a denied read can never be mistaken for a settled account.
+- **`triage`, `noshow`, `pipeline`, `reconcile`, `segment`, `booked-not-paid`** still emit `0` on a blocked lane. `degraded: true` and `warnings` are the reliable signal there — **do not sum those numbers without checking `degraded` first**, or a blocked lane silently reads as a real zero. Being fixed command by command; `test/docs/blocked-is-not-zero.test.mjs` tracks which still do it and blocks any new one from joining.
 
 **Router verbs differ.** `init`, `auth`, and `config` are setup verbs, not data commands — their `--json` output is a purpose-specific object (e.g. `auth check` → `{ lanes, usable }`, `init` → `{ profile, location, ok, doctor }`), not the `data`/`degraded`/`warnings` envelope above. The data commands (brief, snapshot, doctor, …) all use the envelope.
 
