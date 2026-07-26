@@ -86,7 +86,10 @@ export async function collect(args, ctx) {
     const p = await ctx.http.get('/opportunities/pipelines', { query: { locationId: LOC } });
     if (!p.ok) {
       ctx.out.warn(`can't see pipelines → HTTP ${p.code}`, { degraded: true });
-      return { location: LOC, totalValue: 0, openCount: 0, pipelines: [], stuck: [], modelMeta };
+      // UNKNOWN, not zero — see the receivables fix (2026-07-27) and README's "a blocked source
+      // is not zero". totalValue is MONEY: reporting 0 open pipeline value to someone whose
+      // pipelines we could not read tells them their pipeline is empty when we never looked.
+      return { location: LOC, blocked: p.code, totalValue: null, openCount: null, pipelines: [], stuck: [], modelMeta };
     }
     const pipelines = p.j.pipelines || [];
     for (const pl of pipelines) {
@@ -133,7 +136,10 @@ export async function collect(args, ctx) {
 
   if (firstOppErr && opps.length === 0) {
     ctx.out.warn(`can't see opportunities → HTTP ${firstOppErr}`, { degraded: true });
-    return { location: LOC, totalValue: 0, openCount: 0, pipelines: [], stuck: [] };
+    // Second blocked branch: the pipelines were readable but the opportunities inside them were
+    // not, so value/count are equally unknown. Both branches must agree — fixing only one would
+    // leave a path that still asserts a false zero.
+    return { location: LOC, blocked: firstOppErr, totalValue: null, openCount: null, pipelines: [], stuck: [] };
   }
 
   // group by pipeline→stage
@@ -187,6 +193,15 @@ export async function run(args, ctx) {
   const TOP = args.top ?? 100;
 
   ctx.out.card(() => {
+    // Blocked → say UNKNOWN. money(null) across null deals would read as a healthy empty
+    // pipeline to someone whose deals were never visible.
+    if (data.blocked) {
+      ctx.out.line(`\n  PIPELINE HEALTH  ·  UNKNOWN · can't read pipeline data (HTTP ${data.blocked})  ·  loc ${data.location}`);
+      ctx.out.line('  This is NOT an empty pipeline — the deals could not be read at all.');
+      ctx.out.line('  Needs opportunities.readonly in GoHighLevel → Private Integrations.');
+      ctx.out.line('  `sizmo doctor` lists every blocked scope.\n');
+      return;
+    }
     ctx.out.line(`\n  PIPELINE HEALTH  ·  ${money(data.totalValue)} across ${data.openCount} open deal(s)  ·  loc ${data.location}`);
     // C2: staleness note when model is old/offline
     if (data.modelMeta) {

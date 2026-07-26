@@ -280,3 +280,63 @@ test('C3-pipeline: missing stage id → resolver returns unknown token, never fa
   assert.ok(stuckStage.includes('unknown') || stuckStage.includes('s-UNKNOWN'), `stage for unknown id must be '<unknown:...>', got: "${stuckStage}"`);
   assert.ok(!stuckStage || stuckStage !== 'Lead', 'must not fabricate a name from wrong stage');
 });
+
+// ── blocked ≠ zero (2026-07-27) ───────────────────────────────────────────────
+// totalValue is MONEY. Reporting 0 open pipeline value to someone whose deals were never
+// readable tells them their pipeline is empty when we simply never looked. pipeline had TWO
+// blocked branches — pipelines unreadable, and opportunities unreadable inside readable
+// pipelines — so both are pinned; fixing one would leave a path still asserting a false zero.
+
+const PIPES_URL = 'GET /opportunities/pipelines?locationId=L-TEST';
+const OPPS_URL  = 'GET /opportunities/search?location_id=L-TEST&status=open&limit=100&page=1';
+
+test('pipeline: pipelines unreadable → totalValue null, blocked marker set', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [PIPES_URL]: { status: 401, j: {} } } });
+  await run({}, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.totalValue, null, 'denied read must not report 0 pipeline value');
+  assert.equal(d.openCount, null);
+  assert.equal(d.blocked, 401);
+});
+
+test('pipeline: opportunities unreadable inside readable pipelines → also null', async () => {
+  // The second branch. Pipelines resolve fine; the deals inside them do not.
+  const { ctx, getPrinted } = makeFakeCtx({
+    fixture: {
+      [PIPES_URL]: { status: 200, j: { pipelines: [{ id: 'p1', name: 'Sales', stages: [{ id: 's1', name: 'New', position: 0 }] }] } },
+      [OPPS_URL]:  { status: 403, j: {} },
+    },
+  });
+  await run({}, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.totalValue, null, 'unreadable opportunities must not report 0 value');
+  assert.equal(d.blocked, 403);
+});
+
+test('pipeline: blocked render never implies an empty pipeline', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({
+    fixture: { [PIPES_URL]: { status: 401, j: {} } }, json: false,
+  });
+  await run({}, ctx);
+  ctx.out.flush();
+  const printed = getPrinted();
+  assert.ok(/UNKNOWN/.test(printed));
+  assert.ok(/NOT an empty pipeline/.test(printed), 'must say plainly what the empty state means');
+});
+
+test('pipeline: a genuinely empty but READABLE pipeline still reports 0', async () => {
+  // Inverse guard — zero is correct when we actually looked.
+  const { ctx, getPrinted } = makeFakeCtx({
+    fixture: {
+      [PIPES_URL]: { status: 200, j: { pipelines: [{ id: 'p1', name: 'Sales', stages: [{ id: 's1', name: 'New', position: 0 }] }] } },
+      [OPPS_URL]:  { status: 200, j: { opportunities: [] } },
+    },
+  });
+  await run({}, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.blocked, undefined, 'a successful read must not be marked blocked');
+  assert.equal(d.totalValue, 0, 'genuinely empty is 0, not null');
+});

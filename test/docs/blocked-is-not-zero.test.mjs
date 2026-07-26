@@ -29,15 +29,17 @@ const CMD_DIR = join(REPO, 'commands');
 const KNOWN_FABRICATES_ZERO = new Set([
   'booked-not-paid', // carries a `caveat` string, but calendars/settled/billedUnpaidTotal are 0
   'noshow',
-  'pipeline',        // totalValue: 0 — money, should be next
-  'reconcile',
+  'reconcile',       // money — highest remaining stakes, should be next
   'segment',
   'triage',
 ]);
 
 // Commands proven to report unknown rather than zero. Regression-protected: if one of these
 // starts returning a hardcoded 0 next to a "can't see" warning again, this fails.
-const MUST_REPORT_UNKNOWN = ['receivables'];
+// pipeline joined 2026-07-27 — it had TWO blocked branches (pipelines unreadable, and
+// opportunities unreadable inside readable pipelines); both had to be fixed or one path would
+// still assert a false zero.
+const MUST_REPORT_UNKNOWN = ['receivables', 'pipeline'];
 
 function sourceOf(cmd) {
   return readFileSync(join(CMD_DIR, `${cmd}.mjs`), 'utf8');
