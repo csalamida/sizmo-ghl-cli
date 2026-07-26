@@ -263,3 +263,109 @@ test('appointment cancel: missing apptId → USAGE error', async () => {
   const { ctx } = makeFakeCtx();
   await assert.rejects(() => run({ _: ['cancel'] }, ctx), /usage/i);
 });
+
+// ── expressiveness: the endpoint accepts 13 body fields, sizmo sent 4 ─────────
+// Added 2026-07-27 after diffing `appointment book` against POST /calendars/events/appointments
+// via describe_operation. The command could not set a title, a duration, an assignee, or a
+// location — and had no way to stop the location's automations from firing.
+
+const BOOK_URL = 'POST /calendars/events/appointments';
+
+test('appointment book: optional fields are OMITTED, not sent as null', async () => {
+  // GHL distinguishes an absent key from an explicit null on several of these — notably title,
+  // which it auto-generates only when the key is missing entirely.
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    model: MODEL, confirmed: true,
+    fixture: { [BOOK_URL]: { status: 200, j: { id: APPT_ID } } },
+  });
+  await run({ _: ['book'], calendar: 'Coaching Calls', contact: CONTACT, start: START }, ctx);
+  ctx.out.flush();
+  const [wrote] = getCalledBodies();
+  assert.deepEqual(Object.keys(wrote.body).sort(),
+    ['calendarId', 'contactId', 'locationId', 'startTime'],
+    'a bare booking must send exactly the 4 required fields and nothing else');
+});
+
+test('appointment book: every optional flag maps to its real GHL field name', async () => {
+  // Field names verified against describe_operation(create-appointment). A wrong name here is
+  // invisible unless the body itself is inspected — the request still 200s, the value is dropped.
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    model: MODEL, confirmed: true,
+    fixture: { [BOOK_URL]: { status: 200, j: { id: APPT_ID } } },
+  });
+  await run({
+    _: ['book'], calendar: 'Coaching Calls', contact: CONTACT, start: START,
+    end: '2026-07-01T11:00:00Z', title: 'Strategy Call',
+    'assigned-user': 'usr-99', address: 'Zoom', 'no-notify': true,
+  }, ctx);
+  ctx.out.flush();
+  const [wrote] = getCalledBodies();
+  assert.equal(wrote.body.endTime, '2026-07-01T11:00:00Z', 'endTime, not "end"');
+  assert.equal(wrote.body.title, 'Strategy Call');
+  assert.equal(wrote.body.assignedUserId, 'usr-99', 'assignedUserId, not "assignedUser"');
+  assert.equal(wrote.body.address, 'Zoom');
+  assert.equal(wrote.body.toNotify, false, '--no-notify must send toNotify:false');
+});
+
+test('appointment book: automations fire by default (toNotify not sent)', async () => {
+  // The default must stay GHL's default. Silently sending toNotify:false would suppress a
+  // client's confirmation messages without anyone asking for that.
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    model: MODEL, confirmed: true,
+    fixture: { [BOOK_URL]: { status: 200, j: { id: APPT_ID } } },
+  });
+  await run({ _: ['book'], calendar: 'Coaching Calls', contact: CONTACT, start: START }, ctx);
+  ctx.out.flush();
+  assert.equal('toNotify' in getCalledBodies()[0].body, false);
+});
+
+test('appointment book: confirm preview warns that automations will fire', async () => {
+  // Booking sends the contact a real message. A confirm listing only calendar/contact/time
+  // understates what the human is approving.
+  const { ctx, getPrinted } = makeFakeCtx({ model: MODEL });
+  const code = await run({ _: ['book'], calendar: 'Coaching Calls', contact: CONTACT, start: START }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  const changes = JSON.parse(getPrinted()).data.changes.join('\n');
+  assert.match(changes, /fire the location's automations/i);
+});
+
+test('appointment book: --no-notify preview says automations are suppressed', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ model: MODEL });
+  await run({ _: ['book'], calendar: 'Coaching Calls', contact: CONTACT, start: START, 'no-notify': true }, ctx);
+  ctx.out.flush();
+  const changes = JSON.parse(getPrinted()).data.changes.join('\n');
+  assert.match(changes, /SUPPRESSED/);
+});
+
+test('appointment book: rerun command round-trips every flag passed', async () => {
+  // The confirm envelope's confirmCommand is what an agent re-runs verbatim. Dropping a flag
+  // there means the confirmed booking differs from the previewed one.
+  const { ctx, getPrinted } = makeFakeCtx({ model: MODEL });
+  await run({
+    _: ['book'], calendar: 'Coaching Calls', contact: CONTACT, start: START,
+    end: '2026-07-01T11:00:00Z', title: 'Strategy Call',
+    'assigned-user': 'usr-99', address: 'Zoom', 'no-notify': true,
+  }, ctx);
+  ctx.out.flush();
+  const cmd = JSON.parse(getPrinted()).data.confirmCommand;
+  for (const frag of ['--end', '--title', '--assigned-user usr-99', '--address', '--no-notify', '--confirm']) {
+    assert.ok(cmd.includes(frag), `confirmCommand must carry ${frag} — got: ${cmd}`);
+  }
+});
+
+test('appointment book: --end before --start → USAGE, no write fired', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({ model: MODEL, confirmed: true });
+  await assert.rejects(
+    () => run({ _: ['book'], calendar: 'Coaching Calls', contact: CONTACT, start: START, end: '2026-07-01T09:00:00Z' }, ctx),
+    /must be after/i);
+  assert.equal(getCalledWrites().length, 0);
+});
+
+test('appointment book: unparseable --end → USAGE, no write fired', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({ model: MODEL, confirmed: true });
+  await assert.rejects(
+    () => run({ _: ['book'], calendar: 'Coaching Calls', contact: CONTACT, start: START, end: 'next tuesday' }, ctx),
+    /ISO 8601/i);
+  assert.equal(getCalledWrites().length, 0);
+});

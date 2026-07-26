@@ -23,6 +23,11 @@ export const meta = {
     { name: '--calendar', type: 'string', desc: 'calendar name (book)' },
     { name: '--contact',  type: 'string', desc: 'contact id (book)' },
     { name: '--start',    type: 'string', desc: 'ISO 8601 start datetime (book)' },
+    { name: '--end',      type: 'string', desc: 'ISO 8601 end datetime (book) — omit to use the calendar slot duration' },
+    { name: '--title',    type: 'string', desc: 'appointment title (book) — omit and GHL names it for you' },
+    { name: '--assigned-user', type: 'string', desc: 'user id to assign (book) — `sizmo list users` for ids' },
+    { name: '--address',  type: 'string', desc: 'meeting location (book) — e.g. "Zoom" or a street address' },
+    { name: '--no-notify', type: 'bool',  desc: 'book WITHOUT firing the location\'s automations (default: they fire)' },
     { name: '--text',     type: 'string', desc: 'note body text (note)' },
   ],
   readOnly: false,
@@ -64,10 +69,28 @@ export async function run(args, ctx) {
     if (!contact) throw new GhlError('appointment book requires --contact',  EXIT.USAGE);
     if (!start)   throw new GhlError('appointment book requires --start',    EXIT.USAGE);
 
+    const end          = args.end;
+    const title        = args.title;
+    const assignedUser = args['assigned-user'];
+    const address      = args.address;
+    const noNotify     = !!args['no-notify'];
+
     // Validate ISO date roughly (must be parseable)
     const startMs = Date.parse(start);
     if (isNaN(startMs)) {
       throw new GhlError(`appointment book: invalid --start '${start}' — must be ISO 8601 (e.g. 2026-06-15T10:00:00Z)`, EXIT.USAGE);
+    }
+    // --end gets the same validation as --start, plus ordering. Catching this locally beats a
+    // raw GHL 4xx, and an end-before-start booking is a mistake worth refusing rather than sending.
+    let endMs = null;
+    if (end != null) {
+      endMs = Date.parse(end);
+      if (isNaN(endMs)) {
+        throw new GhlError(`appointment book: invalid --end '${end}' — must be ISO 8601 (e.g. 2026-06-15T11:00:00Z)`, EXIT.USAGE);
+      }
+      if (endMs <= startMs) {
+        throw new GhlError(`appointment book: --end (${end}) must be after --start (${start})`, EXIT.USAGE);
+      }
     }
 
     // Resolve calendar name → id via model, falling back to a live fetch on a miss (the model
@@ -91,20 +114,47 @@ export async function run(args, ctx) {
       `Book appointment on calendar '${calName}' (id: ${cal.id})`,
       `  contact: ${contact}`,
       `  start:   ${start}`,
+      ...(end          ? [`  end:     ${end}`]                : [`  end:     (calendar slot duration)`]),
+      ...(title        ? [`  title:   ${title}`]              : []),
+      ...(assignedUser ? [`  assigned: ${assignedUser}`]      : []),
+      ...(address      ? [`  location: ${address}`]           : []),
+      // Automations are the invisible side effect of booking: GHL defaults toNotify to true, so a
+      // confirm that only lists calendar/contact/time understates what is about to happen — the
+      // contact may get an SMS/email and workflows may fire. Say so before the human approves.
+      noNotify
+        ? `  ⚠ automations SUPPRESSED (--no-notify) — no confirmation message will be sent`
+        : `  ⚠ this will fire the location's automations (confirmation SMS/email, workflows) — use --no-notify to suppress`,
       ...(staleNote ? [`  (${staleNote})`] : []),
     ];
-    const rerunCommand = `sizmo appointment book --calendar "${calName}" --contact ${contact} --start "${start}" --confirm`;
+    const rerunParts = [
+      `sizmo appointment book --calendar "${calName}" --contact ${contact} --start "${start}"`,
+      ...(end          ? [`--end "${end}"`]                    : []),
+      ...(title        ? [`--title "${title.replace(/"/g, '\\"')}"`] : []),
+      ...(assignedUser ? [`--assigned-user ${assignedUser}`]   : []),
+      ...(address      ? [`--address "${address.replace(/"/g, '\\"')}"`] : []),
+      ...(noNotify     ? ['--no-notify']                       : []),
+      '--confirm',
+    ];
+    const rerunCommand = rerunParts.join(' ');
 
     const gate = requireConfirm({ command: 'appointment book', changes, rerunCommand }, ctx);
     if (!gate.proceed) return gate.code;
 
     // Execute
     // GHL requires locationId in the body (verified live: 400 "Location ID is required" without it).
+    // Optional fields are OMITTED when not passed rather than sent as null/empty — GHL treats an
+    // explicit null differently from an absent key on several of these (notably title, which it
+    // auto-generates only when the key is missing).
     const r = await ctx.http.post('/calendars/events/appointments', {
       calendarId: cal.id,
       locationId: ctx.cfg.loc,
       contactId: contact,
       startTime: start,
+      ...(end          && { endTime: end }),
+      ...(title        && { title }),
+      ...(assignedUser && { assignedUserId: assignedUser }),
+      ...(address      && { address }),
+      ...(noNotify     && { toNotify: false }),
     });
 
     if (r.code === 401 || r.code === 403) {

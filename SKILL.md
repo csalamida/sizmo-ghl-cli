@@ -108,6 +108,11 @@ sizmo calendar create --name "Discovery Calls" [--type --slot-min --team-member 
 # --team-member <comma-separated userIds> is REQUIRED for round_robin and collective types
 sizmo calendar delete <id> --confirm
 sizmo appointment book --calendar "Discovery Calls" --contact <id> --start 2026-07-15T14:00:00Z --confirm
+# optional: --end (ISO, omit = calendar slot duration) · --title · --assigned-user <userId> · --address "Zoom"
+# booking FIRES the location's automations (confirmation SMS/email, workflows) by default.
+# --no-notify suppresses them — use it for backfills/migrations so contacts are not messaged.
+sizmo appointment book --calendar "Discovery Calls" --contact <id> --start 2026-07-15T14:00:00Z \
+  --end 2026-07-15T15:00:00Z --title "Strategy Call" --assigned-user <userId> --no-notify --confirm
 sizmo appointment cancel <apptId> --confirm
 sizmo appointment note <apptId> --text "Confirmed reschedule" --confirm
 

@@ -15,6 +15,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.4.9] — 2026-07-21  **(not yet released — current dev version)**
 
+### Added — `appointment book` can express a real booking
+
+Diffed the command against `POST /calendars/events/appointments` (via the LeadConnector Anthropic
+MCP's `describe_operation`, introspection only). The endpoint accepts 13 body fields; sizmo sent 4.
+A booking could not carry a title, a duration, an assignee, or a location — and there was no way to
+stop the location's automations from firing.
+
+- **`--title`** — appointment title. Omit and GHL still names it for you (the key is omitted
+  entirely rather than sent empty, because GHL only auto-generates when the field is absent).
+- **`--end`** — ISO 8601 end time. Omit to keep using the calendar's slot duration. Validated the
+  same way `--start` already was, plus a refusal when it lands before `--start`.
+- **`--assigned-user <userId>`** — assign the appointment to a specific user (`sizmo list users`).
+- **`--address`** — meeting location, e.g. `"Zoom"` or a street address.
+- **`--no-notify`** — book **without** firing the location's automations.
+
+### Changed — booking now discloses that it messages the contact
+
+`toNotify` defaults to true server-side, so every `sizmo appointment book` has always been capable
+of sending the contact a confirmation SMS/email and kicking off workflows. The confirm preview
+listed only calendar, contact and time, which understated what was being approved. It now says so
+explicitly, and says the opposite when `--no-notify` is passed. The default is unchanged — sizmo
+does not silently suppress a client's confirmations.
+
+### Fixed — `sizmo brief` exited 0 while completely blind
+
+With an invalid PIT, all four brief lanes returned HTTP 401 and `brief` still exited `0`, while
+`sizmo transactions` correctly exited `3` on the identical failure. `sizmo brief && deploy` would
+proceed, and an agent checking `$?` read a dead token as a healthy account. Root cause: a blocked
+lane is not surfaced as an error — the sub-collects swallow a 401 into a well-formed zero, so
+`receivables.totalOwed === 0` is shape-identical whether nobody owes anything or the read was
+denied. `brief` now exits `AUTH` when every lane came back empty *and* the failures were
+permission-shaped, and the human render no longer prints "All clear — nobody waiting, nothing
+stuck, nothing owed" while degraded. Known limitation, documented in the code: four lanes failing
+for a non-auth reason still exits 0.
+
+`lib/output.mjs` now exposes `out.warnings` (a copy) alongside the existing `out.degraded` — the
+JSON envelope already shipped warnings, but nothing in-process could read them.
+
+### Added — the docs now enforce themselves
+
+`SECURITY.md` claimed sizmo makes "exactly two kinds of outbound request"; `lib/llm.mjs` is a third
+(the LLM providers, opt-in via `sizmo ask`), so the guarantee table contradicted the document's own
+trust-boundary section. Its dependency-audit recipe also pointed at a `package.json` field that
+does not exist. Both fixed, plus a full egress audit listing all 7 hosts in shipped code and which
+3 are ever contacted.
+
+New test files turn those promises into build failures rather than prose: `test/docs/`
+`security-claims` (zero deps, no `--pit` flag, the exact host set, only 3 modules opening sockets,
+no charge path, every write routed through `requireConfirm`), `changelog-claims`, and
+`agent-docs-drift` (every command present in SKILL.md **and** AGENTS.md, every documented flag
+valid *for that command*).
+
+### Added — test coverage for every command
+
+`business`, `surveys`, `transactions`, `list` and `sync` had none. Zero untested commands remain.
+`business` was covered first because 2.4.9 changed its confirm behaviour while it was unguarded.
+
+### Fixed — `sizmo business --dry-run` was broken
+
+`business.mjs` hand-rolled a `ctx.confirmed` check instead of calling `requireConfirm()`, so
+`--dry-run` exited 5 and printed prose rather than exiting 0 with the JSON envelope — contradicting
+README's claim that `--dry-run` works on all writes.
+
+### Fixed — SKILL.md was missing 7 of 34 commands
+
+`ack`, `booked-not-paid`, `crm`, `focus`, `noshow`, `receivables` and `reconcile` were absent from
+the file Claude Code loads as its complete command reference — three of them core money surfaces.
+`ack` was missing from **both** agent docs, which matters because it is the reason an item can
+vanish from `focus`/`brief`: an agent that does not know it exists will diagnose a snoozed contact
+as missing CRM data.
+
+### Docs — 8 CHANGELOG versions were never published
+
+Audited against `npm view sizmo versions`. `2.4.1`–`2.4.5`, `1.0.1` and `1.2.0` have full entries
+here but do not exist on npm, so `npm install sizmo@2.4.3` fails. They are now marked inline with
+the release that actually carries their changes, rather than deleted — the changes are real.
+
+---
+
 **Gap found by using the CLI: `sizmo calendar create --type round_robin` fails at the GHL API
 ("No team member found") with no remediation path, because the command had no way to pass
 team members. Round-robin and collective calendars require at least one assigned user — the

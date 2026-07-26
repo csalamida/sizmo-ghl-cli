@@ -159,7 +159,7 @@ These commands change data in GoHighLevel. Every write requires `--confirm`; wit
 | `sizmo opp move <oppId> --stage <name>` | Move an opportunity to a stage | `--stage` | `opportunities.write` |
 | `sizmo opp update <oppId> [--value --status]` | Update value or status of an opportunity | `--value` or `--status` | `opportunities.write` |
 | `sizmo opp delete <oppId>` | Delete **one** opportunity by id | oppId positional | `opportunities.write` |
-| `sizmo appointment book --calendar --contact --start` | Book an appointment | `--calendar`, `--contact`, `--start` | `calendars.write` |
+| `sizmo appointment book --calendar --contact --start` | Book an appointment | `--calendar`, `--contact`, `--start`, `--end`, `--title`, `--assigned-user`, `--address`, `--no-notify` | `calendars.write` |
 | `sizmo appointment cancel <apptId>` | Cancel an appointment | apptId positional | `calendars.write` |
 | `sizmo appointment note <apptId> --text "..."` | Add a note to an appointment | `--text` | `calendars.write` |
 | `sizmo send <contactId> --channel sms\|email --message "..."` | Send an SMS or email (email subject auto-generated from the message's first line — no separate `--subject` flag) | `--channel`, `--message` | `conversations/message.write` |
