@@ -54,10 +54,30 @@ Tags
 ## Read Commands (no confirmation, no risk)
 
 - `sizmo brief` — morning screen: revenue at risk, unreplied threads, open opps. Start here.
+- `sizmo focus` — one ranked to-do queue by money at stake
+- `sizmo triage` — unreplied conversation sweep (who is waiting on a human)
 - `sizmo pipeline` — pipeline health + stuck deals sweep (closest thing to "list open opportunities")
+- `sizmo snapshot` — point-in-time state summary
 - `sizmo export` — full location dump to JSON (deterministic, key-sorted, byte-identical re-exports)
 - `sizmo diff <file> [file2]` — what changed between saved state and live (or two saved states)
 - `sizmo segment --tag X` — find contacts by criteria (tag, phone, created-days, etc.)
+- `sizmo crm` — query the local CRM model — counts, lists, staleness
+
+Money surfaces (all read-only — money never moves from the CLI):
+
+- `sizmo receivables` — A/R: who owes, how much, how old
+- `sizmo booked-not-paid` — sessions with no invoice or payment (the money leak)
+- `sizmo reconcile` — money reconciliation: collected by source, flags, recurring
+- `sizmo noshow` — no-show recovery: who to re-book
+
+Local queue state (never touches GoHighLevel — state lives in `~/.config/sizmo/memory/`):
+
+- `sizmo ack <contactId>` — snooze a contact so they stop surfacing in `focus`/`brief`
+- `sizmo ack --list` — every active snooze with its expiry (expired ones marked)
+- `sizmo ack --clear <contactId>` — un-snooze; the item returns to the queue immediately
+- Acked items are **hidden, not deleted**, and their count is always signalled in the
+  `focus`/`brief` footer. Pass `--show-acked` to reveal them. If a contact you expect is
+  missing from a queue, check here before concluding the data is wrong.
 
 ## Write Commands (all need `--confirm`)
 

@@ -74,6 +74,24 @@ Tags
 - `sizmo forms` / `sizmo surveys` — list + recent submissions
 - `sizmo transactions` — last 25 payment transactions (`--top N`, `--type subscription`)
 
+### Snoozing items out of the queue (`sizmo ack`)
+
+Local-only state — writes to `~/.config/sizmo/memory/<loc>.json`, never to GoHighLevel, so it
+needs no `--confirm`.
+
+```sh
+sizmo ack <contactId>                    # snooze — defaults to 7d
+sizmo ack <contactId> --for 48h          # duration: 7d / 48h / 30m. auto-expires back into the queue
+sizmo ack <contactId> --reason "waiting" # optional note on why
+sizmo ack --list                         # every active snooze + expiry (expired ones marked)
+sizmo ack --clear <contactId>            # un-snooze; returns to the queue immediately
+sizmo focus --show-acked                 # reveal hidden items (also on `sizmo brief`)
+```
+
+Acked items are **hidden, not deleted**, and the count is always signalled in the `focus`/`brief`
+footer. If a contact you expect is missing from a queue, run `sizmo ack --list` before concluding
+the CRM data is wrong — a prior snooze is the more likely explanation.
+
 ---
 
 ## Write Commands (all require `--confirm`)
