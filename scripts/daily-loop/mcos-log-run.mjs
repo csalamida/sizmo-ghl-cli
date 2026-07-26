@@ -8,7 +8,7 @@
 // Still non-fatal by design: if the API is down, the audit run itself must not fail. Discord
 // notification is run.mjs's job (notify.mjs), separate from this bookkeeping.
 //
-// Usage: node mcos-log-run.mjs <lane-key> <outcome: pr|clean|failed|timeout> "<summary>" [prUrl]
+// Usage: node mcos-log-run.mjs <lane-key> <outcome: pr|clean|failed|timeout> "<summary>" [prUrl] [dateStr]
 import { randomUUID } from 'node:crypto';
 
 const API = 'http://localhost:54321/rest/v1';
@@ -22,21 +22,20 @@ const HISTORY_MISSION_ID = '5f85e5ba-c2fe-495c-b3bf-6cb40b15d924'; // Daily run 
 // IDs, not titles — titles get reworded during migrations/cleanups and a title lookup then fails
 // silently ("goal not found", exit 0). Both IDs survived the SQLite migration unchanged.
 
-const [, , laneKey, outcome, summary, prUrl] = process.argv;
+const [, , laneKey, outcome, summary, prUrl, passedDateStr] = process.argv;
 if (!laneKey || !outcome || !summary) {
-  console.error('usage: mcos-log-run.mjs <lane-key> <outcome> "<summary>" [prUrl]');
+  console.error('usage: mcos-log-run.mjs <lane-key> <outcome> "<summary>" [prUrl] [dateStr]');
   process.exit(1);
 }
 
 const now = Date.now();
-const nowDate = new Date(now);
-// Local date, not UTC — must match run.mjs's dateStr (toISOString() is UTC and drifts a day
-// behind local time before UTC midnight, e.g. a 7am fire in UTC+8).
-const dateStr = [
-  nowDate.getFullYear(),
-  String(nowDate.getMonth() + 1).padStart(2, '0'),
-  String(nowDate.getDate()).padStart(2, '0'),
-].join('-');
+// Prefer the date run.mjs stamped at the START of the run — deriving our own here disagrees with
+// the branch name whenever a run crosses midnight (seen live 2026-07-26: branch 07-26, row 07-27).
+// The local-date fallback is for direct/manual invocation only, and matches run.mjs's formula.
+const dateStr = passedDateStr || (() => {
+  const d = new Date(now);
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+})();
 
 const OUTCOME_LABEL = { pr: 'PR opened', clean: 'clean — nothing found', failed: 'FAILED', timeout: 'TIMED OUT' };
 const label = OUTCOME_LABEL[outcome] || outcome;

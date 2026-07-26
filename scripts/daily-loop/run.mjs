@@ -43,9 +43,13 @@ async function notify({ title, body, kind }) {
   }
 }
 
-function logToMcos(laneKey, outcome, summary, prUrl) {
+// dateStr is PASSED IN, never recomputed downstream. mcos-log-run.mjs used to derive its own from
+// Date.now() at log time, which disagrees with the branch name whenever a run crosses midnight
+// (observed live 2026-07-26: branch said 07-26, the MC OS row said 07-27). Same "two places
+// independently deriving one value" shape that caused both earlier date bugs — one source, passed.
+function logToMcos(laneKey, outcome, summary, prUrl, dateStr) {
   try {
-    execFileSync('node', [join(__dirname, 'mcos-log-run.mjs'), laneKey, outcome, summary, prUrl || ''], { stdio: 'inherit' });
+    execFileSync('node', [join(__dirname, 'mcos-log-run.mjs'), laneKey, outcome, summary, prUrl || '', dateStr], { stdio: 'inherit' });
   } catch (e) {
     console.error('mcos log failed (non-fatal):', e.message);
   }
@@ -116,7 +120,7 @@ async function main() {
     const summary = `${openPrs.length} daily-loop PR(s) open (cap ${MAX_OPEN_PRS}) — skipping today's run until some are reviewed.`;
     console.log(summary);
     await notify({ title: `Daily loop [${lane.key}] — skipped`, body: `${summary}\n${openPrs.map(p => p.url).join('\n')}`, kind: 'info' });
-    logToMcos(lane.key, 'clean', summary);
+    logToMcos(lane.key, 'clean', summary, '', dateStr);
     return;
   }
 
@@ -219,7 +223,7 @@ async function main() {
     body: `${summary}${prUrl ? `\n${prUrl}` : ''}`,
     kind: kindMap[outcome],
   });
-  logToMcos(lane.key, outcome, summary, prUrl);
+  logToMcos(lane.key, outcome, summary, prUrl, dateStr);
 
   console.log(`=== Done: ${outcome} ===`);
 }
