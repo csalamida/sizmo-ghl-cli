@@ -5,9 +5,15 @@ All notable changes to `sizmo` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> **Not every heading below is installable.** Some versions were tagged and changelogged during
+> development but rolled into the next release instead of being published, so `npm install
+> sizmo@<that-version>` will fail. Those headings are marked **(not published — shipped in X)**
+> inline, and their changes are real: they reached users inside the release named there. Verify
+> what actually exists with `npm view sizmo versions`.
+
 ## [Unreleased]
 
-## [2.4.9] — 2026-07-21
+## [2.4.9] — 2026-07-21  **(not yet released — current dev version)**
 
 **Gap found by using the CLI: `sizmo calendar create --type round_robin` fails at the GHL API
 ("No team member found") with no remediation path, because the command had no way to pass
@@ -150,7 +156,7 @@ this thing.
 
 548/548 tests green (12 new).
 
-## [2.4.5] — 2026-07-05
+## [2.4.5] — 2026-07-05  **(not published — shipped in 2.4.6)**
 
 **A full audit of every hardcoded `limit` in the codebase, prompted directly by "why did you only
 check ask.mjs — check the rest."** Fair. Checked all of them live against the real API instead of
@@ -176,7 +182,7 @@ assuming.
 
 546/546 tests green (6 new).
 
-## [2.4.4] — 2026-07-05
+## [2.4.4] — 2026-07-05  **(not published — shipped in 2.4.6)**
 
 ### Fixed
 - **`sizmo ask`'s contact/opportunity disambiguation could silently undercount matches.** Both
@@ -189,7 +195,7 @@ assuming.
 
 542/542 tests green (4 new).
 
-## [2.4.3] — 2026-07-05
+## [2.4.3] — 2026-07-05  **(not published — shipped in 2.4.6)**
 
 **The scope-vs-API-error conflation from 2.4.2 wasn't unique to `sync`/`list`/`crm`.** A wider grep
 turned up the identical pattern in five more places.
@@ -208,7 +214,7 @@ turned up the identical pattern in five more places.
 
 539/539 tests green (6 new).
 
-## [2.4.2] — 2026-07-05
+## [2.4.2] — 2026-07-05  **(not published — shipped in 2.4.6)**
 
 **`links` was never a scope problem.** A user with the `links.readonly` scope already granted
 would still see `sizmo sync`/`sizmo list links` report "needs links.readonly" — because sizmo
@@ -236,7 +242,7 @@ directly by a question about why `links` stayed blocked with all 157 PIT scopes 
 
 528/528 tests green (6 new).
 
-## [2.4.1] — 2026-07-05
+## [2.4.1] — 2026-07-05  **(not published — shipped in 2.4.6)**
 
 **A systematic live-verification sweep of every write command that had never been checked against
 a real GoHighLevel location — found and fixed 3 completely broken commands.** Prompted by v2.4.0's
@@ -494,7 +500,7 @@ round below).
   has a saved default profile no longer fails `npm test` / `npm publish` — the three "no creds"
   tests now isolate to a temp config dir instead of depending on a pristine `~/.config/sizmo`.
 
-## [1.2.0] — 2026-06-26
+## [1.2.0] — 2026-06-26  **(not published — shipped in 1.3.0)**
 
 Convenience minor — make sizmo nicer to use day-to-day. Additive only; the frozen 1.x contract is
 unchanged. No new capability (still reads the same CRM, money never moves) — purely usability.
@@ -539,7 +545,7 @@ envelope, command/flag names) is unchanged. Includes everything from 1.0.1 below
   plus a guard test that fails if any list-bearing recipe's key drifts out of the set (so the
   silent no-op can't return).
 
-## [1.0.1] — 2026-06-26
+## [1.0.1] — 2026-06-26  **(not published — shipped in 1.1.0)**
 
 ### Fixed
 - **`auth check` no longer reports "all green" while offline.** The shared scope probe treated a
