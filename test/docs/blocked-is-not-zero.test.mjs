@@ -29,7 +29,6 @@ const CMD_DIR = join(REPO, 'commands');
 const KNOWN_FABRICATES_ZERO = new Set([
   'booked-not-paid', // carries a `caveat` string, but calendars/settled/billedUnpaidTotal are 0
   'noshow',
-  'reconcile',       // money — highest remaining stakes, should be next
   'segment',
   'triage',
 ]);
@@ -39,7 +38,7 @@ const KNOWN_FABRICATES_ZERO = new Set([
 // pipeline joined 2026-07-27 — it had TWO blocked branches (pipelines unreadable, and
 // opportunities unreadable inside readable pipelines); both had to be fixed or one path would
 // still assert a false zero.
-const MUST_REPORT_UNKNOWN = ['receivables', 'pipeline'];
+const MUST_REPORT_UNKNOWN = ['receivables', 'pipeline', 'reconcile'];
 
 function sourceOf(cmd) {
   return readFileSync(join(CMD_DIR, `${cmd}.mjs`), 'utf8');
@@ -47,12 +46,27 @@ function sourceOf(cmd) {
 
 // A blocked branch = a "can't see …" degraded warning followed closely by a return of an object
 // literal. If that literal assigns any bare `: 0`, it is asserting a measured zero it never saw.
+// Comments are stripped before scanning. Without that this reports a false positive on its own
+// fix: the reconcile patch explains itself with "`collected: 0` told a coach they collected
+// nothing", and the raw-text regex matched the prose describing the bug as if it were the bug.
+// A detector that reads commentary instead of code fails exactly when someone documents a fix.
+function stripComments(text) {
+  return text
+    .split('\n')
+    .map(l => l.replace(/\/\/.*$/, ''))
+    .join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
 function blockedBranchesWithZeros(src) {
   const hits = [];
-  const lines = src.split('\n');
+  const lines = stripComments(src).split('\n');
   for (let i = 0; i < lines.length; i++) {
     if (!/warn\(`can't see/.test(lines[i])) continue;
-    const window = lines.slice(i, i + 6).join('\n');
+    // Widened from 6 to 10 lines: a corrected return is longer than the one-liner it replaced
+    // (marker + nulled fields wrap across more lines), and a 6-line window can end before the
+    // literal closes — reading as "clean" for the wrong reason.
+    const window = lines.slice(i, i + 10).join('\n');
     if (/return\s*\{/.test(window) && /:\s*0\b/.test(window)) hits.push(i + 1);
   }
   return hits;

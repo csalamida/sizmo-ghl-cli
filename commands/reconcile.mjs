@@ -90,9 +90,14 @@ export async function collect(args, ctx) {
 
   if (txnErr && txns.length === 0) {
     ctx.out.warn(`can't see transactions → HTTP ${txnErr}`, { degraded: true });
+    // UNKNOWN, not zero — third and last money surface in this sweep (after receivables and
+    // pipeline). `collected: 0` told a coach they collected nothing in the window when sizmo was
+    // never allowed to read a single transaction. flags are nulled too: "0 refunds, 0 failed,
+    // 0 orphans" is an equally fabricated all-clear on money that was never examined.
     return {
-      location: LOC, days: DAYS, scanned: 0, inWindow: 0, collected: 0, currency: locationCurrency,
-      bySource: {}, byStatus: {}, flags: { refunds: 0, failed: 0, orphans: 0 }, subscriptions: null,
+      location: LOC, days: DAYS, blocked: txnErr,
+      scanned: null, inWindow: null, collected: null, currency: null,
+      bySource: {}, byStatus: {}, flags: null, subscriptions: null,
     };
   }
 
@@ -209,6 +214,18 @@ export async function run(args, ctx) {
   const cur = data.currency || 'PHP';
 
   ctx.out.card(() => {
+    // Blocked → UNKNOWN. Printing "0 collected · 0 txn in window" plus a clean flags line would
+    // be a fabricated all-clear on money nobody was allowed to look at — and this render also
+    // reads data.flags.*, which is null on a blocked read.
+    if (data.blocked) {
+      ctx.out.line(`\n  RECONCILE — UNKNOWN · can't see transactions (HTTP ${data.blocked}) · last ${data.days}d · loc ${data.location}`);
+      ctx.out.line('  ' + '─'.repeat(64));
+      ctx.out.line('  This is NOT "nothing collected" and NOT a clean reconciliation —');
+      ctx.out.line('  no transaction was read, so refunds/failed/orphans are unknown too.');
+      ctx.out.line('  Needs payments/transactions.readonly in GoHighLevel → Private Integrations.');
+      ctx.out.line('  `sizmo doctor` lists every blocked scope.\n');
+      return;
+    }
     ctx.out.line(`\n  RECONCILE — ${collectedLine} collected · last ${data.days}d · ${data.inWindow} txn in window · loc ${data.location}`);
     // C2: model staleness note
     if (data.modelMeta) {

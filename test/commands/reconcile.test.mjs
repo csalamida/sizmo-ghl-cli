@@ -308,3 +308,54 @@ test('C2-reconcile: STALE model → modelMeta.stale=true in envelope', async () 
   assert.ok(envelope.data.modelMeta, 'modelMeta must be present');
   assert.ok(envelope.data.modelMeta.stale === true, 'stale model must set stale=true in modelMeta');
 });
+
+// ── blocked ≠ zero (2026-07-27) ───────────────────────────────────────────────
+// Third and last money surface in the sweep, after receivables and pipeline. `collected: 0` told
+// a coach they collected nothing in the window when sizmo was never allowed to read a single
+// transaction — and the flags line printed "0 refunds · 0 failed · 0 orphans", a fabricated
+// all-clear on money that was never examined.
+
+test('reconcile: blocked → collected is null (unknown), never 0', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [TXN_KEY]: { status: 401, j: {} } } });
+  await run({ days: 30 }, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.collected, null, 'a denied read must not report 0 collected');
+  assert.equal(d.inWindow, null);
+  assert.equal(d.scanned, null);
+  assert.equal(d.blocked, 401, 'the reason must travel with the unknown');
+});
+
+test('reconcile: blocked → flags null, not a clean 0/0/0 all-clear', async () => {
+  // Distinct from the totals: "0 refunds, 0 failed, 0 orphans" reads as a healthy reconciliation.
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [TXN_KEY]: { status: 403, j: {} } } });
+  await run({ days: 30 }, ctx);
+  ctx.out.flush();
+  assert.equal(JSON.parse(getPrinted()).data.flags, null,
+    'refunds/failed/orphans are unknown when no transaction was read');
+});
+
+test('reconcile: blocked render says UNKNOWN and denies both false readings', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({
+    fixture: { [TXN_KEY]: { status: 401, j: {} } }, json: false,
+  });
+  await run({ days: 30 }, ctx);
+  ctx.out.flush();
+  const printed = getPrinted();
+  assert.ok(/UNKNOWN/.test(printed));
+  assert.ok(/NOT "nothing collected"/.test(printed));
+  assert.ok(/NOT a clean reconciliation/.test(printed), 'the flags all-clear must be denied too');
+});
+
+test('reconcile: genuinely empty but READABLE window still reports 0', async () => {
+  // Inverse guard — zero is the right answer when the read succeeded and found nothing.
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: {
+    [TXN_KEY]:  { status: 200, j: { data: [] } },
+    [SUBS_KEY]: { status: 200, j: { data: [] } },
+  } });
+  await run({ days: 30 }, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.blocked, undefined, 'a successful read must not be marked blocked');
+  assert.equal(d.collected, 0, 'genuinely nothing collected is 0, not null');
+});
