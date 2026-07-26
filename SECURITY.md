@@ -4,8 +4,9 @@
 Integration Token (PIT)** — and it talks to a live CRM. This document explains exactly what it
 does with your credentials, and how to verify those claims yourself rather than take them on faith.
 
-The whole tool has **zero runtime dependencies** (`dependencies: {}` in `package.json`), so the
-attack surface is just the code in this repo. You can read all of `lib/` in an afternoon.
+The whole tool has **zero runtime dependencies** — `package.json` has no `dependencies` field at
+all, so there is no transitive tree to trust. Verify with `npm ls --omit=dev` (prints `(empty)`).
+The attack surface is just the code in this repo; you can read all of `lib/` in an afternoon.
 
 ## Supported versions
 
@@ -57,8 +58,8 @@ Everything else the tool stores stays on your machine.
 | **The PIT is read from stdin or env only — never argv.** There is no `--pit` flag, so your token never lands in shell history, `ps`, or process args. | `grep -rn "'--pit'" lib/ commands/` — you'll find only `--pit-stdin` / `--pit-env`. |
 | **The profile file is written 0600, atomically.** The PIT is stored owner-only, via a temp file created at mode `0600` then renamed — no window where it's world-readable, no half-written file on a crash. | Read `lib/config.mjs` (`saveProfiles`); check perms: `ls -l ~/.config/sizmo/profiles.json`. |
 | **The PIT scope is the gate — and there is no card-charging path.** sizmo exposes only what your token's scopes + GoHighLevel's *public* API allow; a missing scope fails with `AUTH` + the exact scope to add. Money-side, the public API offers create-**draft**-invoice, **send** an invoice (a pay-link the customer acts on), and recording a manual payment — there is **no public "charge a card" endpoint**, so sizmo cannot pull money off a card on its own. **Every write — operational *or* money — requires `--confirm`** (without it the CLI prints the change and exits 5). | `grep -rn "ctx.http.post\|ctx.http.put\|ctx.http.delete" commands/` — every write is scope-gated + confirm-gated; there is no charge/capture/refund call. |
-| **No telemetry.** sizmo makes exactly two kinds of outbound request: the GoHighLevel API, and a once-a-day npm-registry check for a newer version (a plain `GET`, sending nothing about you). | Read `lib/update-notify.mjs`; opt out with `--no-update-check` or `NO_UPDATE_NOTIFIER=1`. |
-| **Zero runtime dependencies.** No transitive supply chain to trust. | `cat package.json` → `"dependencies": {}`. |
+| **No telemetry — sizmo never phones home about you.** Outbound traffic goes to exactly three places, and only the first two happen by default: (1) the GoHighLevel API, (2) a once-a-day npm-registry check for a newer version (a plain `GET` that sends nothing about you), and (3) **only if you configured `sizmo ask` with an AI key**, your chosen LLM provider. No analytics, no crash reporting, no usage beacon — there is no fourth destination. | Run the egress audit below; read `lib/update-notify.mjs` (registry) and `lib/llm.mjs` (the only LLM caller). Opt out of the update check with `--no-update-check` or `NO_UPDATE_NOTIFIER=1`; leave `--ai-key` unset and (3) never happens. |
+| **Zero runtime dependencies.** No transitive supply chain to trust. | `npm ls --omit=dev` → prints `(empty)`. (Don't grep `package.json` for `"dependencies": {}` — the field is absent entirely, so a grep finds nothing and can't tell you whether that's correct.) |
 | **`sizmo ask` never sends your PIT, contacts, conversations, or money data to the LLM provider.** Only your typed request text and CRM structure names/ids (pipelines, calendars, tags, forms, surveys, businesses) leave the machine — and only if you've set an `--ai-key`. Pronoun follow-ups resolve locally via a placeholder token, never a real name. | Read `lib/llm.mjs` (the only place an LLM is called), `buildCrmExcerpt()` and the `RECENT_CONTACT_TOKEN` handling in `commands/ask.mjs`. |
 | **`sizmo ask`'s confirm leg never re-asks the AI.** The unconfirmed preview resolves every name to a real id once and caches that exact plan; `--confirm` replays the cached plan verbatim — it cannot fire something different from what you previewed. `sizmo ask` also declines to auto-fire money (`invoice`) or scheduling (`appointment`) commands, and `opp update` — it only ever resolves and prints those for you to run yourself. | Read `savePendingPlan`/`loadPendingPlan` in `lib/ask-memory.mjs` and the `EXECUTABLE_WRITE_COMMANDS` set in `commands/ask.mjs`. |
 
@@ -94,9 +95,42 @@ Everything else the tool stores stays on your machine.
 
 ```sh
 git clone https://github.com/csalamida/sizmo-ghl-cli && cd sizmo-ghl-cli
-cat package.json            # zero dependencies
+
+npm ls --omit=dev           # runtime dependency tree — prints "(empty)"
 ls lib/                     # the whole surface
 node --test                 # the test suite
 ```
+
+### Egress audit — prove for yourself where it can talk to
+
+Every network destination is a literal string in the source. List them all:
+
+```sh
+grep -rhoE "https://[a-z0-9.-]+" bin/ lib/ commands/ | sort -u
+```
+
+That prints seven hosts. Only **three** are ever contacted:
+
+| Host | What it is |
+|------|-----------|
+| `services.leadconnectorhq.com` | the GoHighLevel API (`lib/http.mjs`) — the actual job |
+| `registry.npmjs.org` | once-a-day version check (`lib/update-notify.mjs`) — `GET`, sends nothing about you |
+| `api.anthropic.com` / `api.openai.com` | `sizmo ask` only, **and only if you set an AI key** (`lib/llm.mjs` — the sole caller) |
+
+The rest are never fetched: `app.gohighlevel.com` is only used to *build deep links printed to your
+terminal* (`lib/cli.mjs`, override via `SIZMO_APP_URL`), and `acme.com` / `cal.me` are example
+strings inside `--help` text.
+
+Then prove nothing else can open a socket. Every command reaches the network through `ctx.http`,
+which funnels into `lib/http.mjs` — so only three modules ever originate a request:
+
+```sh
+grep -rn "fetch(\|fetchImpl(" bin/ lib/ commands/ | grep -vE "fetchImpl =|typeof fetchImpl|fetchImpl,|fetchImpl }"
+```
+
+Five call sites, three files: `lib/http.mjs` (GoHighLevel), `lib/update-notify.mjs` (npm registry —
+it calls through an injectable `fetchImpl` so tests can stub it, which is why a bare `grep "fetch("`
+misses this one), and `lib/llm.mjs` (the two LLM providers). Nothing in `commands/` opens a socket
+directly.
 
 Because there are no dependencies, what you read is what runs.
