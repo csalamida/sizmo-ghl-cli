@@ -126,7 +126,12 @@ sizmo appointment book --calendar "Discovery Calls" --contact <id> --start 2026-
 sizmo appointment cancel <apptId> --confirm
 sizmo appointment note <apptId> --text "Confirmed reschedule" --confirm
 
-# Custom Fields — create + delete only (no update command yet)
+# Custom Fields — create, UPDATE and delete:
+sizmo field update <fieldId> --name "Lead Source" --confirm
+sizmo field update <fieldId> --placeholder "e.g. Google" --confirm   # keeps the existing name
+#   --type CANNOT be changed on update and is refused — the endpoint takes no dataType,
+#   because values already stored against the field would no longer match it.
+#   Prefer update over delete+create: delete DISCARDS every value stored on every contact.
 # Custom Values — create, UPDATE and delete:
 sizmo value update <valueId> --value "https://new.link" --confirm   # keeps the existing name
 sizmo value update <valueId> --name "New Name" --confirm            # keeps the existing value

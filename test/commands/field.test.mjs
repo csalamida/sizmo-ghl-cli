@@ -157,3 +157,92 @@ test('field create: every new flag round-trips into the rerun command', async ()
     assert.ok(cmd.includes(frag), `rerun must carry ${frag} — got: ${cmd}`);
   }
 });
+
+// ── field update (2026-07-27) ────────────────────────────────────────────────
+// Same gap `value` had, with worse consequences. create + delete only meant renaming a field or
+// fixing its placeholder required delete-then-create — which mints a new field id AND DISCARDS
+// EVERY VALUE ALREADY STORED IN IT ON EVERY CONTACT. The value case lost references; this loses data.
+
+const FLD_ID = 'fld-001';
+const F_GET = `GET /locations/L-TEST/customFields/${FLD_ID}`;
+const F_PUT = `PUT /locations/L-TEST/customFields/${FLD_ID}`;
+const curField = { status: 200, j: { customField: { id: FLD_ID, name: 'Referral Source', dataType: 'TEXT' } } };
+
+test('field update: --placeholder alone resends the existing name (name is required)', async () => {
+  // `name` is the endpoint's only required body field. Without fetch-first, changing just the
+  // placeholder would blank the name.
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true, fixture: { [F_GET]: curField, [F_PUT]: { status: 200, j: {} } },
+  });
+  await run({ _: ['update', FLD_ID], placeholder: 'e.g. Google' }, ctx);
+  ctx.out.flush();
+  const wrote = getCalledBodies().find(b => b.method === 'PUT');
+  assert.equal(wrote.body.name, 'Referral Source', 'existing name must be preserved');
+  assert.equal(wrote.body.placeholder, 'e.g. Google');
+});
+
+test('field update: --type is refused, not silently ignored', async () => {
+  // The update endpoint does not accept dataType — a field's type cannot change once values are
+  // stored against it. Silently dropping the flag would let a user believe the type changed.
+  const { ctx, getCalledPaths } = makeFakeCtx({ confirmed: true, fixture: { [F_GET]: curField } });
+  await assert.rejects(
+    () => run({ _: ['update', FLD_ID], type: 'NUMERICAL' }, ctx),
+    (e) => e.code === EXIT.USAGE && /type cannot be changed/.test(e.message));
+  assert.equal(getCalledPaths().length, 0, 'must refuse before touching the API');
+});
+
+test('field update: no editable flag → USAGE, nothing fetched', async () => {
+  const { ctx, getCalledPaths } = makeFakeCtx({ confirmed: true });
+  await assert.rejects(() => run({ _: ['update', FLD_ID] }, ctx), (e) => e.code === EXIT.USAGE);
+  assert.equal(getCalledPaths().length, 0);
+});
+
+test('field update: unknown id → NOTFOUND, no PUT fired', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({
+    confirmed: true, fixture: { [F_GET]: { status: 404, j: {} } },
+  });
+  await assert.rejects(() => run({ _: ['update', FLD_ID], name: 'X' }, ctx),
+    (e) => e.code === EXIT.NOTFOUND);
+  assert.equal(getCalledWrites().length, 0);
+});
+
+test('field update: FILE_UPLOAD flags use the same real names as create', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true, fixture: { [F_GET]: curField, [F_PUT]: { status: 200, j: {} } },
+  });
+  await run({ _: ['update', FLD_ID], accept: '.pdf,.png', 'multiple-files': true, 'max-files': 4 }, ctx);
+  ctx.out.flush();
+  const { body } = getCalledBodies().find(b => b.method === 'PUT');
+  assert.deepEqual(body.acceptedFormat, ['.pdf', '.png']);
+  assert.equal(body.isMultipleFile, true);
+  assert.equal(body.maxNumberOfFiles, 4);
+});
+
+test('field update: preview states the type is unchanged and cannot be edited', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [F_GET]: curField } });
+  const code = await run({ _: ['update', FLD_ID], name: 'Lead Source' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  const changes = JSON.parse(getPrinted()).data.changes.join('\n');
+  assert.match(changes, /types cannot be edited/);
+  assert.match(changes, /Referral Source/, 'must show the old name being replaced');
+});
+
+test('field update: an all-whitespace resulting name is refused', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({
+    confirmed: true, fixture: { [F_GET]: curField, [F_PUT]: { status: 200, j: {} } },
+  });
+  await assert.rejects(() => run({ _: ['update', FLD_ID], name: '   ' }, ctx),
+    (e) => e.code === EXIT.USAGE);
+  assert.equal(getCalledWrites().length, 0);
+});
+
+test('field update: flags round-trip into the rerun command', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [F_GET]: curField } });
+  await run({ _: ['update', FLD_ID], name: 'N', placeholder: 'P', position: 3 }, ctx);
+  ctx.out.flush();
+  const cmd = JSON.parse(getPrinted()).data.confirmCommand;
+  for (const frag of [FLD_ID, '--name "N"', '--placeholder "P"', '--position 3']) {
+    assert.ok(cmd.includes(frag), `rerun must carry ${frag} — got: ${cmd}`);
+  }
+});

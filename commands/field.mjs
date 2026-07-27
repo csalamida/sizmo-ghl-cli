@@ -33,8 +33,11 @@ const SCOPE_FIX = 'GoHighLevel → Settings → Private Integrations → edit yo
 export async function run(args, ctx) {
   const sub = args._?.[0];
   if (sub === 'create') return createField(args, ctx);
+  if (sub === 'update') return updateField(args, ctx);
   if (sub === 'delete') return deleteField(args, ctx);
-  throw new GhlError('usage: sizmo field create … | sizmo field delete <fieldId>', EXIT.USAGE, 'sizmo field --help');
+  throw new GhlError(
+    'usage: sizmo field create … | sizmo field update <fieldId> [--name] [--placeholder] … | sizmo field delete <fieldId>',
+    EXIT.USAGE, 'sizmo field --help');
 }
 
 async function createField(args, ctx) {
@@ -118,6 +121,102 @@ async function createField(args, ctx) {
   const id = created.id || created._id || null;
   ctx.out.data({ status: 'ok', command: 'field create', fieldId: id, dataType, model });
   ctx.out.line(`  custom field "${name}" created · id ${id ?? '(see response)'}`);
+  return EXIT.OK;
+}
+
+// PUT /locations/{loc}/customFields/{id}. Same gap `value` had: create + delete only, so the only
+// way to rename a field or fix its placeholder was delete-then-create — which mints a NEW field id
+// AND DISCARDS EVERY VALUE ALREADY STORED IN IT ON EVERY CONTACT. Strictly worse than the custom
+// value case: that lost references, this loses data.
+//
+// NOTE: dataType is deliberately absent. The update endpoint does not accept it — a field's type
+// cannot be changed once created, because the stored values would no longer match it. `--type` on
+// update is therefore rejected rather than silently ignored.
+async function updateField(args, ctx) {
+  const id = args._?.[1];
+  if (!id || !String(id).trim()) {
+    throw new GhlError('usage: sizmo field update <fieldId> [--name "..."] [--placeholder "..."]',
+      EXIT.USAGE, 'sizmo list fields  # to find the id');
+  }
+  if (args.type != null) {
+    throw new GhlError(
+      'field update: a field\'s --type cannot be changed — the update endpoint does not accept dataType, ' +
+      'because values already stored against the field would no longer match it',
+      EXIT.USAGE,
+      'create a new field with the type you want, migrate the values, then delete the old one');
+  }
+
+  const EDITABLE = ['name', 'placeholder', 'position', 'model', 'textbox-option', 'accept', 'multiple-files', 'max-files'];
+  if (!EDITABLE.some(k => args[k] != null)) {
+    throw new GhlError(`field update requires at least one of: ${EDITABLE.map(k => '--' + k).join(', ')}`, EXIT.USAGE);
+  }
+
+  const base = `/locations/${encodeURIComponent(ctx.cfg.loc)}/customFields/${encodeURIComponent(id)}`;
+  const got = await ctx.http.get(base);
+  if (got.code === 401 || got.code === 403) {
+    throw new GhlError(`HTTP ${got.code} — your PIT lacks locations/customFields.write`, EXIT.AUTH, SCOPE_FIX);
+  }
+  if (got.code === 404) throw new GhlError(`no custom field with id ${id} — nothing changed`, EXIT.NOTFOUND);
+  if (!got.ok) throw new GhlError(`could not read custom field ${id} — HTTP ${got.code}`, EXIT.API);
+
+  const cur = got.j?.customField ?? got.j ?? {};
+  const oldName = cur.name ?? '';
+  // `name` is the endpoint's only REQUIRED body field, so it must be resent even when only the
+  // placeholder is changing — otherwise the update would blank it.
+  const name = args.name != null ? String(args.name) : oldName;
+  if (!name.trim()) throw new GhlError('field update: resulting --name would be empty', EXIT.USAGE);
+
+  const textboxOptions = args['textbox-option']
+    ? String(args['textbox-option']).split(',').map(o => o.trim()).filter(Boolean) : null;
+  const accepted = args.accept
+    ? String(args.accept).split(',').map(f => f.trim()).filter(Boolean) : null;
+
+  const body = {
+    name,
+    ...(args.placeholder != null ? { placeholder: String(args.placeholder) } : {}),
+    ...(args.position != null ? { position: Number(args.position) } : {}),
+    ...(args.model != null ? { model: String(args.model).toLowerCase() } : {}),
+    ...(textboxOptions ? { textBoxListOptions: textboxOptions } : {}),
+    ...(accepted ? { acceptedFormat: accepted } : {}),
+    ...(args['multiple-files'] ? { isMultipleFile: true } : {}),
+    ...(args['max-files'] != null ? { maxNumberOfFiles: Number(args['max-files']) } : {}),
+  };
+
+  const changes = [`Update custom field ${id} (type ${cur.dataType ?? '?'} — unchanged, types cannot be edited)`];
+  changes.push(args.name != null && name !== oldName
+    ? `  name: "${oldName}"  →  "${name}"`
+    : `  name: "${oldName}" (unchanged)`);
+  if (args.placeholder != null) changes.push(`  placeholder: ${args.placeholder}`);
+  if (args.position != null)    changes.push(`  position:    ${args.position}`);
+  if (args.model != null)       changes.push(`  model:       ${args.model}`);
+  if (textboxOptions)           changes.push(`  options:     ${textboxOptions.join(', ')}`);
+  if (accepted)                 changes.push(`  accepts:     ${accepted.join(', ')}`);
+  if (args['multiple-files'])   changes.push('  multiple files: yes');
+  if (args['max-files'] != null) changes.push(`  max files:   ${args['max-files']}`);
+
+  const parts = [`sizmo field update ${id}`];
+  if (args.name != null)         parts.push(`--name "${String(args.name).replace(/"/g, '\\"')}"`);
+  if (args.placeholder != null)  parts.push(`--placeholder "${String(args.placeholder).replace(/"/g, '\\"')}"`);
+  if (args.position != null)     parts.push(`--position ${args.position}`);
+  if (args.model != null)        parts.push(`--model ${args.model}`);
+  if (textboxOptions)            parts.push(`--textbox-option "${textboxOptions.join(',')}"`);
+  if (accepted)                  parts.push(`--accept "${accepted.join(',')}"`);
+  if (args['multiple-files'])    parts.push('--multiple-files');
+  if (args['max-files'] != null) parts.push(`--max-files ${args['max-files']}`);
+  const rerunCommand = parts.join(' ') + ' --confirm';
+
+  const gate = requireConfirm({ command: 'field update', changes, rerunCommand }, ctx);
+  if (!gate.proceed) return gate.code;
+
+  const r = await ctx.http.put(base, body);
+  if (r.code === 401 || r.code === 403) {
+    throw new GhlError(`HTTP ${r.code} — your PIT lacks locations/customFields.write`, EXIT.AUTH, SCOPE_FIX);
+  }
+  if (r.code === 404) throw new GhlError(`no custom field with id ${id} — nothing changed`, EXIT.NOTFOUND);
+  if (!r.ok) throw new GhlError(`field update failed — HTTP ${r.code}: ${(r.txt || '').slice(0, 200).replace(/\s+/g, ' ')}`, EXIT.API);
+
+  ctx.out.data({ status: 'ok', command: 'field update', fieldId: id, name });
+  ctx.out.line(`  custom field ${id} updated — id unchanged, stored values preserved`);
   return EXIT.OK;
 }
 

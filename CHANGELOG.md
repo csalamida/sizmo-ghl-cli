@@ -45,6 +45,22 @@ Because a scheduled send fires later with nobody watching — unlike every other
 the confirm preview states it does **not** send now, names the exact fire time, and prints the
 `send cancel` command needed to call it back.
 
+### Added — `sizmo field update`
+
+Same gap `value` had, with worse consequences. `field` shipped create + delete only, so renaming a
+field or fixing its placeholder meant delete-then-create — which mints a new field id **and discards
+every value already stored in that field on every contact**. The custom-value case lost references;
+this one loses data.
+
+`PUT /locations/{id}/customFields/{id}` exists under the same scope. `field update` reads the field
+first (its `name` is the endpoint's only required body field, so changing just the placeholder would
+otherwise blank it), and supports `--name`, `--placeholder`, `--position`, `--model`, plus the
+`FILE_UPLOAD` and `TEXTBOX_LIST` options.
+
+**`--type` is refused, not ignored.** The update endpoint accepts no `dataType` — a field's type
+cannot change once values are stored against it. Silently dropping the flag would let someone
+believe the type had changed.
+
 ### Added — `sizmo value update`
 
 sizmo shipped `value create` and `value delete` only, and the docs stated "create + delete only, no

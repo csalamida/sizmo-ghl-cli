@@ -18,7 +18,7 @@ A full terminal interface to one GoHighLevel location — **read it, build it, b
 | **See** (read-only) | `brief` · `snapshot` · `triage` · `pipeline` · `receivables` · `reconcile` · `booked-not-paid` · `noshow` · `focus` · `segment` · `crm` · `list` (12 entities) · `forms` · `surveys` · `transactions` |
 | **Version** (read-only) | `export` (location → one diffable file) · `diff` (file vs live, or file vs file — *what changed?*) |
 | **Act** | `tag` · `note` · `opp` (create/move/update) · `appointment` (book/cancel) · `send` (SMS/email) |
-| **Build** | `contact create` · `contact upsert` (de-dupe) · `field create` · `value create` · `value update` · `calendar create` · `business create` |
+| **Build** | `contact create` · `contact upsert` (de-dupe) · `field create` · `field update` · `value create` · `value update` · `calendar create` · `business create` |
 | **Delete** (single-target, accident-proof) | `contact delete` · `field delete` · `value delete` · `calendar delete` · `business delete` |
 | **Bill** (scope-gated) | `invoice draft` · `invoice send` (pay-link — *not* a card charge) |
 | **Operate** | `init` · `doctor` · `open` · `completions` · `api` · multi-client profiles |
@@ -178,6 +178,7 @@ These commands change data in GoHighLevel. Every write requires `--confirm`; wit
 | `sizmo field delete <fieldId>` | Delete **one** custom field by id | `locations/customFields.write` |
 | `sizmo value create --name "..." --value "..."` | Create a custom value | `locations/customValues.write` |
 | `sizmo value update <valueId> [--name] [--value]` | Edit a custom value **in place** — the id is unchanged, so workflows and templates referencing it keep resolving. Reads the current value first, so changing one field never blanks the other. Prefer this over delete+create, which mints a new id | `locations/customValues.write` |
+| `sizmo field update <fieldId> [--name] [--placeholder] …` | Edit a custom field **in place**. `--type` is refused — the endpoint accepts no `dataType`, since stored values would no longer match. Prefer this over delete+create, which discards every value already stored on every contact | `locations/customFields.write` |
 | `sizmo value delete <valueId>` | Delete **one** custom value by id | `locations/customValues.write` |
 | `sizmo calendar create --name "..." [--type --slot-min --team-member]` | Create a calendar — `--team-member uid1,uid2` required for `round_robin`/`collective` types | `calendars.write` |
 | `sizmo calendar delete <calendarId>` | Delete **one** calendar by id | `calendars.write` |
