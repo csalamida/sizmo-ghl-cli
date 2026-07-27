@@ -126,7 +126,12 @@ sizmo appointment book --calendar "Discovery Calls" --contact <id> --start 2026-
 sizmo appointment cancel <apptId> --confirm
 sizmo appointment note <apptId> --text "Confirmed reschedule" --confirm
 
-# Custom Fields / Values — create + delete only, no update
+# Custom Fields — create + delete only (no update command yet)
+# Custom Values — create, UPDATE and delete:
+sizmo value update <valueId> --value "https://new.link" --confirm   # keeps the existing name
+sizmo value update <valueId> --name "New Name" --confirm            # keeps the existing value
+#   Prefer update over delete+create: the id stays the same, so anything referencing it
+#   keeps resolving. delete+create mints a new id and breaks those references.
 sizmo field create --name "Coach Goal" [--type TEXT --model contact] --confirm
 # --placeholder "..."  --position N
 # FILE_UPLOAD: --accept ".pdf,.docx"  --multiple-files  --max-files N

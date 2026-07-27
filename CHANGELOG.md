@@ -45,6 +45,22 @@ Because a scheduled send fires later with nobody watching — unlike every other
 the confirm preview states it does **not** send now, names the exact fire time, and prints the
 `send cancel` command needed to call it back.
 
+### Added — `sizmo value update`
+
+sizmo shipped `value create` and `value delete` only, and the docs stated "create + delete only, no
+update" as though it were an API limitation. It was not: `PUT /locations/{id}/customValues/{id}`
+exists and requires the same `locations/customValues.write` scope `create` already uses.
+
+This matters more than a missing subcommand. A custom value *is* the thing that changes — a booking
+link, a support number, an address — referenced across workflows, funnels and email templates. The
+only way to edit one was delete-then-create, which mints a **new id**, breaks anything referencing
+the old one, and leaves a window where the value does not exist at all. A destructive workaround for
+what should be an edit.
+
+`value update` reads the current value first, so `--value` alone cannot blank the name (the endpoint
+requires both fields), the preview shows **before → after** rather than just the new state, and a
+no-op edit is called out instead of silently applied.
+
 ### Changed — `sizmo field create` refuses types it cannot make work
 
 `--type` advertised 12 data types, but `SINGLE_OPTIONS`, `MULTIPLE_OPTIONS`, `RADIO` and `CHECKBOX`
