@@ -36,6 +36,7 @@ export const meta = {
     { name: '--channel', type: 'string', desc: 'sms or email' },
     { name: '--message', type: 'string', desc: 'message body' },
     { name: '--subject', type: 'string', desc: 'email subject (email only) — defaults to the first line of --message' },
+    { name: '--schedule', type: 'string', desc: 'ISO 8601 datetime to send at instead of now, e.g. 2026-08-01T09:00:00Z' },
   ],
   readOnly: false,
 };
@@ -63,6 +64,32 @@ export async function run(args, ctx) {
     throw new GhlError('send requires --message "..."', EXIT.USAGE);
   }
 
+  // Scheduling. sizmo already shipped `send cancel <messageId>`, whose entire purpose is
+  // cancelling a SCHEDULED message — but nothing could create one. The CLI could cancel something
+  // it was unable to send.
+  //
+  // The endpoint wants UTC epoch SECONDS (its own example is 1669287863). Date.parse gives
+  // milliseconds, so this divides — passing ms would schedule roughly 50,000 years out and the
+  // message would simply never arrive, with no error to explain why.
+  let scheduledAt = null;
+  if (args.schedule != null) {
+    const ms = Date.parse(args.schedule);
+    if (isNaN(ms)) {
+      throw new GhlError(
+        `send: invalid --schedule '${args.schedule}' — must be ISO 8601, e.g. 2026-08-01T09:00:00Z`,
+        EXIT.USAGE);
+    }
+    const nowMs = typeof ctx.now === 'function' ? ctx.now() : (ctx.now ?? Date.now());
+    if (ms <= nowMs) {
+      throw new GhlError(
+        `send: --schedule '${args.schedule}' is in the past — a past timestamp sends immediately, ` +
+        `which is not what scheduling means`,
+        EXIT.USAGE,
+        'pass a future ISO 8601 datetime, or drop --schedule to send now');
+    }
+    scheduledAt = Math.floor(ms / 1000);
+  }
+
   // HIGHEST BLAST — full body always shown, never truncated in confirm preview
   const changes = [
     `SEND ${channel.toUpperCase()} to contact ${contactId}`,
@@ -72,8 +99,17 @@ export async function run(args, ctx) {
     // Indent each line of the body so multi-line messages render cleanly
     ...message.split('\n').map(l => `    ${l}`),
   ];
-  const subjectPart = args.subject ? ` --subject "${String(args.subject).replace(/"/g, '\\"')}"` : '';
-  const rerunCommand = `sizmo send ${contactId} --channel ${channel} --message "${message.replace(/"/g, '\\"')}"${subjectPart} --confirm`;
+  if (scheduledAt) {
+    // Stated loudly and FIRST-class in the preview: unlike every other write in this CLI, a
+    // scheduled send fires later with nobody watching. The human approving it will not be present
+    // when it goes out, so the time has to be unmissable rather than a trailing detail.
+    changes.splice(1, 0,
+      `  ⏱ SCHEDULED — does NOT send now. Fires at ${new Date(scheduledAt * 1000).toISOString()}`,
+      `     Cancel before then with: sizmo send cancel <messageId> --channel ${channel}`);
+  }
+  const subjectPart  = args.subject ? ` --subject "${String(args.subject).replace(/"/g, '\\"')}"` : '';
+  const schedulePart = args.schedule ? ` --schedule "${String(args.schedule).replace(/"/g, '\\"')}"` : '';
+  const rerunCommand = `sizmo send ${contactId} --channel ${channel} --message "${message.replace(/"/g, '\\"')}"${subjectPart}${schedulePart} --confirm`;
 
   const gate = requireConfirm({ command: 'send', changes, rerunCommand }, ctx);
   if (!gate.proceed) return gate.code;
@@ -85,6 +121,7 @@ export async function run(args, ctx) {
   // only reads `message` for SMS. Subject defaults from the message's first line since send.mjs
   // has no separate --subject flag (verified live: message+html+subject → 201 "Email queued").
   const body = { type: CHANNEL_TYPE[channel], contactId, locationId: ctx.cfg.loc, message };
+  if (scheduledAt) body.scheduledTimestamp = scheduledAt;
   if (channel === 'email') {
     // `message` stays the plain-text alternative (unescaped, correct there). Only the HTML part
     // is escaped — escaping the plain-text copy would show literal &amp; to the recipient.

@@ -324,3 +324,78 @@ test('send: --subject round-trips into the rerun command', async () => {
   const cmd = JSON.parse(getPrinted()).data.confirmCommand;
   assert.ok(cmd.includes('--subject "Q3 Invoice"'), `got: ${cmd}`);
 });
+
+// ── --schedule (2026-07-27) ──────────────────────────────────────────────────
+// sizmo shipped `send cancel <messageId>`, whose entire purpose is cancelling a SCHEDULED message,
+// while nothing could create one — the CLI could cancel something it was unable to send.
+// The endpoint wants UTC epoch SECONDS (its own example: 1669287863).
+
+const NOW_MS = 1_700_000_000_000;                 // 2023-11-14T22:13:20Z
+const FUTURE = '2026-08-01T09:00:00Z';
+const FUTURE_SECONDS = Math.floor(Date.parse(FUTURE) / 1000);
+
+test('send --schedule: sends scheduledTimestamp in SECONDS, not milliseconds', async () => {
+  // Passing ms would schedule ~50,000 years out and the message would simply never arrive,
+  // with no error to explain why.
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, now: NOW_MS, fixture: MSG_FIXTURE });
+  await run({ _: [CONTACT], channel: 'sms', message: 'Hi', schedule: FUTURE }, ctx);
+  ctx.out.flush();
+  const ts = getCalledBodies()[0].body.scheduledTimestamp;
+  assert.equal(ts, FUTURE_SECONDS);
+  assert.ok(String(ts).length === 10, `expected epoch seconds, got ${ts}`);
+});
+
+test('send: no --schedule → scheduledTimestamp absent entirely (still sends now)', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, now: NOW_MS, fixture: MSG_FIXTURE });
+  await run({ _: [CONTACT], channel: 'sms', message: 'Hi' }, ctx);
+  ctx.out.flush();
+  assert.equal('scheduledTimestamp' in getCalledBodies()[0].body, false);
+});
+
+test('send --schedule: a past datetime is refused, no message fired', async () => {
+  // A past timestamp sends immediately, which is not what the user asked for — refusing beats
+  // silently sending now to someone who thought they had until next week to change their mind.
+  const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true, now: NOW_MS, fixture: MSG_FIXTURE });
+  await assert.rejects(
+    () => run({ _: [CONTACT], channel: 'sms', message: 'Hi', schedule: '2020-01-01T00:00:00Z' }, ctx),
+    (e) => e.code === EXIT.USAGE && /in the past/.test(e.message));
+  assert.equal(getCalledWrites().length, 0, 'nothing may be sent when scheduling is refused');
+});
+
+test('send --schedule: unparseable datetime is refused, no message fired', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true, now: NOW_MS, fixture: MSG_FIXTURE });
+  await assert.rejects(
+    () => run({ _: [CONTACT], channel: 'sms', message: 'Hi', schedule: 'next tuesday' }, ctx),
+    (e) => e.code === EXIT.USAGE && /ISO 8601/.test(e.message));
+  assert.equal(getCalledWrites().length, 0);
+});
+
+test('send --schedule: preview says it does NOT send now and names the fire time', async () => {
+  // Unlike every other write here, a scheduled send fires later with nobody watching. The human
+  // approving it will not be present when it goes out.
+  const { ctx, getPrinted } = makeFakeCtx({ confirmed: false, now: NOW_MS });
+  await run({ _: [CONTACT], channel: 'sms', message: 'Hi', schedule: FUTURE }, ctx);
+  ctx.out.flush();
+  const changes = JSON.parse(getPrinted()).data.changes.join('\n');
+  assert.match(changes, /SCHEDULED — does NOT send now/);
+  assert.match(changes, /2026-08-01T09:00:00\.000Z/);
+  assert.match(changes, /sizmo send cancel/, 'must tell the human how to call it back');
+});
+
+test('send --schedule: round-trips into the rerun command', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ confirmed: false, now: NOW_MS });
+  await run({ _: [CONTACT], channel: 'sms', message: 'Hi', schedule: FUTURE }, ctx);
+  ctx.out.flush();
+  const cmd = JSON.parse(getPrinted()).data.confirmCommand;
+  assert.ok(cmd.includes(`--schedule "${FUTURE}"`), `got: ${cmd}`);
+});
+
+test('send --schedule: works for email too, alongside --subject', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, now: NOW_MS, fixture: MSG_FIXTURE });
+  await run({ _: [CONTACT], channel: 'email', message: 'Body', subject: 'Q3', schedule: FUTURE }, ctx);
+  ctx.out.flush();
+  const { body } = getCalledBodies()[0];
+  assert.equal(body.scheduledTimestamp, FUTURE_SECONDS);
+  assert.equal(body.subject, 'Q3');
+  assert.ok(body.html, 'email still builds an html part when scheduled');
+});

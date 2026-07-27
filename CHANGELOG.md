@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — `sizmo send --schedule`
+
+sizmo already shipped `send cancel <messageId>`, whose entire purpose is cancelling a **scheduled**
+message — while nothing could create one. The CLI could cancel something it was unable to send.
+
+`--schedule <ISO 8601>` queues the message instead of sending now. It must be in the future; a past
+timestamp is refused rather than silently sending immediately, which is the opposite of what the
+user asked for. The endpoint wants UTC epoch **seconds** (its own example is `1669287863`), so the
+parsed milliseconds are divided — passing milliseconds would schedule roughly 50,000 years out and
+the message would simply never arrive, with no error to explain why.
+
+Because a scheduled send fires later with nobody watching — unlike every other write in this CLI —
+the confirm preview states it does **not** send now, names the exact fire time, and prints the
+`send cancel` command needed to call it back.
+
 ### Fixed — `sizmo send --channel email` did not escape the message body
 
 The email body wraps each line in `<p>` and interpolated the message **raw**, so any `&`, `<` or `>`

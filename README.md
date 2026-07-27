@@ -162,7 +162,8 @@ These commands change data in GoHighLevel. Every write requires `--confirm`; wit
 | `sizmo appointment book --calendar --contact --start` | Book an appointment | `--calendar`, `--contact`, `--start`, `--end`, `--title`, `--assigned-user`, `--address`, `--no-notify` | `calendars.write` |
 | `sizmo appointment cancel <apptId>` | Cancel an appointment | apptId positional | `calendars.write` |
 | `sizmo appointment note <apptId> --text "..."` | Add a note to an appointment | `--text` | `calendars.write` |
-| `sizmo send <contactId> --channel sms\|email --message "..."` | Send an SMS or email (email subject auto-generated from the message's first line — no separate `--subject` flag) | `--channel`, `--message` | `conversations/message.write` |
+| `sizmo send <contactId> --channel sms\|email --message "..."` | Send an SMS or email now, or schedule it. Email bodies are HTML-escaped; subject defaults to the message's first line unless `--subject` is given | `--channel`, `--message`, `--subject`, `--schedule` | `conversations/message.write` |
+| `sizmo send … --schedule 2026-08-01T09:00:00Z` | Queue the message for a future ISO 8601 datetime instead of sending now. Must be in the future; cancel with `sizmo send cancel` | `--schedule` | `conversations/message.write` |
 | `sizmo send cancel <messageId> --channel sms\|email` | Cancel a scheduled SMS or email before it goes out | `--channel` | `conversations/message.write` |
 
 **Build / scaffold writes** — stand up a location from the terminal instead of clicking. The PIT scope is the gate: if your token carries the write scope, the command works; if not, it fails with `AUTH` + the exact scope to add.

@@ -139,6 +139,9 @@ sizmo link delete <linkId> --confirm
 # Messaging — one flat command with --channel, not separate "send email"/"send sms"
 sizmo send <contactId> --channel email --message "Hi there" --confirm   # subject auto-generated
 sizmo send <contactId> --channel email --message "Hi" --subject "Q3 Invoice" --confirm
+sizmo send <contactId> --channel sms --message "Reminder" --schedule 2026-08-01T09:00:00Z --confirm
+# --schedule takes ISO 8601 and must be in the FUTURE. A scheduled send fires later with
+#   nobody watching — call it back with `sizmo send cancel <messageId> --channel sms|email`.
 # email bodies are HTML-escaped, so &, < and > in your text reach the recipient intact
 sizmo send <contactId> --channel sms --message "Hi there" --confirm    # from the message's first line
 sizmo send cancel <messageId> --channel sms --confirm                  # stop a scheduled message
