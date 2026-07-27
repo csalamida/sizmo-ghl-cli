@@ -11,6 +11,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > inline, and their changes are real: they reached users inside the release named there. Verify
 > what actually exists with `npm view sizmo versions`.
 
+## [Unreleased]
+
+### Fixed — `invoice draft` invented a business name when it could not read one
+
+The location read was unchecked. A `401`, `404` or `500` fell through to the string literal
+`'Business'`, and the invoice was then **created and sent anyway** — exit 0, no warning. A paying
+customer received a money document naming the vendor "Business". Verified by fixture: all three
+statuses produced `businessDetails={"name":"Business"}`.
+
+sizmo already refuses to fabricate *numbers* on a blocked source (a blocked lane reports UNKNOWN,
+never zero). This is the same rule applied to a string, with a more visible consequence — the
+customer reads it. `invoice draft` now refuses: `AUTH` on 401/403 naming `locations.readonly`,
+`API` otherwise, and `API` when the location has no business name set at all. A wrong invoice is
+worse than no invoice.
+
+### Fixed — `invoice draft` blamed the wrong scope on a contact-read failure
+
+`GET /contacts/{id}` needs `contacts.readonly`. On 401 it reported *"your PIT lacks
+invoices.write"*, sending the user to add a scope they already had while the one actually missing
+stayed missing. `invoice draft` touches three scopes; each now names its own.
+
+### Fixed — `sizmo tag` did not URL-encode the contact id
+
+The only command interpolating a user-supplied id into a path segment without
+`encodeURIComponent`. `sizmo tag "a/b" --add x` built `POST /contacts/a/b/tags` — a different
+endpoint than the confirm preview named, so what the user approved and what was sent did not match.
+
+### Added — request-body assertions for the three write commands that had none
+
+`invoice`, `tag` and `note` tested exit codes and that a call fired, never the payload. A renamed
+or dropped field reached the real API silently while the suite stayed green. Now pinned:
+`altId`/`altType` rather than `locationId`, item `name`/`amount`/`qty`/`currency` survival,
+`contactDetails.phoneNo` (GHL ignores `phone`), absent contact fields omitted rather than null,
+`tags: [name]` as an array, and `note`'s 80-char preview elision never leaking into the payload.
+
 ## [2.4.10] — 2026-07-27
 
 ### Added — seven commands now carry the JSON stability promise
