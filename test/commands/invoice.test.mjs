@@ -223,3 +223,34 @@ test('invoice send: body uses altId/altType + liveMode, and targets the right in
   assert.equal(b.altType, 'location');
   assert.equal(b.liveMode, true);
 });
+
+test('invoice draft: a malformed qty falls back to 1, never 0', async () => {
+  // "Setup:5000:abc" — Number('abc') is NaN, so the qty guard fires. A fallback of 0 would put a
+  // zero-quantity line on a real invoice: the customer sees the item and is billed nothing for it.
+  // Mutation testing found this path untested — changing the fallback to 0 left the suite green.
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: draftFixture });
+  await run({ _: ['draft'], contact: 'cid-1', item: 'Setup:5000:abc' }, ctx);
+  ctx.out.flush();
+  const items = bodyOf(getCalledBodies(), '/invoices/').items;
+  assert.equal(items[0].qty, 1, 'an unparseable qty must default to 1, never 0');
+  assert.equal(items[0].amount, 5000, 'a bad qty must not corrupt the amount');
+});
+
+test('invoice draft: a FAILED location read is never mined for a business name', async () => {
+  // A non-2xx response can still carry a parseable body — error envelopes sometimes echo the
+  // record. Without the !lg.ok guard, a 500 whose payload happens to contain a location name would
+  // ship that name onto the invoice as though the read had succeeded. The status is the authority,
+  // not the shape of the payload.
+  const { ctx, getCalledWrites } = makeFakeCtx({
+    confirmed: true,
+    fixture: {
+      ...draftFixture,
+      'GET /locations/L-TEST': { status: 500, j: { location: { name: 'Stale Cached Co' } } },
+    },
+  });
+  await assert.rejects(
+    () => run({ _: ['draft'], contact: 'cid-1', item: 'X:100' }, ctx),
+    (e) => e.code === EXIT.API,
+    'a 500 must abort even when its body looks usable');
+  assert.deepEqual(getCalledWrites(), []);
+});
