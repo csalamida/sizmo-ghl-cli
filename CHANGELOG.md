@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.4.9] — 2026-07-21  **(not yet released — current dev version)**
+## [2.4.9] — 2026-07-27
 
 ### Added — `appointment book` can express a real booking
 
@@ -37,6 +37,34 @@ of sending the contact a confirmation SMS/email and kicking off workflows. The c
 listed only calendar, contact and time, which understated what was being approved. It now says so
 explicitly, and says the opposite when `--no-notify` is passed. The default is unchanged — sizmo
 does not silently suppress a client's confirmations.
+
+### Added — `contact create/upsert` can set provenance, ownership and DND
+
+`POST /contacts/` accepts 23 body fields; sizmo exposed 6. Added `--source`, `--assigned-user`,
+`--company`, `--timezone`, `--country` and `--dnd` to **both** create and upsert (via a shared
+builder, so the two cannot drift apart).
+
+Two matter beyond convenience. **`--source`**: without it every contact sizmo creates is
+indistinguishable from a manual entry, so for an import/migration tool attribution was
+unrecoverable after the fact. **`--dnd`**: sizmo can create a contact *and* message it, and GHL
+automations fire on creation — importing an opted-out list left those people messageable. Omitting
+`--dnd` omits the key entirely rather than sending `dnd: false`, which on upsert would actively
+clear a flag an existing contact already carries.
+
+### Fixed — a blocked read reported `0`, not unknown, on every reporting command
+
+README promised this in two places ("a blocked data source is reported as unknown, never as zero")
+and it was false across all seven reporting lanes. `receivables` returned `totalOwed: 0` while
+holding the HTTP status proving the invoices were never read; `pipeline` reported `0` open value;
+`reconcile` reported `0` collected *and* a clean `0 refunds · 0 failed · 0 orphans`; `triage` said
+`0` waiting; `noshow`, `segment` and `booked-not-paid` the same. Nothing in the payload separated
+"nothing owed" from "not allowed to look", so a consumer summing across locations silently
+under-counted real money.
+
+All seven now return `null` for their counts and totals plus a `blocked: <httpStatus>` marker, and
+each render says UNKNOWN and states plainly what the empty state does **not** mean.
+`test/docs/blocked-is-not-zero.test.mjs` scans every command and fails the build if any starts
+returning a hardcoded `0` from a blocked branch again.
 
 ### Fixed — `sizmo brief` exited 0 while completely blind
 
