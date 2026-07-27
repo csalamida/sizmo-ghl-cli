@@ -82,7 +82,13 @@ async function draftInvoice(args, ctx) {
     `  ${items.length} item(s) · ${currency} ${total.toLocaleString('en-PH', { maximumFractionDigits: 0 })} · due ${dueDate}`,
     '  draft only — NOT sent, no charge. Send later with: sizmo invoice send <id>',
   ];
-  const rerunCommand = `sizmo invoice draft --contact ${contactId} --item "${args.item.replace(/"/g, '\\"')}" --currency ${currency}${args.name ? ` --name "${String(args.name).replace(/"/g, '\\"')}"` : ''} --confirm`;
+  // --due MUST round-trip. It was omitted here while the preview above printed the resolved due
+  // date, so approving "due 2026-12-25" and running the offered command produced an invoice due
+  // +14d instead. The confirm gate's whole promise is that rerunning fires what you previewed —
+  // on a money document that is the difference between the terms the client agreed to and
+  // different ones.
+  const duePart = args.due ? ` --due ${args.due}` : '';
+  const rerunCommand = `sizmo invoice draft --contact ${contactId} --item "${args.item.replace(/"/g, '\\"')}" --currency ${currency}${args.name ? ` --name "${String(args.name).replace(/"/g, '\\"')}"` : ''}${duePart} --confirm`;
   const gate = requireConfirm({ command: 'invoice draft', changes, rerunCommand }, ctx);
   if (!gate.proceed) return gate.code;
 
