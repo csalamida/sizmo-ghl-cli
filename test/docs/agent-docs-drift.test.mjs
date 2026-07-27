@@ -96,6 +96,20 @@ for (const file of flagSources) {
 // it passes `sizmo ack --days 7` because --days is real on reconcile/triage/booked-not-paid, even
 // though ack's actual flag is --for. That exact mistake was made while writing these docs on
 // 2026-07-27 and a global check did not catch it — so the check is scoped per command.
+
+// Fence extraction must pair on EVERY ``` delimiter, whatever its language tag, then filter to
+// shell blocks. A first version matched /```(?:sh|bash)?\n/ — so a ```jsonc or ```json opener was
+// not recognised as an opener at all, the regex latched onto that block's CLOSING ``` as the next
+// opener, and every fence after it was paired one off. README (json + jsonc) and AGENTS.md (json)
+// were both affected: the check was scanning misaligned regions and silently missed a planted
+// `sizmo brief --frobnicate`. Verified before/after with that exact mutation.
+function shellFences(doc) {
+  return [...doc.matchAll(/```([a-z]*)\n([\s\S]*?)```/g)]
+    .filter(m => m[1] === '' || m[1] === 'sh' || m[1] === 'bash')
+    .map(m => m[2])
+    .join('\n');
+}
+
 const flagsFor = new Map();
 for (const name of commandNames) {
   const src = readFileSync(join(REPO, 'commands', `${name}.mjs`), 'utf8');
@@ -106,7 +120,7 @@ for (const [label, doc] of [['SKILL.md', SKILL], ['AGENTS.md', AGENTS]]) {
   test(`${label}: every flag in a shell example is valid FOR THAT COMMAND`, () => {
     // Only inspect fenced shell examples — prose can discuss a flag loosely, but a
     // copy-pasteable example that fails is a direct agent failure.
-    const fences = [...doc.matchAll(/```(?:sh|bash)?\n([\s\S]*?)```/g)].map(m => m[1]).join('\n');
+    const fences = shellFences(doc);
     const problems = [];
 
     for (const rawLine of fences.split('\n')) {
@@ -186,7 +200,7 @@ test('README documents every command', () => {
 });
 
 test('README: every flag in a shell example is valid FOR THAT COMMAND', () => {
-  const fences = [...README.matchAll(/```(?:sh|bash)?\n([\s\S]*?)```/g)].map(m => m[1]).join('\n');
+  const fences = shellFences(README);
   const problems = [];
   for (const rawLine of fences.split('\n')) {
     const line = rawLine.replace(/#.*$/, '').trim();
