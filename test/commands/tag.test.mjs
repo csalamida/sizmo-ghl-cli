@@ -111,3 +111,53 @@ test('tag: both --add and --remove → USAGE error', async () => {
   const { ctx } = makeFakeCtx();
   await assert.rejects(() => run({ _: [CONTACT], add: 'a', remove: 'b' }, ctx), /either|both/i);
 });
+
+// ── BODY + PATH ASSERTIONS (lens 4, 2026-07-27) ─────────────────────────────
+// tag was one of three WRITE commands whose tests never inspected what was transmitted. Every
+// test above checks an exit code or that a call fired; none checked the payload or the URL.
+
+test('tag --add: body is { tags: [name] } — an array, not a bare string', async () => {
+  // GHL takes an array. Sending a bare string would be silently ignored or 4xx, and an
+  // exit-code-only test cannot tell the difference.
+  const fixture = { 'POST /contacts/cid-1/tags': { status: 200, j: { tags: ['vip'] } } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture });
+  await run({ _: ['cid-1'], add: 'vip' }, ctx);
+  ctx.out.flush();
+  const b = getCalledBodies()[0];
+  assert.equal(b.method, 'POST');
+  assert.deepEqual(b.body, { tags: ['vip'] });
+});
+
+test('tag --remove: DELETE with the same body shape (not a query param)', async () => {
+  const fixture = { 'DELETE /contacts/cid-1/tags': { status: 200, j: {} } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture });
+  await run({ _: ['cid-1'], remove: 'vip' }, ctx);
+  ctx.out.flush();
+  const b = getCalledBodies()[0];
+  assert.equal(b.method, 'DELETE');
+  assert.deepEqual(b.body, { tags: ['vip'] });
+});
+
+test('tag: the contact id is URL-encoded — a slash must not escape its path segment', async () => {
+  // tag was the ONLY command putting an id into a path without encodeURIComponent. `a/b` built
+  // POST /contacts/a/b/tags — a different endpoint than the confirm preview named, so what the
+  // user approved and what was sent did not match.
+  const weird = 'a/b?x=1';
+  const fixture = { [`POST /contacts/${encodeURIComponent(weird)}/tags`]: { status: 200, j: {} } };
+  const { ctx, getCalledPaths } = makeFakeCtx({ confirmed: true, fixture });
+  await run({ _: [weird], add: 'vip' }, ctx);
+  ctx.out.flush();
+  assert.ok(getCalledPaths().every(p => !p.includes('/contacts/a/b/')),
+    'a raw slash in the id must never reach the URL as a path separator');
+});
+
+test('tag: a tag name with spaces and punctuation survives verbatim in the body', async () => {
+  // The body is JSON, so the tag itself must NOT be URL-encoded — only the path id is. Encoding
+  // the tag would store the literal text "follow%20up" on the contact.
+  const fixture = { 'POST /contacts/cid-1/tags': { status: 200, j: {} } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture });
+  await run({ _: ['cid-1'], add: 'follow up — Q3/2026' }, ctx);
+  ctx.out.flush();
+  assert.deepEqual(getCalledBodies()[0].body, { tags: ['follow up — Q3/2026'] },
+    'the tag name is JSON body content and must not be percent-encoded');
+});

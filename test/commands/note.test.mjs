@@ -93,3 +93,38 @@ test('note: empty --text → USAGE error', async () => {
   const { ctx } = makeFakeCtx();
   await assert.rejects(() => run({ _: [CONTACT], text: '   ' }, ctx), /--text/i);
 });
+
+// ── BODY ASSERTIONS (lens 4, 2026-07-27) ────────────────────────────────────
+// note was one of three WRITE commands whose tests never inspected the payload.
+
+test('note: body key is `body`, carrying the text verbatim', async () => {
+  // GHL's notes endpoint takes { body }. A rename to { text } or { note } would be dropped
+  // silently — the note would appear blank on the contact and nothing would fail.
+  const fixture = { 'POST /contacts/cid-1/notes': { status: 200, j: { note: { id: 'n1' } } } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture });
+  await run({ _: ['cid-1'], text: 'Called, left voicemail' }, ctx);
+  ctx.out.flush();
+  assert.deepEqual(getCalledBodies()[0].body, { body: 'Called, left voicemail' });
+});
+
+test('note: long text is NOT truncated on the wire — only the preview is', async () => {
+  // The confirm preview elides at 80 chars. If that elision leaked into the request, the stored
+  // note would be silently cut short, and only a body assertion can catch it.
+  const long = 'x'.repeat(500);
+  const fixture = { 'POST /contacts/cid-1/notes': { status: 200, j: {} } };
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture });
+  await run({ _: ['cid-1'], text: long }, ctx);
+  ctx.out.flush();
+  const sent = getCalledBodies()[0].body.body;
+  assert.equal(sent.length, 500, 'the full text must reach the API, not the 80-char preview');
+  assert.ok(!sent.includes('…'), 'the preview ellipsis must never appear in the payload');
+});
+
+test('note: the contact id is URL-encoded in the path', async () => {
+  const weird = 'c/d';
+  const fixture = { [`POST /contacts/${encodeURIComponent(weird)}/notes`]: { status: 200, j: {} } };
+  const { ctx, getCalledPaths } = makeFakeCtx({ confirmed: true, fixture });
+  await run({ _: [weird], text: 'hi' }, ctx);
+  ctx.out.flush();
+  assert.ok(getCalledPaths().every(p => !p.includes('/contacts/c/d/')));
+});

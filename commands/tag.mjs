@@ -44,7 +44,12 @@ export async function run(args, ctx) {
   if (!gate.proceed) return gate.code;
 
   // Execute
-  const path = `/contacts/${contactId}/tags`;
+  // encodeURIComponent, like every other command that puts an id in a path segment. tag was the
+  // lone exception: a contactId containing `/` or `?` escaped its segment and built a request
+  // against a different endpoint than the preview named — `sizmo tag "a/b" --add x` produced
+  // POST /contacts/a/b/tags. The confirm preview showed the raw id, so what the user approved and
+  // what was sent did not match.
+  const path = `/contacts/${encodeURIComponent(contactId)}/tags`;
   let r;
   if (isAdd) {
     r = await ctx.http.post(path, { tags: [tagName] });
