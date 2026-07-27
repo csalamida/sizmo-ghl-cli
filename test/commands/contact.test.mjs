@@ -166,3 +166,87 @@ test('contact upsert --tag on a brand-new contact (no match found): sends just t
   const body = getCalledBodies().find(b => b.path === '/contacts/upsert').body;
   assert.deepEqual(body.tags, ['follow-up']);
 });
+
+// ── expressiveness: POST /contacts/ accepts 23 fields, sizmo exposed 6 ────────
+// Added 2026-07-27 after diffing against describe_operation(create-contact). A contact could not
+// carry provenance, an owner, a company, a timezone, or a do-not-disturb flag.
+
+const CREATE_URL = 'POST /contacts/';
+const UPSERT_URL = 'POST /contacts/upsert';
+
+test('contact create: optional fields map to their real GHL names', async () => {
+  // A wrong field name still 200s and the value is silently dropped — only a body assertion catches it.
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true, fixture: { [CREATE_URL]: { status: 200, j: { contact: { id: 'c1' } } } },
+  });
+  await run({
+    _: ['create'], email: 'a@b.com', source: 'webinar-jul', 'assigned-user': 'usr-7',
+    company: 'Acme', timezone: 'Asia/Manila', country: 'PH', dnd: true,
+  }, ctx);
+  ctx.out.flush();
+  const [w] = getCalledBodies();
+  assert.equal(w.body.source, 'webinar-jul');
+  assert.equal(w.body.assignedTo, 'usr-7', 'assignedTo, not assignedUser');
+  assert.equal(w.body.companyName, 'Acme', 'companyName, not company');
+  assert.equal(w.body.timezone, 'Asia/Manila');
+  assert.equal(w.body.country, 'PH');
+  assert.equal(w.body.dnd, true);
+});
+
+test('contact create: omits optional fields entirely when not passed', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true, fixture: { [CREATE_URL]: { status: 200, j: { contact: { id: 'c1' } } } },
+  });
+  await run({ _: ['create'], email: 'a@b.com' }, ctx);
+  ctx.out.flush();
+  assert.deepEqual(Object.keys(getCalledBodies()[0].body).sort(), ['email', 'locationId'],
+    'unset optional flags must not appear as undefined/false keys');
+});
+
+test('contact create: --dnd absent means the key is absent, never dnd:false', async () => {
+  // Sending dnd:false would actively CLEAR a do-not-disturb flag the contact may already carry.
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true, fixture: { [CREATE_URL]: { status: 200, j: { contact: { id: 'c1' } } } },
+  });
+  await run({ _: ['create'], email: 'a@b.com' }, ctx);
+  ctx.out.flush();
+  assert.equal('dnd' in getCalledBodies()[0].body, false);
+});
+
+test('contact upsert: gets the SAME optional fields as create', async () => {
+  // create and upsert built identical bodies by copy-paste; the shared builder exists so one
+  // cannot quietly gain a field the other lacks.
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true,
+    fixture: {
+      'GET /contacts/?locationId=L-TEST&query=a%40b.com&limit=20': { status: 200, j: { contacts: [] } },
+      [UPSERT_URL]: { status: 200, j: { contact: { id: 'c1' }, new: true } },
+    },
+  });
+  await run({ _: ['upsert'], email: 'a@b.com', source: 'webinar-jul', dnd: true, company: 'Acme' }, ctx);
+  ctx.out.flush();
+  const w = getCalledBodies().find(b => b.path === '/contacts/upsert');
+  assert.equal(w.body.source, 'webinar-jul');
+  assert.equal(w.body.dnd, true);
+  assert.equal(w.body.companyName, 'Acme');
+});
+
+test('contact create: --dnd is called out in the confirm preview', async () => {
+  // Compliance-relevant: sizmo can create a contact AND message it.
+  const { ctx, getPrinted } = makeFakeCtx({});
+  const code = await run({ _: ['create'], email: 'a@b.com', dnd: true }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  const changes = JSON.parse(getPrinted()).data.changes.join('\n');
+  assert.match(changes, /DND ON/);
+});
+
+test('contact create: rerun command round-trips every optional flag', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({});
+  await run({ _: ['create'], email: 'a@b.com', source: 'webinar-jul', 'assigned-user': 'usr-7', dnd: true }, ctx);
+  ctx.out.flush();
+  const cmd = JSON.parse(getPrinted()).data.confirmCommand;
+  for (const frag of ['--source', '--assigned-user', '--dnd', '--confirm']) {
+    assert.ok(cmd.includes(frag), `confirmCommand must carry ${frag} — got: ${cmd}`);
+  }
+});

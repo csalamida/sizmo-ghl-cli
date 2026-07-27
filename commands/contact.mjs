@@ -17,6 +17,12 @@ export const meta = {
     { name: '--email', type: 'string', desc: 'email address (create/upsert; upsert de-dupe key)' },
     { name: '--phone', type: 'string', desc: 'phone in E.164, e.g. +14155551234 (create/upsert; upsert de-dupe key)' },
     { name: '--tag',   type: 'string', desc: 'tag(s) to apply — comma-separated' },
+    { name: '--source',        type: 'string', desc: 'lead provenance, e.g. "webinar-jul" (create/upsert)' },
+    { name: '--assigned-user', type: 'string', desc: 'user id to own this contact — `sizmo list users`' },
+    { name: '--company',       type: 'string', desc: 'company name (B2B)' },
+    { name: '--timezone',      type: 'string', desc: 'IANA timezone, e.g. Asia/Manila — affects booking times' },
+    { name: '--country',       type: 'string', desc: 'ISO country code, e.g. PH — affects phone normalisation' },
+    { name: '--dnd',           type: 'bool',   desc: 'mark do-not-disturb: suppresses messaging to this contact' },
   ],
   readOnly: false,
 };
@@ -30,6 +36,44 @@ export async function run(args, ctx) {
   if (sub === 'delete') return deleteContact(args, ctx);
   throw new GhlError('usage: sizmo contact create … | sizmo contact upsert --email|--phone … | sizmo contact delete <contactId>', EXIT.USAGE, 'sizmo contact --help');
 }
+
+// Shared so create and upsert cannot drift apart. They built identical bodies by copy-paste, which
+// is how one of them would have quietly gained a field the other lacked — the same drift class the
+// agent-doc guard exists for, just in code.
+//
+// POST /contacts/ accepts 23 body fields (verified via describe_operation); sizmo exposed 6. These
+// are the ones that change what a contact IS rather than cosmetics: where it came from, who owns
+// it, whether it may be contacted.
+function optionalContactFields(args) {
+  const dnd = !!args.dnd;
+  return {
+    ...(args.source        ? { source: args.source }             : {}),
+    ...(args['assigned-user'] ? { assignedTo: args['assigned-user'] } : {}),
+    ...(args.company       ? { companyName: args.company }       : {}),
+    ...(args.timezone      ? { timezone: args.timezone }         : {}),
+    ...(args.country       ? { country: args.country }           : {}),
+    ...(dnd                ? { dnd: true }                       : {}),
+  };
+}
+
+// Preview lines for the above. dnd gets its own wording because it is the compliance-relevant one:
+// sizmo can create a contact AND message it, so importing an opted-out list with no way to mark
+// do-not-disturb means those people get contacted.
+function optionalContactChanges(args) {
+  const out = [];
+  if (args.source)             out.push(`  source:   ${args.source}`);
+  if (args['assigned-user'])   out.push(`  assigned: ${args['assigned-user']}`);
+  if (args.company)            out.push(`  company:  ${args.company}`);
+  if (args.timezone)           out.push(`  timezone: ${args.timezone}`);
+  if (args.country)            out.push(`  country:  ${args.country}`);
+  if (args.dnd)                out.push(`  ⚠ DND ON — contact marked do-not-disturb, messaging suppressed`);
+  return out;
+}
+
+const OPTIONAL_FLAG_PAIRS = (args) => [
+  ['--source', args.source], ['--assigned-user', args['assigned-user']],
+  ['--company', args.company], ['--timezone', args.timezone], ['--country', args.country],
+];
 
 async function createContact(args, ctx) {
   const { name, first, last, email, phone } = args;
@@ -46,14 +90,20 @@ async function createContact(args, ctx) {
     ...(email ? { email } : {}),
     ...(phone ? { phone } : {}),
     ...(tags  ? { tags } : {}),
+    ...optionalContactFields(args),
   };
 
   const who = [email, phone, name || [first, last].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
-  const changes = [`Create contact: ${who || '(no identifying field)'}`, ...(tags ? [`  tags: ${tags.join(', ')}`] : [])];
+  const changes = [
+    `Create contact: ${who || '(no identifying field)'}`,
+    ...(tags ? [`  tags: ${tags.join(', ')}`] : []),
+    ...optionalContactChanges(args),
+  ];
   const parts = ['sizmo contact create'];
-  for (const [flag, v] of [['--name', name], ['--first', first], ['--last', last], ['--email', email], ['--phone', phone], ['--tag', args.tag]]) {
+  for (const [flag, v] of [['--name', name], ['--first', first], ['--last', last], ['--email', email], ['--phone', phone], ['--tag', args.tag], ...OPTIONAL_FLAG_PAIRS(args)]) {
     if (v) parts.push(`${flag} "${String(v).replace(/"/g, '\\"')}"`);
   }
+  if (args.dnd) parts.push('--dnd');
   const rerunCommand = parts.join(' ') + ' --confirm';
 
   const gate = requireConfirm({ command: 'contact create', changes, rerunCommand }, ctx);
@@ -111,6 +161,7 @@ async function upsertContact(args, ctx) {
     ...(email ? { email } : {}),
     ...(phone ? { phone } : {}),
     ...(tags  ? { tags } : {}),
+    ...optionalContactFields(args),
   };
 
   const key = [email, phone].filter(Boolean).join(' · ');
@@ -119,11 +170,13 @@ async function upsertContact(args, ctx) {
     `Upsert contact on ${email ? 'email' : 'phone'} ${email || phone}`,
     `  → updates the matching contact, or creates it if none exists: ${who}`,
     ...(tags ? [`  tags: ${tags.join(', ')}${mergedWithExisting ? ` (merged with ${existingTags.length} existing tag(s) — nothing removed)` : ''}`] : []),
+    ...optionalContactChanges(args),
   ];
   const parts = ['sizmo contact upsert'];
-  for (const [flag, v] of [['--name', name], ['--first', first], ['--last', last], ['--email', email], ['--phone', phone], ['--tag', args.tag]]) {
+  for (const [flag, v] of [['--name', name], ['--first', first], ['--last', last], ['--email', email], ['--phone', phone], ['--tag', args.tag], ...OPTIONAL_FLAG_PAIRS(args)]) {
     if (v) parts.push(`${flag} "${String(v).replace(/"/g, '\\"')}"`);
   }
+  if (args.dnd) parts.push('--dnd');
   const rerunCommand = parts.join(' ') + ' --confirm';
 
   const gate = requireConfirm({ command: 'contact upsert', changes, rerunCommand }, ctx);

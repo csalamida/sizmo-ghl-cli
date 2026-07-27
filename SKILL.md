@@ -89,6 +89,13 @@ matched the real CLI. If a flag here ever looks wrong, `sizmo help <command>` is
 # Contacts
 sizmo contact create --email a@b.co --name "Ana Cruz" --confirm
 sizmo contact upsert --email a@b.co --name "Ana Cruz" --confirm   # de-dupes on email/phone; merges
+# provenance + ownership + compliance — create AND upsert both accept these:
+#   --source "webinar-jul"     where the lead came from (without it every sizmo-created
+#                              contact is indistinguishable from a manual entry)
+#   --assigned-user <userId>   who owns it — `sizmo list users` for ids
+#   --company "Acme"           --timezone Asia/Manila     --country PH
+#   --dnd                      mark do-not-disturb. Use when importing an opted-out list —
+#                              without it those contacts remain messageable.
                                                                     # tags with existing ones, never replaces
 sizmo contact delete <id> --confirm
 
