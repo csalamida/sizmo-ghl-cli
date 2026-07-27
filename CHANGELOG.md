@@ -13,6 +13,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `sizmo open` emitted a wrong URL instead of refusing a typo
+
+`open` takes an id and infers the kind from `--opp`, but the rest of the CLI reads
+`sizmo <command> <kind> <id>`, so `sizmo open contact cid-1` is a very plausible mistyping. It took
+`contact` as the id, silently ignored `cid-1`, and emitted a well-formed URL to a record that does
+not exist — exit 0, no warning:
+
+```
+https://app.gohighlevel.com/v2/location/<loc>/contacts/detail/contact
+```
+
+You click a link that looks right and land on a 404 inside GoHighLevel. Now exits `USAGE`, and the
+fix line names the id you actually meant.
+
+### Fixed — `CONTRIBUTING.md` claimed sizmo never issues an invoice
+
+It does: `invoice draft` creates one and `invoice send` delivers it to a customer. `SECURITY.md`
+already said so correctly, so the contribution guide contradicted both the code and another doc —
+the most dangerous shape of drift, since that file is what a reviewer reads to learn the project's
+boundaries. The no-card-charging half of the claim is true and stays. Two smaller fixes in the same
+file: it told contributors to run a bare `node --test` when `package.json` pins
+`--test-concurrency=1`, and claimed the README command table "is generated from `sizmo schema`"
+when no generator exists.
+
+### Added — API-STABILITY §2b is now enforced
+
+The four router-verb shapes (`auth check`, `config list`, `init`, `open`) were verified live and
+are all correct — `init` masks the PIT and writes `profiles.json` at `0600`, confirming §5 too.
+Nothing was wrong; nothing enforced it either. The guard derives the expected keys from the doc
+table, so the doc stays the source of truth in both directions. §2b's prose also said "auth,
+config, and init" while its own table has four rows.
+
 ### Fixed — `invoice draft` invented a business name when it could not read one
 
 The location read was unchecked. A `401`, `404` or `500` fell through to the string literal
