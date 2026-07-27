@@ -338,3 +338,77 @@ test('opp delete: no --confirm → CONFIRM (5), names the target, no DELETE', as
   assert.equal(getCalledWrites().filter(w => w.startsWith('DELETE')).length, 0);
   assert.ok(JSON.parse(getPrinted()).data.changes.some(c => /Delete opportunity "Big Deal"/.test(c)));
 });
+
+// ── create status was hardcoded 'open' (2026-07-27) ──────────────────────────
+// GHL requires `status` on create and accepts won/lost/abandoned, but sizmo always sent 'open'.
+// A migration importing historical CLOSED deals therefore landed every one of them as open,
+// inflating `sizmo pipeline`'s totalValue by the entire deal history — a reporting number the
+// user makes decisions on. Also adds --assigned-user (assignedTo), so a deal can have an owner.
+
+const OPP_FIXTURE = { 'POST /opportunities/': { status: 200, j: { opportunity: { id: 'opp-1' } } } };
+const baseArgs = { _: ['create'], name: 'Deal A', pipeline: 'Main Sales', stage: 'New Lead', contact: 'cid-x' };
+
+test('opp create: defaults to status open when --status is omitted', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: OPP_FIXTURE });
+  await run({ ...baseArgs }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies()[0].body.status, 'open', 'default must be unchanged');
+});
+
+test('opp create: --status won is sent through, not overridden to open', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: OPP_FIXTURE });
+  await run({ ...baseArgs, status: 'won' }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies()[0].body.status, 'won',
+    'a historical closed deal must import as closed, not as open pipeline value');
+});
+
+for (const st of ['lost', 'abandoned']) {
+  test(`opp create: --status ${st} is accepted`, async () => {
+    const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: OPP_FIXTURE });
+    await run({ ...baseArgs, status: st }, ctx);
+    ctx.out.flush();
+    assert.equal(getCalledBodies()[0].body.status, st);
+  });
+}
+
+test('opp create: invalid --status → USAGE, no write fired', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: OPP_FIXTURE });
+  await assert.rejects(
+    () => run({ ...baseArgs, status: 'frobnicated' }, ctx),
+    (e) => e.code === EXIT.USAGE && /open\|won\|lost\|abandoned/.test(e.message));
+  assert.equal(getCalledWrites().length, 0);
+});
+
+test('opp create: a non-open status is called out in the confirm preview', async () => {
+  // Creating an already-closed deal is unusual enough that the human should see it stated.
+  const { ctx, getPrinted } = makeFakeCtx({ model: MODEL });
+  const code = await run({ ...baseArgs, status: 'won' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  const changes = JSON.parse(getPrinted()).data.changes.join('\n');
+  assert.match(changes, /already CLOSED/);
+});
+
+test('opp create: --assigned-user maps to assignedTo', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: OPP_FIXTURE });
+  await run({ ...baseArgs, 'assigned-user': 'usr-9' }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies()[0].body.assignedTo, 'usr-9', 'assignedTo, not assignedUser');
+});
+
+test('opp create: assignedTo omitted entirely when --assigned-user is not passed', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: OPP_FIXTURE });
+  await run({ ...baseArgs }, ctx);
+  ctx.out.flush();
+  assert.equal('assignedTo' in getCalledBodies()[0].body, false);
+});
+
+test('opp create: rerun command carries --status and --assigned-user', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ model: MODEL });
+  await run({ ...baseArgs, status: 'won', 'assigned-user': 'usr-9' }, ctx);
+  ctx.out.flush();
+  const cmd = JSON.parse(getPrinted()).data.confirmCommand;
+  assert.ok(cmd.includes('--status won'), `got: ${cmd}`);
+  assert.ok(cmd.includes('--assigned-user usr-9'), `got: ${cmd}`);
+});

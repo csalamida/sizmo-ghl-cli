@@ -12,6 +12,10 @@
 // commands/contact.mjs's delete pattern exactly: fetch first (names it in the preview, a wrong
 // id 404s before touching anything), single-target only, never bulk.
 import { requireConfirm } from '../lib/confirm.mjs';
+
+// Shared by create and update. Was declared inside update only, which is part of how create ended
+// up hardcoding status instead of accepting one.
+const VALID_STATUS = ['open', 'won', 'lost', 'abandoned'];
 import { GhlError, EXIT } from '../lib/errors.mjs';
 import { isStale, fetchLiveEntity } from '../lib/model.mjs';
 
@@ -24,7 +28,8 @@ export const meta = {
     { name: '--stage',    type: 'string', desc: 'stage name (create / move)' },
     { name: '--value',    type: 'string', desc: 'monetary value e.g. 5000 (create / update)' },
     { name: '--contact',  type: 'string', desc: 'contact id to associate (create)' },
-    { name: '--status',   type: 'string', desc: 'open|won|lost|abandoned (update)' },
+    { name: '--status',   type: 'string', desc: 'open|won|lost|abandoned (create defaults to open / update)' },
+    { name: '--assigned-user', type: 'string', desc: 'user id to own the deal (create) — `sizmo list users`' },
   ],
   readOnly: false,
 };
@@ -126,6 +131,12 @@ export async function run(args, ctx) {
       );
     }
 
+    const createStatus = args.status ?? 'open';
+    if (!VALID_STATUS.includes(createStatus)) {
+      throw new GhlError(`opp create: invalid --status '${createStatus}' — must be one of ${VALID_STATUS.join('|')}`, EXIT.USAGE);
+    }
+    const assignedUser = args['assigned-user'];
+
     const staleNote = pipelineAgeNote(model, now);
     const changes = [
       `Create opportunity '${name}'`,
@@ -133,10 +144,14 @@ export async function run(args, ctx) {
       `  stage:    ${stName} (id: ${stage.id})`,
       `  contact:  ${contact}`,
       ...(value   ? [`  value:    ${value}`] : []),
+      `  status:   ${createStatus}${createStatus === 'open' ? '' : '  ← created already CLOSED, will not count as open pipeline'}`,
+      ...(assignedUser ? [`  assigned: ${assignedUser}`] : []),
       ...(staleNote ? [`  (${staleNote})`] : []),
     ];
     const valuePart  = value   ? ` --value "${value}"` : '';
-    const rerunCommand = `sizmo opp create --name "${name}" --pipeline "${plName}" --stage "${stName}" --contact ${contact}${valuePart} --confirm`;
+    const statusPart = createStatus !== 'open' ? ` --status ${createStatus}` : '';
+    const assignPart = assignedUser ? ` --assigned-user ${assignedUser}` : '';
+    const rerunCommand = `sizmo opp create --name "${name}" --pipeline "${plName}" --stage "${stName}" --contact ${contact}${valuePart}${statusPart}${assignPart} --confirm`;
 
     const gate = requireConfirm({ command: 'opp create', changes, rerunCommand }, ctx);
     if (!gate.proceed) return gate.code;
@@ -150,9 +165,13 @@ export async function run(args, ctx) {
       locationId: ctx.cfg.loc,
       pipelineId: pl.id,
       pipelineStageId: stage.id,
-      status: 'open',
+      // status was hardcoded 'open'. GHL requires the field, but it accepts won/lost/abandoned —
+      // hardcoding meant a migration could not import a historical CLOSED deal. Every backfilled
+      // opportunity landed open, inflating `sizmo pipeline`'s totalValue by the entire history.
+      status: createStatus,
       contactId: contact,
       ...(value != null ? { monetaryValue: Number(value) } : {}),
+      ...(assignedUser ? { assignedTo: assignedUser } : {}),
     };
     const r = await ctx.http.post('/opportunities/', body);
 
@@ -243,7 +262,6 @@ export async function run(args, ctx) {
       throw new GhlError('opp update requires at least one of --value or --status', EXIT.USAGE);
     }
 
-    const VALID_STATUS = ['open', 'won', 'lost', 'abandoned'];
     if (status && !VALID_STATUS.includes(status)) {
       throw new GhlError(`opp update: invalid --status '${status}' — must be one of ${VALID_STATUS.join('|')}`, EXIT.USAGE);
     }

@@ -101,6 +101,9 @@ sizmo contact delete <id> --confirm
 
 # Opportunities
 sizmo opp create --name "Deal" --pipeline "Sales Pipeline" --stage "New Lead" --contact <id> --confirm
+# --status open|won|lost|abandoned (default: open). Use won/lost when BACKFILLING historical
+#   deals — otherwise every imported deal lands OPEN and inflates `sizmo pipeline` totals.
+# --assigned-user <userId>  give the deal an owner (`sizmo list users` for ids)
 sizmo opp move <id> --stage "Won" --confirm
 sizmo opp update <id> --value 5000 --status won --confirm
 sizmo opp delete <id> --confirm
