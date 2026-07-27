@@ -35,7 +35,7 @@ Confirm the link works:
 
 ```sh
 sizmo --version
-# 0.4.0
+# prints the installed version — any number here means the link worked
 ```
 
 ## Step 2 — get a PIT from GoHighLevel

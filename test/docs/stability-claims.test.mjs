@@ -154,3 +154,24 @@ test('API-STABILITY §2a does not list a command that does not exist', () => {
   assert.deepEqual(ghosts, [],
     `API-STABILITY §2a promises a stable envelope for commands that do not exist: ${ghosts.join(', ')}`);
 });
+
+// ── 4. INSTALL.md — no stale version strings ─────────────────────────────────
+
+test('INSTALL.md never shows a version string other than the current one', () => {
+  // INSTALL.md told every new user that `sizmo --version` prints `0.4.0`. The package was at
+  // 2.4.9 — two majors stale. A first-time installer runs the command, sees a different number,
+  // and reasonably concludes the install failed or npm served a cached build. That is the worst
+  // possible moment to hand someone a contradiction: step one of setup, before any trust exists.
+  //
+  // The fix removed the number rather than updating it, because a hand-typed version rots by
+  // default — it is only correct on release day. This test permits a version string ONLY if it
+  // matches package.json, so a future author may write one, but it can never go stale silently.
+  const pkgVersion = JSON.parse(read('package.json')).version;
+  const stale = [...read('INSTALL.md').matchAll(/\b(\d+\.\d+\.\d+)\b/g)]
+    .map(m => m[1])
+    .filter(v => v !== pkgVersion);
+  assert.deepEqual([...new Set(stale)], [],
+    `INSTALL.md hardcodes version(s) ${[...new Set(stale)]} but package.json is at ${pkgVersion}. ` +
+    `Either update them or, better, describe the output without a number — a hand-typed version ` +
+    `is correct only on release day.`);
+});
