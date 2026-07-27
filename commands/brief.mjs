@@ -10,7 +10,7 @@ import { collect as pipeCollect } from './pipeline.mjs';
 import { collect as arCollect } from './receivables.mjs';
 import { rankActions, hasMixedCurrencies } from '../lib/prioritize.mjs';
 import { EXIT } from '../lib/errors.mjs';
-import { exitForBlockedSource } from '../lib/blind.mjs';
+import { exitForBlockedSource, exitForAllLanesBlocked } from '../lib/blind.mjs';
 import { SYM } from '../lib/money.mjs';
 import { timezoneFromModel } from '../lib/model.mjs';
 import {
@@ -520,12 +520,21 @@ export async function run(args, ctx) {
   // fine — a worse bug than the one being fixed. Requiring permission-shaped failures is the
   // signal we can actually stand behind.
   //
-  // KNOWN LIMITATION, stated rather than hidden: if all four lanes fail for a NON-auth reason
-  // (total API outage), brief still exits 0. It is visibly degraded in both renders and carries
-  // degraded:true + warnings in the envelope, but the exit code alone will not catch it. Closing
-  // that needs the sub-collects to mark their own lane as blocked instead of swallowing the
-  // failure into a well-formed zero — a real refactor, not a heuristic.
+  // The limitation this comment used to record — "all four lanes fail for a NON-auth reason and
+  // brief still exits 0" — is CLOSED as of 2026-07-27. It said closing it needed the sub-collects
+  // to mark their own lane blocked rather than swallowing the failure into a well-formed zero.
+  // They already do: receivables sets `blocked: firstErr`, pipeline `blocked: p.code`, triage
+  // `blocked: convErr`, noshow `blocked: cr.code` — each the real HTTP status. The refactor had
+  // happened; brief simply was not reading it.
+  //
+  // The check below runs FIRST and is strictly stronger than the heuristic that follows: a lane
+  // that was read and found empty carries no `blocked` marker at all, so "every lane blocked"
+  // cannot fire on a healthy-but-empty account. That was the exact regression the old limitation
+  // was protecting against, and it is now protected structurally rather than by declining to look.
   const lanes = Object.values(sources);
+  const allBlocked = exitForAllLanesBlocked(lanes);
+  if (allBlocked !== null) return allBlocked;
+
   const deniedEverywhere =
     ctx.out.degraded &&
     lanes.length > 0 &&

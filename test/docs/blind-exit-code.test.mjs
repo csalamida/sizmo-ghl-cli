@@ -19,7 +19,7 @@ import assert from 'node:assert';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { exitForBlockedSource } from '../../lib/blind.mjs';
+import { exitForBlockedSource, exitForAllLanesBlocked } from '../../lib/blind.mjs';
 import { EXIT } from '../../lib/errors.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -42,12 +42,63 @@ test('exitForBlockedSource: a readable source exits OK', () => {
   }
 });
 
-test('exitForBlockedSource: a NON-auth failure does not claim an auth problem', () => {
-  // Deliberate, carried over from brief: a 500 means the API broke, not that permissions are
-  // wrong. Telling someone to fix a scope that is already correct is worse than the bug being
-  // fixed. Stated as a known limitation in lib/blind.mjs rather than hidden.
-  assert.equal(exitForBlockedSource(500), EXIT.OK);
-  assert.equal(exitForBlockedSource(429), EXIT.OK);
+test('exitForBlockedSource: a NON-auth failure exits API — unreadable, but not an auth problem', () => {
+  // CONTRACT CHANGE 2026-07-27. This previously asserted EXIT.OK, encoding a known limitation:
+  // a total API outage exited 0 because failing it "would report broken auth to someone whose auth
+  // is fine."
+  //
+  // That reasoning conflated two things. The objection only holds if the exit code is AUTH. A 500
+  // is not an auth problem and must not claim to be one — it is an API problem, and EXIT.API says
+  // exactly that. Splitting the two removes the objection instead of trading one wrong answer for
+  // another, so the limitation is closed rather than documented.
+  assert.equal(exitForBlockedSource(500), EXIT.API);
+  assert.equal(exitForBlockedSource(429), EXIT.API);
+  assert.equal(exitForBlockedSource(503), EXIT.API);
+  assert.notEqual(exitForBlockedSource(500), EXIT.AUTH,
+    'a server outage must never tell the user their token is wrong');
+});
+
+test('exitForBlockedSource: an unreadable source is NEVER silently OK', () => {
+  // The property that matters, stated once: if the marker is set at all, the report did not see
+  // its data, and the exit code must say so.
+  for (const code of [401, 403, 429, 500, 502, 503, true]) {
+    assert.notEqual(exitForBlockedSource(code), EXIT.OK,
+      `blocked=${code} means the report saw nothing — exiting 0 would let \`sizmo … && next\` run`);
+  }
+});
+
+// ── multi-lane reports (brief) ───────────────────────────────────────────────
+
+test('exitForAllLanesBlocked: every lane down for a non-auth reason → API, not 0', () => {
+  // The case the old limitation left open. brief has four lanes and no single top-level marker.
+  const lanes = [{ blocked: 500 }, { blocked: 500 }, { blocked: 502 }, { blocked: 500 }];
+  assert.equal(exitForAllLanesBlocked(lanes), EXIT.API);
+});
+
+test('exitForAllLanesBlocked: a denial outranks a generic failure', () => {
+  // "your token lacks a scope" is the more actionable diagnosis, and the likelier explanation when
+  // several lanes fail together.
+  assert.equal(exitForAllLanesBlocked([{ blocked: 500 }, { blocked: 401 }, { blocked: 500 }, { blocked: 500 }]),
+    EXIT.AUTH);
+});
+
+test('exitForAllLanesBlocked: ONE dead lane beside readable ones defers — this is the empty-account guard', () => {
+  // The exact regression the old limitation was protecting against: a source 500s while the account
+  // is genuinely empty. Three lanes were READ and found nothing, so they carry no blocked marker,
+  // so the report is not blind and must not fail. Structural, not heuristic.
+  const lanes = [{ blocked: 500 }, { totalOwed: 0 }, { openCount: 0 }, { waiting: 0 }];
+  assert.equal(exitForAllLanesBlocked(lanes), null,
+    'must defer to brief\'s own logic, not fail a report that still produced real data');
+});
+
+test('exitForAllLanesBlocked: a fully readable, fully empty account defers (exits 0 downstream)', () => {
+  const lanes = [{ totalOwed: 0 }, { openCount: 0 }, { waiting: 0 }, { noshows: 0 }];
+  assert.equal(exitForAllLanesBlocked(lanes), null);
+});
+
+test('exitForAllLanesBlocked: no lanes at all defers rather than inventing a verdict', () => {
+  assert.equal(exitForAllLanesBlocked([]), null);
+  assert.equal(exitForAllLanesBlocked(null), null);
 });
 
 // ── every report that can go blind routes through it ─────────────────────────
