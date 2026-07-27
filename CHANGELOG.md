@@ -46,6 +46,40 @@ or dropped field reached the real API silently while the suite stayed green. Now
 `contactDetails.phoneNo` (GHL ignores `phone`), absent contact fields omitted rather than null,
 `tags: [name]` as an array, and `note`'s 80-char preview elision never leaking into the payload.
 
+## [Unreleased]
+
+### Added — `sizmo business update`
+
+`business` could create and delete but never **edit**. A typo'd company name could only be fixed by
+deleting and recreating — which drops the contact associations that make a business record useful
+in the first place. `PUT /businesses/{id}` has always existed; sizmo never exposed it.
+
+Follows the same shape as every other update verb: fetch first, so the preview names the real
+record and a wrong id `404`s before anything is written, then send only the flags you passed.
+
+```sh
+sizmo business update <id> --city "Cebu" --confirm    # only city changes; nothing else is touched
+```
+
+### Added — the six `business` fields the API always accepted
+
+`create-business` and `update-business` both accept ten fields. sizmo exposed four. Now also:
+`--address`, `--city`, `--state`, `--postal-code`, `--country`, `--description`.
+
+These were never a decision — nothing documented the omission, and `contact` already exposed
+exactly this address set, so "address data is in scope" was settled precedent elsewhere in the
+codebase.
+
+### Fixed — `business` and `list` printed a success-shaped envelope on usage errors
+
+Four paths did `ctx.out.line(...); return EXIT.USAGE`. A returned code skips the CLI's error
+handler, so `--json` printed `{data: null, degraded: false, warnings: []}` on **stdout** while
+exiting 2 — an agent parsing stdout saw a clean no-op with no error.
+
+`business` had this exact class fixed for its auth/API paths earlier. It survived because the guard
+only matched `return EXIT.(AUTH|API)`. The guard now covers `USAGE` too, and immediately caught a
+third occurrence in `business delete` that the manual pass had missed.
+
 ## [2.4.10] — 2026-07-27
 
 ### Added — seven commands now carry the JSON stability promise
