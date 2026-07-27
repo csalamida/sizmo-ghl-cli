@@ -175,3 +175,79 @@ test('INSTALL.md never shows a version string other than the current one', () =>
     `Either update them or, better, describe the output without a number — a hand-typed version ` +
     `is correct only on release day.`);
 });
+
+// ── 5. API-STABILITY §2b — the router-verb shapes ────────────────────────────
+//
+// §2b freezes a per-verb JSON shape for `auth check`, `config list`, `init` and `open`. All four
+// were verified correct on 2026-07-27 by running them for real — nothing was wrong. But nothing
+// enforced them either: the table is hand-typed prose, and the verbs' own tests assert behaviour
+// (exit codes, lane flags) rather than the documented KEY SET. A renamed or dropped key would break
+// every consumer scripting against the frozen contract while the suite stayed green.
+//
+// This test derives the expected keys FROM THE DOC TABLE, so the doc is the source of truth: change
+// the table and the test changes with it; change the code without the table and it fails.
+
+function section2bRows() {
+  const doc = read('API-STABILITY.md');
+  const start = doc.indexOf('### b) Router verbs');
+  const end = doc.indexOf('**Why two shapes:**');
+  assert.ok(start >= 0 && end > start, 'API-STABILITY §2b markers moved — update this test');
+  const rows = [];
+  for (const line of doc.slice(start, end).split('\n')) {
+    // | `auth check` | `{ schemaVersion, location, lanes:[{…}], summary, usable }` | `usable` |
+    const m = line.match(/^\|\s*`([a-z ]+)`\s*\|\s*`\{(.+?)\}`\s*\|/);
+    if (!m) continue;
+    const keys = m[2]
+      .split(',')                       // top-level split is good enough: nested {} only appear
+      .map(s => s.trim())               // inside a value, and we only want the leading key name
+      .map(s => s.split(':')[0].trim())
+      .map(s => s.replace(/\[.*$/, '').trim())
+      .filter(s => /^[a-zA-Z]+$/.test(s));
+    rows.push({ verb: m[1].trim(), keys: [...new Set(keys)] });
+  }
+  return rows;
+}
+
+test('API-STABILITY §2b documents exactly the four router verbs, and parses', () => {
+  const rows = section2bRows();
+  assert.deepEqual(rows.map(r => r.verb).sort(), ['auth check', 'config list', 'init', 'open'],
+    'the §2b table should cover auth check, config list, init and open');
+  for (const r of rows) {
+    assert.ok(r.keys.includes('schemaVersion'),
+      `§2b says every router verb carries schemaVersion, but the ${r.verb} row does not list it`);
+    assert.ok(r.keys.length >= 3, `${r.verb}'s documented shape parsed to only ${r.keys.length} keys`);
+  }
+});
+
+test('API-STABILITY §2b: the shapes the code emits match the ones the table promises', async () => {
+  // Verified live 2026-07-27 before this test existed:
+  //   auth check  → schemaVersion, location, lanes[{name,scope,ok,httpCode}], summary, usable
+  //   config list → schemaVersion, profiles[]                    (PIT omitted entirely)
+  //   init        → schemaVersion, command, profile, location, pit (masked "pit-…LEAK"),
+  //                 created, doctor, doctorExit, ok              (profiles.json written 0600)
+  //   open        → schemaVersion, command, kind, id, url, opened (false under --url)
+  // This test re-derives the promise from the doc and checks the SOURCE emits those key names, so
+  // the frozen contract cannot drift silently in either direction.
+  const cliSrc = readFileSync(join(REPO, 'lib', 'cli.mjs'), 'utf8');
+  const initSrc = readFileSync(join(REPO, 'commands', 'init.mjs'), 'utf8');
+  const haystack = cliSrc + initSrc;
+
+  const missing = [];
+  for (const { verb, keys } of section2bRows()) {
+    for (const k of keys) {
+      // Must appear as an OBJECT KEY (`k:` or shorthand `k,` / `k }`), not merely as a word.
+      //
+      // A first draft OR'd in a bare-word match as a fallback, which made this vacuous: "location",
+      // "command" and "ok" appear all over two large files, so every key passed regardless of
+      // whether it was ever emitted. A weak assertion and a correct one look identical until you
+      // mutate — this one was caught by removing a real key and watching the test stay green.
+      const asKey = new RegExp(`\\b${k}\\s*:`).test(haystack);
+      const asShorthand = new RegExp(`[{,]\\s*${k}\\s*[,}]`).test(haystack);
+      if (!asKey && !asShorthand) missing.push(`${verb}.${k}`);
+    }
+  }
+  assert.deepEqual(missing, [],
+    `API-STABILITY §2b promises these keys but they appear nowhere in the emitting source: ` +
+    `${missing.join(', ')}. §2b is a FROZEN contract — either the code dropped a documented key, ` +
+    `or the table promises something that was never built.`);
+});

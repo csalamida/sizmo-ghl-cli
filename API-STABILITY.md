@@ -67,8 +67,8 @@ The `_meta` marker, the meta field names, and the one-object-per-row contract ar
 
 ### b) Router verbs → per-verb objects
 
-`auth`, `config`, and `init` are **setup/diagnostic verbs, not data queries** — so they emit a
-purpose-fit object (each with `schemaVersion` + a clear success signal), not the data envelope:
+`auth`, `config`, `init` and `open` are **setup/diagnostic verbs, not data queries** — so they emit
+a purpose-fit object (each with `schemaVersion` + a clear success signal), not the data envelope:
 
 | Verb | Shape (abridged) | Success signal |
 |------|------------------|----------------|
