@@ -8,6 +8,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run } from '../../commands/crm.mjs';
+import { EXIT } from '../../lib/errors.mjs';
 import { makeOut } from '../../lib/output.mjs';
 import { SCHEMA_VERSION } from '../../lib/model.mjs';
 
@@ -37,20 +38,32 @@ function makeCtx(dir, { json = false } = {}) {
 // crm.mjs only covers the original 6 core entities (pipelines/calendars/tags/fields/users/
 // location) — the 6 extended ones (forms/surveys/products/links/businesses/objects) are
 // `sizmo list`'s job, not crm.mjs's. Use `tags` here, not `links`.
-test('crm <entity>: real scope block (401/403, no httpCode) → "needs <scope>"', async () => {
+// CONTRACT CHANGE 2026-07-27: crm's blocked paths now THROW GhlError instead of printing a line
+// and returning 1, matching commands/list.mjs and commands/surveys.mjs. Two reasons:
+//   · a scope denial exited 1 (API — "the server broke, retry") instead of 3 (AUTH — "your token
+//     lacks a scope"), so an agent branching on the exit code could not tell them apart and would
+//     retry a missing scope forever;
+//   · returning skips the CLI's error handler, so --json emitted a success-shaped envelope on
+//     stdout with no error field.
+// The message therefore moves from printed output into the thrown error. These assertions follow
+// it; the distinction they were written to protect (scope block vs real API error) is unchanged
+// and still asserted.
+test('crm <entity>: real scope block (401/403, no httpCode) → throws AUTH naming the scope', async () => {
   const dir = writeModel({ tags: { blocked: true, scope: 'locations/tags.readonly', fetchedAt: NOW } });
-  const { ctx, getPrinted } = makeCtx(dir);
-  await run({ _: ['tags'] }, ctx);
-  assert.match(getPrinted(), /needs locations\/tags\.readonly/);
+  const { ctx } = makeCtx(dir);
+  await assert.rejects(() => run({ _: ['tags'] }, ctx),
+    (e) => e.code === EXIT.AUTH
+        && /locations\/tags\.readonly/.test(e.message)
+        && /Private Integrations/.test(e.remediation ?? ''));
 });
 
-test('crm <entity>: non-auth API error (httpCode) → reports the real error, not "needs <scope>"', async () => {
+test('crm <entity>: non-auth API error (httpCode) → throws API, and does NOT blame the scope', async () => {
   const dir = writeModel({ tags: { blocked: true, scope: 'locations/tags.readonly', httpCode: 422, fetchedAt: NOW } });
-  const { ctx, getPrinted } = makeCtx(dir);
-  await run({ _: ['tags'] }, ctx);
-  const out = getPrinted();
-  assert.match(out, /API error 422/);
-  assert.doesNotMatch(out, /needs locations\/tags\.readonly/);
+  const { ctx } = makeCtx(dir);
+  await assert.rejects(() => run({ _: ['tags'] }, ctx),
+    (e) => e.code === EXIT.API
+        && /API error 422/.test(e.message)
+        && !/lacks locations\/tags\.readonly/.test(e.message));
 });
 
 test('crm overview (human): a non-auth API error on one entity shows the real error, not "needs <scope>"', async () => {
@@ -72,11 +85,18 @@ test('crm overview --json: surfaces linksHttpCode distinct from a real scope blo
   assert.equal(envelope.data.linksHttpCode, 422);
 });
 
-test('crm location: non-auth API error on the location entity → real error, not "needs <scope>"', async () => {
+test('crm location: non-auth API error → throws API, and does NOT blame the scope', async () => {
   const dir = writeModel({ location: { blocked: true, scope: 'locations.readonly', httpCode: 500, fetchedAt: NOW } });
-  const { ctx, getPrinted } = makeCtx(dir);
-  await run({ _: ['location'] }, ctx);
-  const out = getPrinted();
-  assert.match(out, /API error 500/);
-  assert.doesNotMatch(out, /needs locations\.readonly/);
+  const { ctx } = makeCtx(dir);
+  await assert.rejects(() => run({ _: ['location'] }, ctx),
+    (e) => e.code === EXIT.API
+        && /API error 500/.test(e.message)
+        && !/lacks locations\.readonly/.test(e.message));
+});
+
+test('crm location: a scope denial throws AUTH, not API', async () => {
+  const dir = writeModel({ location: { blocked: true, scope: 'locations.readonly', fetchedAt: NOW } });
+  const { ctx } = makeCtx(dir);
+  await assert.rejects(() => run({ _: ['location'] }, ctx),
+    (e) => e.code === EXIT.AUTH && /locations\.readonly/.test(e.message));
 });

@@ -10,6 +10,7 @@ import { collect as pipeCollect } from './pipeline.mjs';
 import { collect as arCollect } from './receivables.mjs';
 import { rankActions, hasMixedCurrencies } from '../lib/prioritize.mjs';
 import { EXIT } from '../lib/errors.mjs';
+import { exitForBlockedSource } from '../lib/blind.mjs';
 import { SYM } from '../lib/money.mjs';
 import { timezoneFromModel } from '../lib/model.mjs';
 import {
@@ -531,5 +532,8 @@ export async function run(args, ctx) {
     lanes.every(laneIsEmpty) &&
     (ctx.out.warnings ?? []).some(w => /\b401\b|\b403\b|scope|unauthor/i.test(w));
 
-  return deniedEverywhere ? EXIT.AUTH : EXIT.OK;
+  // The DECISION (blind-by-denial → AUTH) lives in lib/blind.mjs so brief and the six
+  // single-marker reports cannot drift apart on policy. Only the DETECTION differs: brief
+  // scans four lanes because it has no single blocked marker; they read theirs directly.
+  return exitForBlockedSource(deniedEverywhere ? 401 : null);
 }

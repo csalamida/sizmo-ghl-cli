@@ -5,6 +5,7 @@
 // READ-ONLY. Never messages, never books.
 import { mapLimit } from '../lib/pool.mjs';
 import { ENTITY_SPECS, timezoneFromModel } from '../lib/model.mjs';
+import { exitForBlockedSource } from '../lib/blind.mjs';
 export const meta = {
   name: 'noshow',
   summary: 'No-show recovery — who to re-book',
@@ -164,5 +165,7 @@ export async function run(args, ctx) {
     ctx.out.line('  ' + '─'.repeat(70));
     ctx.out.line('  → hand to ghl-conversations: draft a warm re-book message per contact; you approve each send (L2).\n');
   });
-  return 0;
+  // A report whose source was DENIED must not exit 0 — `sizmo noshow && ...` would
+  // proceed and an agent checking $? would read "nothing found" as fact. See lib/blind.mjs.
+  return exitForBlockedSource(data?.blocked);
 }

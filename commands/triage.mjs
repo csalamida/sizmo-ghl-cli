@@ -3,6 +3,7 @@
 // Trust-fix #2: conversations paginate to completion — --top N caps final sorted list only.
 // READ-ONLY. Never sends. Agent drafts, human approves.
 import { paginate } from '../lib/paginate.mjs';
+import { exitForBlockedSource } from '../lib/blind.mjs';
 
 export const meta = {
   name: 'triage',
@@ -149,5 +150,7 @@ export async function run(args, ctx) {
     ctx.out.line('  ' + '─'.repeat(72));
     ctx.out.line('  → I draft a reply per thread; you approve each before it sends (L2, human-gated).\n');
   });
-  return 0;
+  // A report whose source was DENIED must not exit 0 — `sizmo triage && ...` would
+  // proceed and an agent checking $? would read "nothing found" as fact. See lib/blind.mjs.
+  return exitForBlockedSource(data?.blocked);
 }

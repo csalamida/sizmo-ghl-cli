@@ -8,6 +8,7 @@
 import { paginate } from '../lib/paginate.mjs';
 import { ENTITY_SPECS } from '../lib/model.mjs';
 import { fmtMoney } from '../lib/money.mjs';
+import { exitForBlockedSource } from '../lib/blind.mjs';
 
 export const meta = {
   name: 'pipeline',
@@ -232,5 +233,7 @@ export async function run(args, ctx) {
     ctx.out.line('  ' + '─'.repeat(70));
     ctx.out.line('  → nudge list = the stuck deals; I can move a stage / set lost-reason on your say-so (L2, one at a time).\n');
   });
-  return 0;
+  // A report whose source was DENIED must not exit 0 — `sizmo pipeline && ...` would
+  // proceed and an agent checking $? would read "nothing found" as fact. See lib/blind.mjs.
+  return exitForBlockedSource(data?.blocked);
 }

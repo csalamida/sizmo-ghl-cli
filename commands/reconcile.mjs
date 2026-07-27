@@ -8,6 +8,7 @@
 import { paginate } from '../lib/paginate.mjs';
 import { ENTITY_SPECS } from '../lib/model.mjs';
 import { fmtMoney as m } from '../lib/money.mjs';
+import { exitForBlockedSource } from '../lib/blind.mjs';
 
 export const meta = {
   name: 'reconcile',
@@ -259,5 +260,7 @@ export async function run(args, ctx) {
     ctx.out.line('  ' + '─'.repeat(64));
     ctx.out.line('  Read-only. I reconcile + flag — I never charge, refund, or collect. That stays you.\n');
   });
-  return 0;
+  // A report whose source was DENIED must not exit 0 — `sizmo reconcile && ...` would
+  // proceed and an agent checking $? would read "nothing found" as fact. See lib/blind.mjs.
+  return exitForBlockedSource(data?.blocked);
 }

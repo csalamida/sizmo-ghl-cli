@@ -3,6 +3,7 @@
 // Missing model → auto-sync once (first run). Stale → serve + banner, no auto-sync.
 // READ-ONLY. No writes to GoHighLevel.
 import { loadModel, syncModel, isStale, ageMs, ENTITY_SPECS, DEFAULT_MODEL_DIR } from '../lib/model.mjs';
+import { GhlError, EXIT } from '../lib/errors.mjs';
 
 export const meta = {
   name: 'crm',
@@ -179,15 +180,20 @@ function entityList(entityName, model, modelMeta, nowMs, specMap, showAll, ctx) 
   }
 
   if (ent?.blocked && ent.httpCode) {
-    ctx.out.warn(`✖ ${entityName} — API error ${ent.httpCode} (not a scope issue — please report this)`);
-    ctx.out.data({ entity: entityName, blocked: true, httpCode: ent.httpCode, scope: ent.scope, _meta: modelMeta });
-    return 1;
+    throw new GhlError(
+      `${entityName} — API error ${ent.httpCode} (not a scope issue — please report this)`,
+      EXIT.API);
   }
   if (!ent || ent.blocked) {
+    // AUTH, not API. The branch above already handled "blocked WITH an httpCode" = a real API
+    // error; reaching here means there was no HTTP status, which is how sync records a SCOPE
+    // denial. Returning 1 for both made "your token lacks this scope" indistinguishable from "the
+    // API broke" to anything branching on the exit code — retry-on-1 is a sane agent policy, and
+    // retrying a missing scope forever is not. commands/list.mjs and commands/surveys.mjs already
+    // draw this line and their tests pin it; crm was the outlier.
     const scope = ent?.scope ?? 'unknown';
-    ctx.out.warn(`✖ ${entityName} blocked — needs ${scope}`);
-    ctx.out.data({ entity: entityName, blocked: true, scope, _meta: modelMeta });
-    return 1;
+    throw new GhlError(`${entityName} blocked — your PIT lacks ${scope}`, EXIT.AUTH,
+      `GoHighLevel → Settings → Private Integrations → edit your PIT → add ${scope} scope`);
   }
 
   const items = Array.isArray(ent.items) ? ent.items : [];
@@ -240,15 +246,14 @@ function entityList(entityName, model, modelMeta, nowMs, specMap, showAll, ctx) 
 function locationCmd(model, modelMeta, ctx) {
   const ent = model.entities.location;
   if (ent?.blocked && ent.httpCode) {
-    ctx.out.warn(`✖ location — API error ${ent.httpCode} (not a scope issue — please report this)`);
-    ctx.out.data({ blocked: true, httpCode: ent.httpCode, scope: ent.scope, _meta: modelMeta });
-    return 1;
+    throw new GhlError(
+      `location — API error ${ent.httpCode} (not a scope issue — please report this)`, EXIT.API);
   }
   if (!ent || ent.blocked) {
+    // Same distinction as entityCmd above: no httpCode = a scope denial = AUTH, not API.
     const scope = ent?.scope ?? 'locations.readonly';
-    ctx.out.warn(`✖ location blocked — needs ${scope}`);
-    ctx.out.data({ blocked: true, scope, _meta: modelMeta });
-    return 1;
+    throw new GhlError(`location blocked — your PIT lacks ${scope}`, EXIT.AUTH,
+      `GoHighLevel → Settings → Private Integrations → edit your PIT → add ${scope} scope`);
   }
   const item = ent.item ?? {};
   ctx.out.data({ item, location: item, _meta: modelMeta });

@@ -3,6 +3,7 @@
 // Trust-fix #2: contacts paginate to completion.
 // READ-ONLY. Never writes a tag, never messages.
 import { paginate } from '../lib/paginate.mjs';
+import { exitForBlockedSource } from '../lib/blind.mjs';
 
 export const meta = {
   name: 'segment',
@@ -152,5 +153,7 @@ export async function run(args, ctx) {
     ctx.out.line('  ' + '─'.repeat(70));
     ctx.out.line(`  → hand to ghl-contacts: bulk-tag these ${data.matched} (L2 — I echo the count + tag, you confirm, then apply). NEVER auto-tagged here.\n`);
   });
-  return 0;
+  // Denied source must not exit 0 — an agent would read "no contacts matched" as fact
+  // when the truth is "not allowed to look". See lib/blind.mjs.
+  return exitForBlockedSource(data?.blocked);
 }

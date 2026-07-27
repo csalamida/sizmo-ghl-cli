@@ -6,6 +6,7 @@
 import { paginate } from '../lib/paginate.mjs';
 import { fmtMoney as money } from '../lib/money.mjs';
 import { timezoneFromModel } from '../lib/model.mjs';
+import { exitForBlockedSource } from '../lib/blind.mjs';
 
 export const meta = {
   name: 'booked-not-paid',
@@ -255,5 +256,7 @@ export async function run(args, ctx) {
     ctx.out.line('  → never-billed: ghl-invoices drafts the invoice · unpaid: ghl-conversations drafts the nudge.');
     ctx.out.line('  You approve every invoice and every message. Money stays you, always.\n');
   });
-  return 0;
+  // A report whose source was DENIED must not exit 0 — `sizmo booked-not-paid && ...` would
+  // proceed and an agent checking $? would read "nothing found" as fact. See lib/blind.mjs.
+  return exitForBlockedSource(data?.blocked);
 }

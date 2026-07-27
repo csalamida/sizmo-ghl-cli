@@ -5,6 +5,7 @@
 // READ-ONLY. Invoices and payments are read-only — no charges, no voids, no sends from this command.
 import { paginate } from '../lib/paginate.mjs';
 import { fmtMoney as money } from '../lib/money.mjs';
+import { exitForBlockedSource } from '../lib/blind.mjs';
 
 export const meta = {
   name: 'receivables',
@@ -134,5 +135,7 @@ export async function run(args, ctx) {
     ctx.out.line('  ' + '─'.repeat(72));
     ctx.out.line('  → Read-only. Per-row commands above are ready to run (send needs --confirm; money never moves through sizmo).\n');
   });
-  return 0;
+  // A report whose source was DENIED must not exit 0 — `sizmo receivables && ...` would
+  // proceed and an agent checking $? would read "nothing found" as fact. See lib/blind.mjs.
+  return exitForBlockedSource(data?.blocked);
 }
