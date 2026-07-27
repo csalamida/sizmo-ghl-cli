@@ -543,14 +543,21 @@ test('--confirm path 1: an expired plan is not replayed', async () => {
 });
 
 test('--confirm path 1: a plan that FAILS halfway is still consumed — no double-apply on re-run', async () => {
-  // This is the case that makes clear-before-run load-bearing, and the one the success-path test
-  // above cannot see: with clear-AFTER-run, a batch that throws or exits non-zero never reaches the
-  // clear, so the plan survives. The natural human response to a half-failed batch is to re-run
-  // `sizmo ask --confirm` — which would re-fire the steps that ALREADY LANDED. Tagging twice is
-  // survivable; sending a message or an invoice twice is not.
+  // What this pins: a half-failed batch leaves NOTHING pending, so the natural human response —
+  // re-running `sizmo ask --confirm` — cannot re-apply the step that already landed. Tagging twice
+  // is survivable; sending a message or an invoice twice is not.
   //
-  // Mutation-verified: moving clearPendingPlan after runWithReport leaves every other ask test
-  // green, and only this one fails.
+  // What this does NOT pin, stated honestly: the clear-BEFORE-run ordering itself. Moving
+  // clearPendingPlan to after runWithReport keeps every test in this file green, including this
+  // one. That is not a gap in the test — the two orderings are genuinely equivalent in-process,
+  // because executeSteps catches every error (GhlError and otherwise), so runWithReport always
+  // returns and always reaches a trailing clear.
+  //
+  // The orderings diverge only if the process DIES mid-batch (crash, SIGKILL, power loss): with
+  // clear-after, the plan is still on disk, and the next `sizmo ask --confirm` re-fires the whole
+  // batch including the steps that already applied. That cannot be induced from inside a test, so
+  // clear-before stays as defence-in-depth against a case this suite cannot reach — not as
+  // something these assertions verify.
   const { run } = await import('../../commands/ask.mjs');
   const { savePendingPlan } = await import('../../lib/ask-memory.mjs');
   const dir = tmpDir();
