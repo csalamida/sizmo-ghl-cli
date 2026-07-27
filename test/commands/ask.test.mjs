@@ -541,3 +541,46 @@ test('--confirm path 1: an expired plan is not replayed', async () => {
   assert.equal(posts, 0, 'an expired plan must never fire');
   assert.equal(code, EXIT.USAGE);
 });
+
+test('--confirm path 1: a plan that FAILS halfway is still consumed — no double-apply on re-run', async () => {
+  // This is the case that makes clear-before-run load-bearing, and the one the success-path test
+  // above cannot see: with clear-AFTER-run, a batch that throws or exits non-zero never reaches the
+  // clear, so the plan survives. The natural human response to a half-failed batch is to re-run
+  // `sizmo ask --confirm` — which would re-fire the steps that ALREADY LANDED. Tagging twice is
+  // survivable; sending a message or an invoice twice is not.
+  //
+  // Mutation-verified: moving clearPendingPlan after runWithReport leaves every other ask test
+  // green, and only this one fails.
+  const { run } = await import('../../commands/ask.mjs');
+  const { savePendingPlan } = await import('../../lib/ask-memory.mjs');
+  const dir = tmpDir();
+  const fired = [];
+  const { ctx } = makeCtx({
+    confirmed: true, askMemoryDir: dir,
+    httpOverrides: {
+      post: async (path) => {
+        fired.push(path);
+        // First step succeeds, second is rejected — a partial batch.
+        return fired.length === 1
+          ? { code: 200, ok: true, j: {} }
+          : { code: 403, ok: false, j: {}, txt: 'forbidden' };
+      },
+    },
+  });
+  savePendingPlan(LOC, [
+    { command: 'tag',  parsed: { _: ['c1'], add: 'VIP' }, isWrite: true, executable: true, describe: 'Tag c1: +VIP' },
+    { command: 'note', parsed: { _: ['c1'], text: 'hi' }, isWrite: true, executable: true, describe: 'Note on c1' },
+  ], NOW, ctx._askMemoryDir);
+
+  const first = await run({ _: [] }, ctx);
+  assert.notEqual(first, EXIT.OK, 'the batch should report the failure');
+  const afterFirst = fired.length;
+  assert.equal(afterFirst, 2, 'step 1 applied, step 2 attempted and refused');
+
+  // The reflexive re-run.
+  const second = await run({ _: [] }, ctx);
+  assert.equal(fired.length, afterFirst,
+    'a half-failed plan must NOT still be pending — re-confirming would re-apply the step that ' +
+    'already succeeded. The plan must be consumed before it runs, not after.');
+  assert.equal(second, EXIT.USAGE, 'with nothing pending, the re-run should say there is nothing to confirm');
+});
