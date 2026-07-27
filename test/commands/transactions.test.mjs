@@ -104,23 +104,17 @@ test('transactions: total reads `count` when present instead of length', async (
 
 test('transactions: 401 → EXIT.AUTH', async () => {
   const { ctx } = makeFakeCtx({ fixture: { [txUrl()]: { status: 401, j: {} } } });
-  const code = await run({ _: [] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: [] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('transactions: 403 → EXIT.AUTH', async () => {
   const { ctx } = makeFakeCtx({ fixture: { [txUrl()]: { status: 403, j: {} } } });
-  const code = await run({ _: [] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: [] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('transactions: 500 → EXIT.API', async () => {
   const { ctx } = makeFakeCtx({ fixture: { [txUrl()]: { status: 500, j: { message: 'boom' } } } });
-  const code = await run({ _: [] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.API);
+  await assert.rejects(() => run({ _: [] }, ctx), (e) => e.code === EXIT.API);
 });
 
 // ── flags ─────────────────────────────────────────────────────────────────────

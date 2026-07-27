@@ -2,7 +2,7 @@
 // "I need the ID before I run the next command" workflow.
 // sizmo list [calendars|pipelines|tags|fields|values|users]
 
-import { EXIT } from '../lib/errors.mjs';
+import { GhlError, EXIT } from '../lib/errors.mjs';
 
 export const meta = {
   name: 'list',
@@ -74,13 +74,21 @@ function pad(s, n) { return String(s ?? '').slice(0, n).padEnd(n); }
 // own sync marks it "blocked" the same way. Saying "needs <scope>" there would be actively wrong
 // if the scope is already granted, and EXIT.AUTH would send an agent chasing a permissions fix
 // for what's actually a sizmo/API bug.
+// THROWS rather than returns. A printed line plus a returned exit code never reaches the CLI's
+// error handler, so `--json` emitted a success-shaped envelope on a hard 401 — degraded:false,
+// warnings:[], no error, no remediation. An agent parsing that saw a clean empty result; only the
+// exit code disagreed. Same fix business.mjs got; this helper covers all 12 `list` entities at once.
 function blockedExit(entity, ent, ctx) {
   if (ent?.httpCode) {
-    ctx.out.line(`✖ ${entity} — API error ${ent.httpCode} (not a scope issue — please report this)`);
-    return EXIT.API;
+    throw new GhlError(
+      `${entity} — API error ${ent.httpCode} (not a scope issue — please report this)`, EXIT.API);
   }
-  ctx.out.line(`✖ ${entity} blocked — needs ${ent?.scope ?? '(unknown scope)'}`);
-  return EXIT.AUTH;
+  const scope = ent?.scope ?? null;
+  throw new GhlError(
+    `${entity} blocked — your PIT lacks ${scope ?? 'the required scope'}`,
+    EXIT.AUTH,
+    scope ? `GoHighLevel → Settings → Private Integrations → edit your PIT → add ${scope} scope`
+          : 'GoHighLevel → Settings → Private Integrations → check this entity\'s scope');
 }
 
 // Distinguish "never synced" from "genuinely empty after sync"
@@ -263,8 +271,10 @@ async function listValues(ctx) {
     if (r.code === 401 || r.code === 403) return blockedExit('custom values', { scope: 'locations/customValues.readonly' }, ctx);
     values = r.j?.customValues ?? [];
   } catch (e) {
-    ctx.out.warn(`could not fetch custom values: ${e.message}`);
-    return EXIT.API;
+    // blockedExit throws now, so let its GhlError through rather than flattening it into a
+    // generic API error and losing the scope remediation.
+    if (e instanceof GhlError) throw e;
+    throw new GhlError(`could not fetch custom values: ${e.message}`, EXIT.API);
   }
 
   const nw = Math.min(30, values.reduce((m, v) => Math.max(m, (v.name || '').length), 14) + 2);

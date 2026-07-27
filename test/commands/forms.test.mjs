@@ -45,15 +45,13 @@ test('forms list: empty forms array → EXIT.OK with zero items', async () => {
 test('forms list: blocked (no httpCode) → EXIT.AUTH', async () => {
   const model = { entities: { forms: { blocked: true } } };
   const { ctx } = makeFakeCtx({ model });
-  const code = await run({ _: [] }, ctx);
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: [] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('forms list: blocked with httpCode → EXIT.API', async () => {
   const model = { entities: { forms: { blocked: true, httpCode: 500 } } };
   const { ctx } = makeFakeCtx({ model });
-  const code = await run({ _: [] }, ctx);
-  assert.equal(code, EXIT.API);
+  await assert.rejects(() => run({ _: [] }, ctx), (e) => e.code === EXIT.API);
 });
 
 // ── submissions feed ──────────────────────────────────────────────────────────
@@ -97,8 +95,7 @@ test('forms submissions: 401 → EXIT.AUTH', async () => {
     [`GET /forms/submissions?locationId=${LOC}&formId=${FORM_ID}&limit=20`]: { status: 401, j: {} },
   };
   const { ctx } = makeFakeCtx({ fixture });
-  const code = await run({ _: [FORM_ID] }, ctx);
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: [FORM_ID] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('forms submissions: 403 → EXIT.AUTH', async () => {
@@ -106,8 +103,7 @@ test('forms submissions: 403 → EXIT.AUTH', async () => {
     [`GET /forms/submissions?locationId=${LOC}&formId=${FORM_ID}&limit=20`]: { status: 403, j: {} },
   };
   const { ctx } = makeFakeCtx({ fixture });
-  const code = await run({ _: [FORM_ID] }, ctx);
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: [FORM_ID] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('forms submissions: 404 → EXIT.NOTFOUND', async () => {
@@ -115,8 +111,7 @@ test('forms submissions: 404 → EXIT.NOTFOUND', async () => {
     [`GET /forms/submissions?locationId=${LOC}&formId=${FORM_ID}&limit=20`]: { status: 404, j: {} },
   };
   const { ctx } = makeFakeCtx({ fixture });
-  const code = await run({ _: [FORM_ID] }, ctx);
-  assert.equal(code, EXIT.NOTFOUND);
+  await assert.rejects(() => run({ _: [FORM_ID] }, ctx), (e) => e.code === EXIT.NOTFOUND);
 });
 
 test('forms submissions: non-2xx non-auth → EXIT.API', async () => {
@@ -124,8 +119,7 @@ test('forms submissions: non-2xx non-auth → EXIT.API', async () => {
     [`GET /forms/submissions?locationId=${LOC}&formId=${FORM_ID}&limit=20`]: { status: 500, j: {} },
   };
   const { ctx } = makeFakeCtx({ fixture });
-  const code = await run({ _: [FORM_ID] }, ctx);
-  assert.equal(code, EXIT.API);
+  await assert.rejects(() => run({ _: [FORM_ID] }, ctx), (e) => e.code === EXIT.API);
 });
 
 test('forms submissions: --top respected → limit in request URL', async () => {

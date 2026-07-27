@@ -59,17 +59,13 @@ test('surveys list: missing surveys entity entirely → EXIT.OK, zero items', as
 test('surveys list: blocked without httpCode → EXIT.AUTH (scope issue)', async () => {
   const model = { entities: { surveys: { blocked: true } } };
   const { ctx } = makeFakeCtx({ model });
-  const code = await run({ _: [] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: [] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('surveys list: blocked WITH httpCode → EXIT.API (real error, not scope)', async () => {
   const model = { entities: { surveys: { blocked: true, httpCode: 500 } } };
   const { ctx } = makeFakeCtx({ model });
-  const code = await run({ _: [] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.API);
+  await assert.rejects(() => run({ _: [] }, ctx), (e) => e.code === EXIT.API);
 });
 
 // ── submissions feed ──────────────────────────────────────────────────────────
@@ -139,30 +135,22 @@ test('surveys submissions: non-array payload → EXIT.OK, degrades to empty (nev
 
 test('surveys submissions: 401 → EXIT.AUTH', async () => {
   const { ctx } = makeFakeCtx({ fixture: { [subUrl()]: { status: 401, j: {} } } });
-  const code = await run({ _: [SURVEY_ID] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: [SURVEY_ID] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('surveys submissions: 403 → EXIT.AUTH', async () => {
   const { ctx } = makeFakeCtx({ fixture: { [subUrl()]: { status: 403, j: {} } } });
-  const code = await run({ _: [SURVEY_ID] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: [SURVEY_ID] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('surveys submissions: 404 → EXIT.NOTFOUND', async () => {
   const { ctx } = makeFakeCtx({ fixture: { [subUrl()]: { status: 404, j: {} } } });
-  const code = await run({ _: [SURVEY_ID] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.NOTFOUND);
+  await assert.rejects(() => run({ _: [SURVEY_ID] }, ctx), (e) => e.code === EXIT.NOTFOUND);
 });
 
 test('surveys submissions: 500 → EXIT.API', async () => {
   const { ctx } = makeFakeCtx({ fixture: { [subUrl()]: { status: 500, j: {} } } });
-  const code = await run({ _: [SURVEY_ID] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.API);
+  await assert.rejects(() => run({ _: [SURVEY_ID] }, ctx), (e) => e.code === EXIT.API);
 });
 
 // ── --top handling ────────────────────────────────────────────────────────────

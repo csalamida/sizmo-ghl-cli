@@ -3,7 +3,7 @@
 // sizmo surveys <surveyId>       → recent submissions for that survey
 // sizmo surveys <surveyId> --top N
 
-import { EXIT } from '../lib/errors.mjs';
+import { GhlError, EXIT } from '../lib/errors.mjs';
 
 export const meta = {
   name: 'surveys',
@@ -32,12 +32,15 @@ async function listSurveys(ctx) {
   const ents  = model?.entities ?? {};
 
   if (ents.surveys?.blocked) {
+    // Throws so --json gets a real error envelope. Returning skipped the CLI's error handler and
+    // emitted degraded:false with no error, which reads as an empty-but-successful result.
     if (ents.surveys.httpCode) {
-      ctx.out.line(`✖ surveys — API error ${ents.surveys.httpCode} (not a scope issue — please report this)`);
-      return EXIT.API;
+      throw new GhlError(
+        `surveys — API error ${ents.surveys.httpCode} (not a scope issue — please report this)`, EXIT.API);
     }
-    ctx.out.line('✖ surveys blocked — needs surveys.readonly scope');
-    return EXIT.AUTH;
+    throw new GhlError(
+      `surveys blocked — your PIT lacks surveys.readonly`, EXIT.AUTH,
+      'GoHighLevel → Settings → Private Integrations → edit your PIT → add surveys.readonly scope');
   }
 
   const items = ents.surveys?.items ?? [];
@@ -70,16 +73,15 @@ async function showSubmissions(surveyId, top, ctx) {
       `/surveys/submissions?locationId=${encodeURIComponent(loc)}&surveyId=${encodeURIComponent(surveyId)}&limit=${top}`
     );
     if (r.code === 401 || r.code === 403) {
-      ctx.out.line('✖ survey submissions blocked — needs surveys/submissions.readonly scope');
-      return EXIT.AUTH;
+      throw new GhlError(
+        `HTTP ${r.code} — your PIT lacks surveys/submissions.readonly`, EXIT.AUTH,
+        'GoHighLevel → Settings → Private Integrations → edit your PIT → add surveys/submissions.readonly scope');
     }
     if (r.code === 404) {
-      ctx.out.line(`✖ survey not found: ${surveyId}`);
-      return EXIT.NOTFOUND;
+      throw new GhlError(`no survey with id ${surveyId}`, EXIT.NOTFOUND);
     }
     if (!r.ok) {
-      ctx.out.line(`✖ API error ${r.code}`);
-      return EXIT.API;
+      throw new GhlError(`survey submissions failed — HTTP ${r.code}`, EXIT.API);
     }
     submissions = r.j?.submissions ?? r.j?.data ?? r.j?.results ?? [];
     if (!Array.isArray(submissions)) {
@@ -87,8 +89,10 @@ async function showSubmissions(surveyId, top, ctx) {
       submissions = [];
     }
   } catch (e) {
-    ctx.out.warn(`could not fetch survey submissions: ${e.message}`);
-    return EXIT.API;
+    // Deliberate GhlErrors raised above must pass through — swallowing them here would downgrade a
+    // precise 401-with-remediation into a generic API error, the exact bug business.mjs had.
+    if (e instanceof GhlError) throw e;
+    throw new GhlError(`could not fetch survey submissions: ${e.message}`, EXIT.API);
   }
 
   ctx.out.data({ surveyId, submissions, total: submissions.length });

@@ -37,7 +37,16 @@ const WRITE_COMMANDS = ['contact', 'opp', 'tag', 'note', 'field', 'value', 'cale
 // degraded:false with no error on a hard 401.
 //
 // This list may only SHRINK. Adding to it means shipping a new dishonest envelope.
-const KNOWN_RETURN_STYLE_READS = new Set(['forms', 'surveys', 'transactions', 'list', 'doctor', 'ask']);
+// forms, surveys, transactions and list were converted 2026-07-27 — they now throw GhlError, so a
+// 401 produces {error, code, remediation} instead of a success-shaped envelope.
+//
+// The two that REMAIN are deliberate, not leftovers:
+//   doctor — its single return is a SUMMARY verdict printed after the full diagnostic report.
+//            Throwing would suppress the report the user ran the command to read. A blocked scope
+//            is doctor's OUTPUT, not doctor's failure.
+//   ask    — an orchestrator that dispatches other commands; its own error paths are covered by
+//            the pending-plan/confirm mechanism rather than a direct envelope.
+const KNOWN_RETURN_STYLE_READS = new Set(['doctor', 'ask']);
 
 function returnsAuthOrApi(src) {
   return /return\s+EXIT\.(AUTH|API)\b/.test(stripComments(src));

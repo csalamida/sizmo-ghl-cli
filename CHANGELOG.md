@@ -45,6 +45,23 @@ Because a scheduled send fires later with nobody watching — unlike every other
 the confirm preview states it does **not** send now, names the exact fire time, and prints the
 `send cancel` command needed to call it back.
 
+### Fixed — read commands emitted a success-shaped envelope on a 401
+
+`forms`, `surveys`, `transactions` and `list` printed a line and *returned* the exit code, which
+never reaches the CLI's error handler — so `--json` produced
+`{ data: null, degraded: false, warnings: [] }` on a hard 401. No `error`, no `remediation`. An
+agent parsing that saw an empty-but-successful result; only the exit code disagreed. They now throw
+`GhlError` like every write command, giving `{ error, code, remediation }` naming the exact scope.
+
+`list` got the most leverage: its shared `blockedExit()` helper covers all 12 entities, so one
+change fixed every one of them.
+
+Two commands deliberately keep the return style and are documented as such in
+`test/docs/error-envelope.test.mjs`: **`doctor`**, whose single return is a summary verdict printed
+*after* the diagnostic report — throwing would suppress the report the user ran the command to
+read, and a blocked scope is doctor's output rather than its failure — and **`ask`**, an
+orchestrator whose error paths run through the pending-plan/confirm mechanism.
+
 ### Fixed — `sizmo send --channel email` did not escape the message body
 
 The email body wraps each line in `<p>` and interpolated the message **raw**, so any `&`, `<` or `>`

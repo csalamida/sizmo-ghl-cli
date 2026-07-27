@@ -6,7 +6,7 @@
 // GHL payments API uses altId/altType (not locationId) for location-scoped queries.
 // API returns: contactName, contactId, amount, currency, status, entityType, entityId, createdAt.
 
-import { EXIT } from '../lib/errors.mjs';
+import { GhlError, EXIT } from '../lib/errors.mjs';
 
 export const meta = {
   name: 'transactions',
@@ -41,13 +41,12 @@ export async function run(parsed, ctx) {
   try {
     const r = await ctx.http.get(`/payments/transactions?${qs}`);
     if (r.code === 401 || r.code === 403) {
-      ctx.out.line('✖ transactions blocked — needs payments.readonly scope');
-      ctx.out.line('  Add scope in GHL → Settings → Integrations → Private Integrations');
-      return EXIT.AUTH;
+      throw new GhlError(
+        `HTTP ${r.code} — your PIT lacks payments/transactions.readonly`, EXIT.AUTH,
+        'GoHighLevel → Settings → Private Integrations → edit your PIT → add payments/transactions.readonly scope');
     }
     if (!r.ok) {
-      ctx.out.line(`✖ API error ${r.code}: ${r.j?.message ?? 'unknown'}`);
-      return EXIT.API;
+      throw new GhlError(`transactions failed — HTTP ${r.code}: ${r.j?.message ?? 'unknown'}`, EXIT.API);
     }
     transactions = r.j?.transactions ?? r.j?.data ?? r.j?.results ?? [];
     if (!Array.isArray(transactions)) {
@@ -56,8 +55,8 @@ export async function run(parsed, ctx) {
     }
     total = r.j?.total ?? r.j?.count ?? transactions.length;
   } catch (e) {
-    ctx.out.warn(`could not fetch transactions: ${e.message}`);
-    return EXIT.API;
+    if (e instanceof GhlError) throw e;
+    throw new GhlError(`could not fetch transactions: ${e.message}`, EXIT.API);
   }
 
   ctx.out.data({ transactions, total, top });

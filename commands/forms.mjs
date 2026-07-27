@@ -3,7 +3,7 @@
 // sizmo forms <formId>         → recent submissions for that form
 // sizmo forms <formId> --top N → limit to N rows (default 20)
 
-import { EXIT } from '../lib/errors.mjs';
+import { GhlError, EXIT } from '../lib/errors.mjs';
 
 export const meta = {
   name: 'forms',
@@ -32,12 +32,15 @@ async function listForms(ctx) {
   const ents  = model?.entities ?? {};
 
   if (ents.forms?.blocked) {
+    // Throws so --json gets a real error envelope. Returning skipped the CLI's error handler and
+    // emitted degraded:false with no error, which reads as an empty-but-successful result.
     if (ents.forms.httpCode) {
-      ctx.out.line(`✖ forms — API error ${ents.forms.httpCode} (not a scope issue — please report this)`);
-      return EXIT.API;
+      throw new GhlError(
+        `forms — API error ${ents.forms.httpCode} (not a scope issue — please report this)`, EXIT.API);
     }
-    ctx.out.line('✖ forms blocked — needs forms.readonly scope');
-    return EXIT.AUTH;
+    throw new GhlError(
+      `forms blocked — your PIT lacks forms.readonly`, EXIT.AUTH,
+      'GoHighLevel → Settings → Private Integrations → edit your PIT → add forms.readonly scope');
   }
 
   const items = ents.forms?.items ?? [];
@@ -70,16 +73,15 @@ async function showSubmissions(formId, top, ctx) {
       `/forms/submissions?locationId=${encodeURIComponent(loc)}&formId=${encodeURIComponent(formId)}&limit=${top}`
     );
     if (r.code === 401 || r.code === 403) {
-      ctx.out.line('✖ form submissions blocked — needs forms/submissions.readonly scope');
-      return EXIT.AUTH;
+      throw new GhlError(
+        `HTTP ${r.code} — your PIT lacks forms/submissions.readonly`, EXIT.AUTH,
+        'GoHighLevel → Settings → Private Integrations → edit your PIT → add forms/submissions.readonly scope');
     }
     if (r.code === 404) {
-      ctx.out.line(`✖ form not found: ${formId}`);
-      return EXIT.NOTFOUND;
+      throw new GhlError(`no form with id ${formId}`, EXIT.NOTFOUND);
     }
     if (!r.ok) {
-      ctx.out.line(`✖ API error ${r.code}`);
-      return EXIT.API;
+      throw new GhlError(`form submissions failed — HTTP ${r.code}`, EXIT.API);
     }
     submissions = r.j?.submissions ?? r.j?.data ?? r.j?.results ?? [];
     if (!Array.isArray(submissions)) {
@@ -87,8 +89,10 @@ async function showSubmissions(formId, top, ctx) {
       submissions = [];
     }
   } catch (e) {
-    ctx.out.warn(`could not fetch form submissions: ${e.message}`);
-    return EXIT.API;
+    // Deliberate GhlErrors raised above must pass through — swallowing them here would downgrade a
+    // precise 401-with-remediation into a generic API error, the exact bug business.mjs had.
+    if (e instanceof GhlError) throw e;
+    throw new GhlError(`could not fetch form submissions: ${e.message}`, EXIT.API);
   }
 
   ctx.out.data({ formId, submissions, total: submissions.length });

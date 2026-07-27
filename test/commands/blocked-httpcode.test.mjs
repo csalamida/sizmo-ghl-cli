@@ -37,34 +37,28 @@ test('business list: non-auth API error (httpCode) → throws API, never blames 
         && !/needs businesses\.readonly/.test(e.message));
 });
 
-test('surveys: real scope block → "needs surveys.readonly scope", exit AUTH', async () => {
-  const { ctx, getPrinted } = makeCtx({ surveys: { blocked: true, scope: 'surveys.readonly' } });
-  const code = await runSurveys({ _: [] }, ctx);
-  assert.equal(code, EXIT.AUTH);
-  assert.match(getPrinted(), /needs surveys\.readonly scope/);
+test('surveys: real scope block → throws AUTH naming the scope', async () => {
+  // Contract changed 2026-07-27: reads throw GhlError like the writes do, so --json gets a real
+  // error envelope. The scope travels in the error message now, not in printed output.
+  const { ctx } = makeCtx({ surveys: { blocked: true, scope: 'surveys.readonly' } });
+  await assert.rejects(() => runSurveys({ _: [] }, ctx),
+    (e) => e.code === EXIT.AUTH && e.message.includes('surveys.readonly'));
 });
 
-test('surveys: non-auth API error (httpCode) → real error, not "needs <scope>", exit API', async () => {
-  const { ctx, getPrinted } = makeCtx({ surveys: { blocked: true, scope: 'surveys.readonly', httpCode: 500 } });
-  const code = await runSurveys({ _: [] }, ctx);
-  assert.equal(code, EXIT.API);
-  const out = getPrinted();
-  assert.match(out, /API error 500/);
-  assert.doesNotMatch(out, /needs surveys\.readonly/);
+test('surveys: non-auth API error (httpCode) → throws API, never blames the scope', async () => {
+  const { ctx } = makeCtx({ surveys: { blocked: true, scope: 'surveys.readonly', httpCode: 422 } });
+  await assert.rejects(() => runSurveys({ _: [] }, ctx),
+    (e) => e.code === EXIT.API && e.message.includes('API error 422') && !e.message.includes('lacks surveys.readonly'));
 });
 
-test('forms: real scope block → "needs forms.readonly scope", exit AUTH', async () => {
-  const { ctx, getPrinted } = makeCtx({ forms: { blocked: true, scope: 'forms.readonly' } });
-  const code = await runForms({ _: [] }, ctx);
-  assert.equal(code, EXIT.AUTH);
-  assert.match(getPrinted(), /needs forms\.readonly scope/);
+test('forms: real scope block → throws AUTH naming the scope', async () => {
+  const { ctx } = makeCtx({ forms: { blocked: true, scope: 'forms.readonly' } });
+  await assert.rejects(() => runForms({ _: [] }, ctx),
+    (e) => e.code === EXIT.AUTH && e.message.includes('forms.readonly'));
 });
 
-test('forms: non-auth API error (httpCode) → real error, not "needs <scope>", exit API', async () => {
-  const { ctx, getPrinted } = makeCtx({ forms: { blocked: true, scope: 'forms.readonly', httpCode: 404 } });
-  const code = await runForms({ _: [] }, ctx);
-  assert.equal(code, EXIT.API);
-  const out = getPrinted();
-  assert.match(out, /API error 404/);
-  assert.doesNotMatch(out, /needs forms\.readonly/);
+test('forms: non-auth API error (httpCode) → throws API, never blames the scope', async () => {
+  const { ctx } = makeCtx({ forms: { blocked: true, scope: 'forms.readonly', httpCode: 422 } });
+  await assert.rejects(() => runForms({ _: [] }, ctx),
+    (e) => e.code === EXIT.API && e.message.includes('API error 422') && !e.message.includes('lacks forms.readonly'));
 });

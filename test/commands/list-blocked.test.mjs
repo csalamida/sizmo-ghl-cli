@@ -18,27 +18,29 @@ function makeCtx(entities) {
   return { ctx, getPrinted: () => printed };
 }
 
-test('list links: real scope block (401/403, no httpCode) → "needs <scope>", exit AUTH', async () => {
-  const { ctx, getPrinted } = makeCtx({ links: { blocked: true, scope: 'links.readonly' } });
-  const code = await run({ _: ['links'] }, ctx);
-  assert.equal(code, EXIT.AUTH);
-  assert.match(getPrinted(), /needs links\.readonly/);
+test('list links: real scope block (401/403, no httpCode) → throws AUTH naming the scope', async () => {
+  // Contract changed 2026-07-27: blockedExit throws GhlError rather than printing and returning,
+  // so --json gets {error, code, remediation} instead of a success-shaped envelope. The scope is
+  // asserted on the error message and its remediation, not on printed output.
+  const { ctx } = makeCtx({ links: { blocked: true, scope: 'links.readonly' } });
+  await assert.rejects(() => run({ _: ['links'] }, ctx),
+    (e) => e.code === EXIT.AUTH
+        && e.message.includes('links.readonly')
+        && String(e.remediation).includes('links.readonly'));
 });
 
-test('list links: non-auth API error (httpCode present) → reports the real error, NOT "needs <scope>", exit API', async () => {
-  const { ctx, getPrinted } = makeCtx({ links: { blocked: true, scope: 'links.readonly', httpCode: 422 } });
-  const code = await run({ _: ['links'] }, ctx);
-  assert.equal(code, EXIT.API, 'must NOT be EXIT.AUTH — this is not a permissions problem');
-  const out = getPrinted();
-  assert.match(out, /API error 422/);
-  assert.doesNotMatch(out, /needs links\.readonly/, 'must not claim the scope is missing when the scope was actually reached');
+test('list links: non-auth API error (httpCode present) → throws API, never blames the scope', async () => {
+  const { ctx } = makeCtx({ links: { blocked: true, scope: 'links.readonly', httpCode: 422 } });
+  await assert.rejects(() => run({ _: ['links'] }, ctx),
+    (e) => e.code === EXIT.API
+        && e.message.includes('API error 422')
+        && !e.message.includes('lacks links.readonly'));
 });
 
 test('list businesses: same distinction holds for a different entity (not links-specific)', async () => {
-  const blocked = makeCtx({ businesses: { blocked: true, scope: 'businesses.readonly', httpCode: 500 } });
-  const code = await run({ _: ['businesses'] }, blocked.ctx);
-  assert.equal(code, EXIT.API);
-  assert.match(blocked.getPrinted(), /API error 500/);
+  const { ctx } = makeCtx({ businesses: { blocked: true, scope: 'businesses.readonly', httpCode: 500 } });
+  await assert.rejects(() => run({ _: ['businesses'] }, ctx),
+    (e) => e.code === EXIT.API && e.message.includes('API error 500'));
 });
 
 // Caught live 2026-07-05: the overview's row() reused ✖ (the exact glyph a real scope block

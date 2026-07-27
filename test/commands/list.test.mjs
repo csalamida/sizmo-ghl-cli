@@ -33,25 +33,20 @@ test('list: no entity → overview, EXIT.OK', async () => {
 // This exact distinction has produced repeat bugs across commands. Telling a user to add a
 // scope when they actually hit a 500 sends them to fix permissions that are already correct.
 
-test('list tags: blocked without httpCode → EXIT.AUTH and names the scope', async () => {
+test('list tags: blocked without httpCode → throws AUTH and names the scope', async () => {
   const model = { entities: { tags: { blocked: true, scope: 'locations.readonly' } } };
-  const { ctx, getPrinted } = makeFakeCtx({ model, json: false });
-  const code = await run({ _: ['tags'] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
-  assert.ok(getPrinted().includes('locations.readonly'), 'must name the missing scope, not just say blocked');
+  const { ctx } = makeFakeCtx({ model, json: false });
+  await assert.rejects(() => run({ _: ['tags'] }, ctx),
+    (e) => e.code === EXIT.AUTH && e.message.includes('locations.readonly'));
 });
 
-test('list tags: blocked WITH httpCode → EXIT.API and does NOT blame scope', async () => {
+test('list tags: blocked WITH httpCode → throws API and does NOT blame the scope', async () => {
   const model = { entities: { tags: { blocked: true, scope: 'locations.readonly', httpCode: 500 } } };
-  const { ctx, getPrinted } = makeFakeCtx({ model, json: false });
-  const code = await run({ _: ['tags'] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.API);
-  const printed = getPrinted();
-  assert.ok(printed.includes('500'), 'must surface the real status');
-  assert.ok(!printed.includes('needs locations.readonly'),
-    'a 500 is not a scope problem — must not tell the user to add a scope');
+  const { ctx } = makeFakeCtx({ model, json: false });
+  await assert.rejects(() => run({ _: ['tags'] }, ctx),
+    (e) => e.code === EXIT.API
+        && e.message.includes('500')
+        && !e.message.includes('lacks locations.readonly'));
 });
 
 test('list forms: entity absent from model → EXIT.OK with "run sizmo sync" (not an error)', async () => {
@@ -186,9 +181,7 @@ test('list values: 401 → EXIT.AUTH', async () => {
     model: { entities: {} },
     fixture: { [valuesUrl]: { status: 401, j: {} } },
   });
-  const code = await run({ _: ['values'] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: ['values'] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('list values: 403 → EXIT.AUTH', async () => {
@@ -196,9 +189,7 @@ test('list values: 403 → EXIT.AUTH', async () => {
     model: { entities: {} },
     fixture: { [valuesUrl]: { status: 403, j: {} } },
   });
-  const code = await run({ _: ['values'] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: ['values'] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('list values: missing customValues key → EXIT.OK, empty (never throws)', async () => {
