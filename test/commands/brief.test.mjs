@@ -327,6 +327,40 @@ test('brief: denied everywhere still emits a valid, honest JSON envelope', async
   assert.ok(envelope.warnings.length > 0, 'warnings must say what could not be seen');
 });
 
+test('brief: TOTAL API OUTAGE on every lane (500) → EXIT.API, not 0', async () => {
+  // The limitation brief's own comment used to record and decline to fix: every lane fails for a
+  // NON-auth reason and brief still exits 0, so `sizmo brief && deploy` proceeds during an outage.
+  //
+  // The stated reason for leaving it was that failing here "would report broken auth to someone
+  // whose auth is fine." That only holds if the exit code is AUTH. A 500 is an API problem and
+  // EXIT.API says so — which is why this is 1, not 3.
+  const http = { get: async () => ({ code: 500, ok: false, j: { message: 'upstream exploded' } }) };
+  const { ctx } = makeCtx(http);
+  const code = await run({ days: 7 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 1, 'a total outage must not report success');
+  assert.notEqual(code, 3, 'and must not blame the token, which is fine');
+});
+
+test('brief: rate-limited on every lane (429) → EXIT.API, not 0', async () => {
+  const http = { get: async () => ({ code: 429, ok: false, j: {} }) };
+  const { ctx } = makeCtx(http);
+  const code = await run({ days: 7 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 1);
+});
+
+test('brief: a MIX of denial and outage across lanes → AUTH wins (the actionable diagnosis)', async () => {
+  // When several lanes fail at once, "your token lacks a scope" is both more actionable and the
+  // likelier explanation than four simultaneous unrelated outages.
+  let n = 0;
+  const http = { get: async () => { n++; return { code: n % 2 ? 401 : 500, ok: false, j: {} }; } };
+  const { ctx } = makeCtx(http);
+  const code = await run({ days: 7 }, ctx);
+  ctx.out.flush();
+  assert.equal(code, 3);
+});
+
 test('brief: healthy but genuinely empty account → still 0 (not a failure)', async () => {
   // The inverse guard. An empty account is a real, successful answer — it must never be
   // conflated with blindness, or every new/quiet account looks broken.
