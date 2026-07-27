@@ -50,7 +50,35 @@ const DELIBERATE_OMISSIONS = {
   'delete-appointment-note':   'same create-only decision (2.4.8).',
   'get-appointment-notes':     'same create-only decision (2.4.8).',
   'delete-event':              'REDUNDANT for appointments: `sizmo appointment cancel` uses the appointment-specific DELETE /calendars/events/appointments/{id}. This generic route also covers block slots, which are already a deliberate omission.',
+  // Tasks: a whole feature, not a gap — and a competing one. sizmo DERIVES what needs doing from
+  // money signals (`focus` ranks by value at stake, `brief` surfaces what is waiting), and `ack`
+  // suppresses what you have handled. A GHL task CRUD surface would create a SECOND notion of
+  // "what to do today" that sizmo would then have to reconcile with focus — two answers to one
+  // question is worse than one answer.
+  'create-task':               'sizmo derives the to-do list from money signals (focus/brief) rather than maintaining a parallel manual task system; `ack` handles suppression. A task CRUD surface would compete with focus for the same question.',
+  'update-task':               'same: no task surface by design.',
+  'update-task-completed':     'same: no task surface by design.',
+  'delete-task':               'same: no task surface by design.',
+  'get-all-tasks':             'same: no task surface by design.',
+  'update-estimate':           'sizmo has no estimates surface at all — no create, no list. Updating something you can neither create nor read is meaningless. Revisit only if an estimates surface is ever built.',
   'update-opportunity-status':   'REDUNDANT, not missing. PUT /opportunities/{id} accepts `status` directly (verified via describe_operation), and `sizmo opp update --status won|lost|abandoned` already uses it. The dedicated /status route is a convenience alias for the same capability — implementing it would add a second way to do one thing.',
+};
+
+// A third category, added 2026-07-27 because neither existing one was honest about record-invoice.
+// BLOCKED means: in scope, genuinely wanted, and NOT implemented because doing it correctly needs
+// verification that is not safe to perform. Marking such a thing "deliberate" would imply we do not
+// want it; leaving it "unreviewed" would imply nobody has looked. Both are lies.
+const BLOCKED_ON_VERIFICATION = {
+  'record-invoice':
+    'WANTED, blocked on an under-specified payload. sizmo can draft and send an invoice but cannot ' +
+    'record that it was paid outside the system — so `receivables` OVERSTATES what is owed for every ' +
+    'client who pays by bank transfer, GCash or cash, which is most of them in sizmo\'s market. The ' +
+    'blocker is real: describe_operation marks `card`, `cheque` AND `notes` all required:true ' +
+    'simultaneously (you would never send both a card and a cheque object), and the `mode` vocabulary ' +
+    'is undocumented beyond the example "card". Resolving it means live-firing a money-recording write ' +
+    'against a real invoice. Shipping a guessed payload on a money command is worse than shipping ' +
+    'nothing. UNBLOCK BY: recording one manual payment in the GHL UI and inspecting the resulting ' +
+    'request, or confirming the mode vocabulary with HighLevel.',
 };
 
 // Endpoints sizmo calls, extracted from source rather than maintained by hand — a hand-kept list
@@ -120,12 +148,14 @@ const rows = inventory.operations.map(op => {
     covered: !!by,
     by: by ? [...by].sort().join(', ') : null,
     deliberate: DELIBERATE_OMISSIONS[op.id] ?? null,
+    blocked: BLOCKED_ON_VERIFICATION[op.id] ?? null,
   };
 });
 
 const covered   = rows.filter(r => r.covered);
 const deliberate = rows.filter(r => !r.covered && r.deliberate);
-const unreviewed = rows.filter(r => !r.covered && !r.deliberate);
+const blocked    = rows.filter(r => !r.covered && !r.deliberate && r.blocked);
+const unreviewed = rows.filter(r => !r.covered && !r.deliberate && !r.blocked);
 
 // Endpoints sizmo calls that the inventory does not know about. Not necessarily wrong — the
 // inventory is a partial snapshot — but worth surfacing so it can be refreshed deliberately.
@@ -148,6 +178,7 @@ Inventory captured **${inventory._provenance.capturedAt}** via ${inventory._prov
 |---|---:|---:|
 | Covered by a sizmo command | ${covered.length} | ${pct(covered.length)} |
 | Deliberately not implemented | ${deliberate.length} | ${pct(deliberate.length)} |
+| **Blocked on verification — wanted** | **${blocked.length}** | ${pct(blocked.length)} |
 | **Unreviewed — needs a decision** | **${unreviewed.length}** | **${pct(unreviewed.length)}** |
 | Inventory total | ${rows.length} | |
 
@@ -157,6 +188,14 @@ ${unreviewed.length === 0 ? '_None. Every operation in the inventory is either c
 `| Operation | Method | Path | Domain |
 |---|---|---|---|
 ${unreviewed.map(r => `| \`${r.id}\` | ${r.method} | \`${r.path}\` | ${r.domain} |`).join('\n')}`}
+
+## Blocked on verification — wanted, not shipped
+
+In scope and genuinely useful, but implementing correctly needs verification that is not safe to
+perform. Not "deliberate" (that would imply we do not want it) and not "unreviewed" (that would
+imply nobody looked).
+
+${blocked.length === 0 ? '_None._' : blocked.map(r => `### \`${r.id}\` — ${r.method} \`${r.path}\`\n\n${r.blocked}`).join('\n\n')}
 
 ## Deliberately not implemented
 
@@ -206,4 +245,4 @@ if (process.argv.includes('--check')) {
 writeFileSync(outPath, md);
 process.stdout.write(
   `✓ docs/api-coverage.md written\n` +
-  `  covered ${covered.length} · deliberate ${deliberate.length} · UNREVIEWED ${unreviewed.length} · total ${rows.length}\n`);
+  `  covered ${covered.length} · deliberate ${deliberate.length} · blocked ${blocked.length} · UNREVIEWED ${unreviewed.length} · total ${rows.length}\n`);

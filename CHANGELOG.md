@@ -45,6 +45,34 @@ Because a scheduled send fires later with nobody watching — unlike every other
 the confirm preview states it does **not** send now, names the exact fire time, and prints the
 `send cancel` command needed to call it back.
 
+### Docs — coverage sweep complete: 0 unreviewed, and a new honest category
+
+Every operation in the inventory is now decided. The last seven:
+
+**Tasks (5 ops) — deliberately absent, and it is a design choice rather than a backlog item.** sizmo
+*derives* what needs doing from money signals — `focus` ranks by value at stake, `brief` surfaces
+what is waiting, `ack` suppresses what you have handled. A GHL task CRUD surface would create a
+**second** notion of "what to do today" that sizmo would then have to reconcile with `focus`. Two
+answers to one question is worse than one answer.
+
+**`update-estimate` — deliberately absent.** sizmo has no estimates surface at all: no create, no
+list. Updating something you can neither create nor read is meaningless. Revisit only if estimates
+are ever built.
+
+**`record-invoice` — BLOCKED, not declined.** This needed a category the report did not have.
+sizmo can draft and send an invoice but cannot record that it was paid *outside* the system, so
+`receivables` **overstates what is owed** for every client who pays by bank transfer, GCash or cash
+— which is most of them in this market. The capability is wanted. The blocker is that
+`describe_operation` marks `card`, `cheque` **and** `notes` all `required: true` simultaneously (you
+would never send both a card and a cheque object), and the `mode` vocabulary is undocumented beyond
+the example `"card"`. Resolving that means live-firing a money-recording write against a real
+invoice. **Shipping a guessed payload on a money command is worse than shipping nothing.**
+
+So `docs/api-coverage.md` now has three categories, not two. **Blocked on verification** means in
+scope, genuinely wanted, and not shipped because doing it correctly needs verification that is not
+safe to perform. Calling it "deliberate" would imply we do not want it; leaving it "unreviewed"
+would imply nobody looked. Both would be lies. The entry records exactly how to unblock it.
+
 ### Added — `sizmo appointment update` (reschedule, and record an outcome)
 
 sizmo could **book** and **cancel** but not **move** a booking — the single most common calendar

@@ -13,21 +13,24 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 | | count | share |
 |---|---:|---:|
 | Covered by a sizmo command | 26 | 47% |
-| Deliberately not implemented | 22 | 40% |
-| **Unreviewed — needs a decision** | **7** | **13%** |
+| Deliberately not implemented | 28 | 51% |
+| **Blocked on verification — wanted** | **1** | 2% |
+| **Unreviewed — needs a decision** | **0** | **0%** |
 | Inventory total | 55 | |
 
 ## Unreviewed — needs a decision
 
-| Operation | Method | Path | Domain |
-|---|---|---|---|
-| `create-task` | POST | `/contacts/{contactId}/tasks` | contacts |
-| `update-task` | PUT | `/contacts/{contactId}/tasks/{taskId}` | contacts |
-| `update-task-completed` | PUT | `/contacts/{contactId}/tasks/{taskId}/completed` | contacts |
-| `delete-task` | DELETE | `/contacts/{contactId}/tasks/{taskId}` | contacts |
-| `get-all-tasks` | GET | `/contacts/{contactId}/tasks` | contacts |
-| `record-invoice` | POST | `/invoices/{invoiceId}/record-payment` | invoices |
-| `update-estimate` | PUT | `/invoices/estimate/{estimateId}` | invoices |
+_None. Every operation in the inventory is either covered or explicitly decided against._
+
+## Blocked on verification — wanted, not shipped
+
+In scope and genuinely useful, but implementing correctly needs verification that is not safe to
+perform. Not "deliberate" (that would imply we do not want it) and not "unreviewed" (that would
+imply nobody looked).
+
+### `record-invoice` — POST `/invoices/{invoiceId}/record-payment`
+
+WANTED, blocked on an under-specified payload. sizmo can draft and send an invoice but cannot record that it was paid outside the system — so `receivables` OVERSTATES what is owed for every client who pays by bank transfer, GCash or cash, which is most of them in sizmo's market. The blocker is real: describe_operation marks `card`, `cheque` AND `notes` all required:true simultaneously (you would never send both a card and a cheque object), and the `mode` vocabulary is undocumented beyond the example "card". Resolving it means live-firing a money-recording write against a real invoice. Shipping a guessed payload on a money command is worse than shipping nothing. UNBLOCK BY: recording one manual payment in the GHL UI and inspecting the resulting request, or confirming the mode vocabulary with HighLevel.
 
 ## Deliberately not implemented
 
@@ -37,6 +40,11 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 | `update-note` | note surfaces are create-only by an existing decision (2.4.8) — a note is an append-only record; editing rewrites history. |
 | `delete-note` | same create-only decision (2.4.8). Deleting a note destroys the record of a conversation; the UI is the right place for that. |
 | `get-all-notes` | same create-only decision (2.4.8). Reading notes back is a UI task; sizmo surfaces the conversation via `triage`, not note archaeology. |
+| `create-task` | sizmo derives the to-do list from money signals (focus/brief) rather than maintaining a parallel manual task system; `ack` handles suppression. A task CRUD surface would compete with focus for the same question. |
+| `update-task` | same: no task surface by design. |
+| `update-task-completed` | same: no task surface by design. |
+| `delete-task` | same: no task surface by design. |
+| `get-all-tasks` | same: no task surface by design. |
 | `update-opportunity-status` | REDUNDANT, not missing. PUT /opportunities/{id} accepts `status` directly (verified via describe_operation), and `sizmo opp update --status won|lost|abandoned` already uses it. The dedicated /status route is a convenience alias for the same capability — implementing it would add a second way to do one thing. |
 | `delete-event` | REDUNDANT for appointments: `sizmo appointment cancel` uses the appointment-specific DELETE /calendars/events/appointments/{id}. This generic route also covers block slots, which are already a deliberate omission. |
 | `update-appointment-note` | same create-only decision (2.4.8), applied to appointment notes for consistency with contact notes. |
@@ -52,6 +60,7 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 | `add-an-inbound-message` | fabricates inbound history. sizmo records what happened, it does not invent it. |
 | `add-an-outbound-message` | logs an external call sizmo did not place. Same reason as inbound. |
 | `export-messages-by-location` | bulk export; `sizmo triage` covers the operational read. |
+| `update-estimate` | sizmo has no estimates surface at all — no create, no list. Updating something you can neither create nor read is meaningless. Revisit only if an estimates surface is ever built. |
 | `update-estimate-template` | estimate templates depend on an estimates surface sizmo has not built. |
 | `update-coupon` | promotions are e-commerce-shaped, outside the coach/consultant ICP. |
 | `record-order-payment` | order payments belong to the store surface sizmo does not expose. |
