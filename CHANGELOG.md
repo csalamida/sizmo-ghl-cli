@@ -13,6 +13,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `sizmo send --channel email` did not escape the message body
+
+The email body wraps each line in `<p>` and interpolated the message **raw**, so any `&`, `<` or `>`
+the user wrote went into the HTML unescaped. An email client parses `<20% off` as an unknown tag and
+drops everything to the next `>`, so the sentence a client receives is silently truncated:
+
+    "Your discount is <20% off. Terms & conditions apply."
+    → recipient sees: "Your discount is"
+
+A message assembled from untrusted input could also inject markup outright. The `html` part is now
+escaped; the plain-text `message` part is deliberately left alone, since escaping it would show a
+literal `&amp;` to recipients whose client renders text.
+
+### Added — `sizmo send --subject`
+
+GHL accepts `subject` directly on the message endpoint. sizmo auto-derived it from the first line of
+`--message` purely because no flag existed. `--subject` now sets it, falling back to the old
+behaviour (first non-blank line) when omitted or blank, and round-trips into the rerun command.
+
+### Fixed — `sizmo business` emitted a SUCCESS-shaped JSON envelope on a 401
+
+`business create --confirm --json` against a hard 401 emitted
+`{ data: null, degraded: false, warnings: [] }` — no `error`, no `remediation`. An agent parsing
+that saw a clean no-op; only the exit code disagreed. `contact` on the identical failure emits
+`{ error, code: 3, remediation }`.
+
+The difference is mechanical: the error envelope comes from the CLI's top-level handler, reached
+only when a command **throws** `GhlError`. `business` printed a line and *returned* the exit code,
+so it never got there. All 10 error sites now throw, with remediation naming the exact scope. Its
+catch blocks were also swallowing the new throws and downgrading them to a generic API error —
+they now rethrow `GhlError` and let genuine transport failures throw too.
+
+`test/docs/error-envelope.test.mjs` guards the class: every write command must throw rather than
+return on AUTH/API, auth throws must carry remediation, and no new command may adopt return-style.
+Six read commands (`forms`, `surveys`, `transactions`, `list`, `doctor`, `ask`) still use it —
+listed explicitly and shrink-only, since a failed read cannot be mistaken for a completed mutation.
+
+### Fixed — `sizmo opp create` hardcoded `status: 'open'`, inflating pipeline totals
+
+GHL requires `status` on `POST /opportunities/` and accepts `open|won|lost|abandoned`; sizmo always
+sent `open`, and `--status` was wired to `update` only. Importing a client's historical **closed**
+deals was therefore impossible — every backfilled opportunity landed OPEN, so `sizmo pipeline`
+counted the entire deal history as live pipeline value. `--status` is now honoured on create
+(default `open`, unchanged) and validated against the same list `update` uses. A non-open status is
+called out in the confirm preview.
+
+Also added **`--assigned-user`** (`assignedTo`) — the last field the endpoint accepts that sizmo did
+not expose. Deals had no owner.
+
+### Fixed — `sizmo invoice draft --due` was dropped from the rerun command
+
+The preview printed `due 2026-12-25` and then offered a rerun command with no `--due`, so running
+the command you were just handed produced an invoice due **+14 days**. On a document that goes to a
+client, that is the difference between the terms they agreed to and different ones — and it breaks
+the confirm contract README states directly ("prints the exact change + a rerun command").
+
+`test/docs/confirm-roundtrip.test.mjs` guards the class behaviourally across `invoice`, `contact`,
+`tag` and `business`: every flag passed must survive into `confirmCommand`, with a value-level pin
+on the due date, since a flag being *present* is not the same as carrying the value the human read.
+
+### Changed — npm package is 84% smaller (1.2 MB → 189 kB)
+
+`examples/demo/*.gif` were 1.1 MB of the 1.2 MB tarball and were displayed nowhere — not in the
+README, not linked anywhere; the only mention is `examples/demo/README.md` documenting how to
+regenerate them from the `.cast` sources. Excluded from the package, kept in git.
+
+
 ## [2.4.9] — 2026-07-27
 
 ### Added — `appointment book` can express a real booking

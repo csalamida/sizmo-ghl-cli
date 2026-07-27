@@ -13,6 +13,20 @@
 // positional arg rather than a real contactId — GHL contact/message ids are never the literal
 // string "cancel".
 import { requireConfirm } from '../lib/confirm.mjs';
+
+// The email body is built by wrapping each line in <p>. The message was interpolated RAW, so any
+// &, < or > the user wrote went into the HTML unescaped. An email client parses "<20% off" as an
+// unknown tag and drops everything until the next ">", silently truncating the sentence a client
+// receives — and a message assembled from untrusted input could inject markup outright.
+// Verified: "Your discount is <20% off. Terms & conditions apply." rendered as "Your discount is".
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 import { GhlError, EXIT } from '../lib/errors.mjs';
 
 export const meta = {
@@ -21,6 +35,7 @@ export const meta = {
   flags: [
     { name: '--channel', type: 'string', desc: 'sms or email' },
     { name: '--message', type: 'string', desc: 'message body' },
+    { name: '--subject', type: 'string', desc: 'email subject (email only) — defaults to the first line of --message' },
   ],
   readOnly: false,
 };
@@ -57,7 +72,8 @@ export async function run(args, ctx) {
     // Indent each line of the body so multi-line messages render cleanly
     ...message.split('\n').map(l => `    ${l}`),
   ];
-  const rerunCommand = `sizmo send ${contactId} --channel ${channel} --message "${message.replace(/"/g, '\\"')}" --confirm`;
+  const subjectPart = args.subject ? ` --subject "${String(args.subject).replace(/"/g, '\\"')}"` : '';
+  const rerunCommand = `sizmo send ${contactId} --channel ${channel} --message "${message.replace(/"/g, '\\"')}"${subjectPart} --confirm`;
 
   const gate = requireConfirm({ command: 'send', changes, rerunCommand }, ctx);
   if (!gate.proceed) return gate.code;
@@ -70,10 +86,15 @@ export async function run(args, ctx) {
   // has no separate --subject flag (verified live: message+html+subject → 201 "Email queued").
   const body = { type: CHANNEL_TYPE[channel], contactId, locationId: ctx.cfg.loc, message };
   if (channel === 'email') {
-    body.html = message.split('\n').map(l => `<p>${l}</p>`).join('');
-    // First non-blank line, never empty (a leading blank line in the message would otherwise
-    // produce an empty subject).
-    body.subject = (message.split('\n').find(l => l.trim()) || 'Message').trim().slice(0, 78);
+    // `message` stays the plain-text alternative (unescaped, correct there). Only the HTML part
+    // is escaped — escaping the plain-text copy would show literal &amp; to the recipient.
+    body.html = message.split('\n').map(l => `<p>${escapeHtml(l)}</p>`).join('');
+    // --subject when given; otherwise the first non-blank line, never empty (a leading blank line
+    // in the message would otherwise produce an empty subject). GHL accepts `subject` directly —
+    // auto-deriving was a workaround for a flag that simply did not exist.
+    body.subject = (args.subject?.trim()
+      || message.split('\n').find(l => l.trim())
+      || 'Message').trim().slice(0, 78);
   }
   const r = await ctx.http.post('/conversations/messages', body);
 

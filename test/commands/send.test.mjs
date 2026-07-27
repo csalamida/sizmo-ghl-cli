@@ -247,3 +247,80 @@ test('send cancel: unknown channel → USAGE error', async () => {
   const { ctx } = makeFakeCtx();
   await assert.rejects(() => run({ _: ['cancel', 'msg-123'], channel: 'fax' }, ctx), /channel/i);
 });
+
+// ── email HTML escaping (2026-07-27) ─────────────────────────────────────────
+// The email body wraps each line in <p> and interpolated the message RAW, so any &, < or > the
+// user wrote landed in the HTML unescaped. An email client parses "<20% off" as an unknown tag and
+// drops everything to the next ">", silently truncating the sentence the client receives.
+// Verified: "Your discount is <20% off. Terms & conditions apply." rendered as "Your discount is".
+
+const MSG_FIXTURE = { 'POST /conversations/messages': { status: 200, j: { messageId: 'm-1' } } };
+
+test('send email: HTML special characters are escaped in the html part', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: MSG_FIXTURE });
+  await run({ _: [CONTACT], channel: 'email', message: 'Discount <20% off. Terms & conditions.' }, ctx);
+  ctx.out.flush();
+  const { body } = getCalledBodies()[0];
+  assert.ok(body.html.includes('&lt;20%'), `< must be escaped — got: ${body.html}`);
+  assert.ok(body.html.includes('&amp; conditions'), `& must be escaped — got: ${body.html}`);
+  assert.ok(!/<20%/.test(body.html), 'raw < must not survive into the html');
+});
+
+test('send email: the plain-text `message` part stays UNescaped', async () => {
+  // Escaping the plain-text alternative would show a literal "&amp;" to recipients whose client
+  // renders text. Only the html part needs escaping.
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: MSG_FIXTURE });
+  await run({ _: [CONTACT], channel: 'email', message: 'Terms & conditions <here>' }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies()[0].body.message, 'Terms & conditions <here>');
+});
+
+test('send email: a script tag cannot be injected into the html body', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: MSG_FIXTURE });
+  await run({ _: [CONTACT], channel: 'email', message: '<script>alert(1)</script>' }, ctx);
+  ctx.out.flush();
+  const { html } = getCalledBodies()[0].body;
+  assert.ok(!/<script/i.test(html), `markup must not survive — got: ${html}`);
+  assert.ok(html.includes('&lt;script&gt;'));
+});
+
+test('send sms: html is not built at all (escaping is email-only)', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: MSG_FIXTURE });
+  await run({ _: [CONTACT], channel: 'sms', message: 'Terms & conditions <here>' }, ctx);
+  ctx.out.flush();
+  const { body } = getCalledBodies()[0];
+  assert.equal('html' in body, false);
+  assert.equal(body.message, 'Terms & conditions <here>', 'SMS text must be untouched');
+});
+
+// ── --subject (2026-07-27) ───────────────────────────────────────────────────
+// GHL accepts `subject` directly; sizmo auto-derived it from the first line because no flag existed.
+
+test('send email: --subject is used when given', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: MSG_FIXTURE });
+  await run({ _: [CONTACT], channel: 'email', message: 'Body line one', subject: 'Q3 Invoice' }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies()[0].body.subject, 'Q3 Invoice');
+});
+
+test('send email: subject still falls back to the first non-blank line', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: MSG_FIXTURE });
+  await run({ _: [CONTACT], channel: 'email', message: '\n\nActual first line\nsecond' }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies()[0].body.subject, 'Actual first line');
+});
+
+test('send email: whitespace-only --subject falls back rather than sending a blank subject', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: MSG_FIXTURE });
+  await run({ _: [CONTACT], channel: 'email', message: 'Hello there', subject: '   ' }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies()[0].body.subject, 'Hello there');
+});
+
+test('send: --subject round-trips into the rerun command', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ confirmed: false });
+  await run({ _: [CONTACT], channel: 'email', message: 'Body', subject: 'Q3 Invoice' }, ctx);
+  ctx.out.flush();
+  const cmd = JSON.parse(getPrinted()).data.confirmCommand;
+  assert.ok(cmd.includes('--subject "Q3 Invoice"'), `got: ${cmd}`);
+});

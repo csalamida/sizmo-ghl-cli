@@ -138,6 +138,8 @@ sizmo link delete <linkId> --confirm
 
 # Messaging — one flat command with --channel, not separate "send email"/"send sms"
 sizmo send <contactId> --channel email --message "Hi there" --confirm   # subject auto-generated
+sizmo send <contactId> --channel email --message "Hi" --subject "Q3 Invoice" --confirm
+# email bodies are HTML-escaped, so &, < and > in your text reach the recipient intact
 sizmo send <contactId> --channel sms --message "Hi there" --confirm    # from the message's first line
 sizmo send cancel <messageId> --channel sms --confirm                  # stop a scheduled message
 
