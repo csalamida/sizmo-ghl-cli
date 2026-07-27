@@ -455,3 +455,89 @@ test('runWithReport (via run): partial-batch failure reports exactly which steps
   assert.match(out, /✖ Note on c1/, 'second step must be reported as failed');
   assert.match(out, /1 step\(s\) not attempted/, 'third step must be reported as never attempted, not silently dropped');
 });
+
+// ── the TWO --confirm paths ──────────────────────────────────────────────────
+//
+// `sizmo ask` has two ways to reach a write, and only one of them is a replay:
+//
+//   1. preview → savePendingPlan → bare `sizmo ask --confirm` → replays the cached plan verbatim
+//   2. `sizmo ask "sentence" --confirm` → resolves and FIRES in the same call, previewing nothing
+//
+// SECURITY.md and README described only (1) while asserting a universal property — "`--confirm`
+// replays it verbatim, it can't fire something different from what you previewed" — which a reader
+// takes to mean every --confirm run shows them something first. Path (2) does not.
+//
+// Path (2) is DELIBERATE and stays: the decision is recorded at the fire site in commands/ask.mjs
+// ("same-call resolution, no drift risk"), and its safety rests on concretize aborting rather than
+// guessing whenever a name is ambiguous — which the tests above already pin. What was wrong was the
+// documentation, not the behaviour. These tests pin both paths so the docs cannot drift from either.
+
+test('--confirm path 1: a bare --confirm replays the cached plan and does NOT re-resolve', async () => {
+  const { run } = await import('../../commands/ask.mjs');
+  const { savePendingPlan } = await import('../../lib/ask-memory.mjs');
+  const dir = tmpDir();
+  let searches = 0;
+  const { ctx } = makeCtx({
+    confirmed: true, askMemoryDir: dir,
+    httpOverrides: {
+      get: async () => { searches++; return { code: 200, ok: true, j: {} }; },
+      post: async () => ({ code: 200, ok: true, j: {} }),
+    },
+  });
+  savePendingPlan(LOC, [
+    { command: 'tag', parsed: { _: ['c1'], add: 'VIP' }, isWrite: true, executable: true, describe: 'Tag c1: +VIP' },
+  ], NOW, ctx._askMemoryDir);
+
+  const code = await run({ _: [] }, ctx);
+  assert.equal(code, EXIT.OK);
+  assert.equal(searches, 0,
+    'the confirm leg must not re-resolve anything — no contact search, no LLM, just the cached plan');
+});
+
+test('--confirm path 1: the plan is cleared BEFORE it runs, so a stray second --confirm cannot re-fire', async () => {
+  // Clearing before execution (not after) is the fail-safe ordering: if the batch dies halfway, the
+  // plan is already gone, so a reflexive re-run of `sizmo ask --confirm` cannot double-apply the
+  // steps that already landed.
+  const { run } = await import('../../commands/ask.mjs');
+  const { savePendingPlan } = await import('../../lib/ask-memory.mjs');
+  const dir = tmpDir();
+  let posts = 0;
+  const { ctx } = makeCtx({
+    confirmed: true, askMemoryDir: dir,
+    httpOverrides: { post: async () => { posts++; return { code: 200, ok: true, j: {} }; } },
+  });
+  savePendingPlan(LOC, [
+    { command: 'tag', parsed: { _: ['c1'], add: 'VIP' }, isWrite: true, executable: true, describe: 'Tag c1: +VIP' },
+  ], NOW, ctx._askMemoryDir);
+
+  assert.equal(await run({ _: [] }, ctx), EXIT.OK);
+  assert.equal(posts, 1, 'first --confirm fires the plan once');
+
+  const second = await run({ _: [] }, ctx);
+  assert.equal(posts, 1, 'a second bare --confirm must NOT re-fire the already-applied plan');
+  assert.equal(second, EXIT.USAGE, 'with nothing pending it should say there is nothing to confirm');
+});
+
+test('--confirm path 1: an expired plan is not replayed', async () => {
+  // The cache has a 10-minute TTL. A plan resolved long ago may reference ids that have since
+  // changed; replaying it blind would apply a stale decision.
+  const { run } = await import('../../commands/ask.mjs');
+  const { savePendingPlan } = await import('../../lib/ask-memory.mjs');
+  const dir = tmpDir();
+  let posts = 0;
+  const { ctx } = makeCtx({
+    confirmed: true, askMemoryDir: dir,
+    httpOverrides: { post: async () => { posts++; return { code: 200, ok: true, j: {} }; } },
+  });
+  savePendingPlan(LOC, [
+    { command: 'tag', parsed: { _: ['c1'], add: 'VIP' }, isWrite: true, executable: true, describe: 'Tag c1: +VIP' },
+  ], NOW, ctx._askMemoryDir);
+
+  // Re-run far in the future — well past the TTL.
+  const futureCtx = makeCtx({ confirmed: true, askMemoryDir: dir,
+    httpOverrides: { post: async () => { posts++; return { code: 200, ok: true, j: {} }; } } }).ctx;
+  futureCtx.now = () => NOW + 60 * 60 * 1000; // +1 hour
+  const code = await run({ _: [] }, futureCtx);
+  assert.equal(posts, 0, 'an expired plan must never fire');
+  assert.equal(code, EXIT.USAGE);
+});

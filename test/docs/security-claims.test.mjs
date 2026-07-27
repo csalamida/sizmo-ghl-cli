@@ -185,3 +185,36 @@ test('CLAIM: the LLM egress is disclosed, not just implied', () => {
   assert.ok(/anthropic|openai|LLM provider/i.test(SECURITY_MD),
     'SECURITY.md must disclose the LLM provider egress that lib/llm.mjs performs.');
 });
+
+test('CLAIM: the ask confirm-leg description covers BOTH --confirm paths', () => {
+  // `sizmo ask` reaches a write two ways, and only one is a replay:
+  //   1. preview → cached plan → bare `sizmo ask --confirm` → verbatim replay
+  //   2. `sizmo ask "sentence" --confirm` → resolves and fires in the same call, no preview
+  //
+  // Both docs asserted a universal property — "--confirm replays it verbatim, it can't fire
+  // something different from what you previewed" — describing only path 1. A reader concludes every
+  // --confirm run shows them something first. Path 2 does not, and it is the path a confident user
+  // reaches for.
+  //
+  // Path 2 is deliberate (the decision is recorded at the fire site in commands/ask.mjs) and its
+  // safety rests on concretize refusing rather than guessing on an ambiguous name. The behaviour is
+  // fine; the documentation was incomplete. This pins the docs to keep describing both.
+  const src = readFileSync(join(REPO, 'commands', 'ask.mjs'), 'utf8');
+
+  // Sanity: the same-call fire path must still exist, or this test is guarding nothing.
+  assert.match(src, /if \(ctx\.confirmed\) \{\s*\n\s*return runWithReport\(result\.concrete, ctx\)/,
+    'the same-call --confirm fire path moved — re-check what the docs should say');
+
+  for (const doc of ['SECURITY.md', 'README.md']) {
+    const text = readFileSync(join(REPO, doc), 'utf8');
+    const claim = text.split('\n').find(l => /confirm.{0,40}(never re-asks|replays it verbatim|replays the cached plan)/i.test(l));
+    assert.ok(claim, `${doc} lost its ask confirm-leg claim entirely`);
+    assert.match(claim, /\bbare\b/,
+      `${doc} says --confirm replays the cached plan without saying BARE. Only a bare ` +
+      `\`sizmo ask --confirm\` is a replay; a sentence typed WITH --confirm fires in one call ` +
+      `and previews nothing.`);
+    assert.ok(/in (that |)one call|in one call|same call/i.test(claim),
+      `${doc} does not mention the same-call path, so a reader believes every --confirm run ` +
+      `previews first.`);
+  }
+});
