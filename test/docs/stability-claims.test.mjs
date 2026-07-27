@@ -98,6 +98,20 @@ test('README names EVERY confirm-gated command, not a sample of them', () => {
 
 // ── 3. API-STABILITY §2a — the envelope promise ──────────────────────────────
 
+// The authoritative command list in §2a: the run of backticked names ending at "all emit".
+// Both §2a tests read ONLY this, never the surrounding section — see the note in the completeness
+// test for why that distinction is load-bearing.
+function sectionListSentence() {
+  const doc = read('API-STABILITY.md');
+  const start = doc.indexOf('### a) Data commands');
+  const end = doc.indexOf('#### a2)');
+  assert.ok(start >= 0 && end > start, 'API-STABILITY §2a section markers moved — update this test');
+  const section = doc.slice(start, end);
+  const cut = section.indexOf('all emit');
+  assert.ok(cut > 0, 'could not find the "all emit" terminator in §2a — did its wording change?');
+  return section.slice(0, cut);
+}
+
 test('API-STABILITY §2a promises the envelope for every command that emits one', () => {
   // §2a lists the commands whose JSON envelope is frozen for 1.x. Seven read-only commands
   // (ack, diff, export, forms, list, surveys, transactions) emitted the byte-identical envelope
@@ -113,11 +127,14 @@ test('API-STABILITY §2a promises the envelope for every command that emits one'
     })
     .sort();
 
-  const doc = read('API-STABILITY.md');
-  const section = doc.slice(doc.indexOf('### a) Data commands'), doc.indexOf('#### a2)'));
-  assert.ok(section.length > 0, 'API-STABILITY §2a section markers moved — update this test');
-
-  const missing = emitters.filter(c => !new RegExp(`\`${c}\``).test(section));
+  // Scope to the LIST SENTENCE, not the whole section.
+  //
+  // Scoping to the section made this assertion vacuous, and mutation testing is the only reason
+  // that surfaced: deleting `transactions` from the list left the test green, because the
+  // explanatory note further down the section also names the seven commands. The note written to
+  // document the fix defeated the guard meant to detect the regression. A doc guard must read only
+  // the authoritative statement, never the prose discussing it.
+  const missing = emitters.filter(c => !new RegExp(`\`${c}\``).test(sectionListSentence()));
   assert.deepEqual(missing, [],
     `These read-only commands emit the §2a envelope but are not listed in it: ${missing.join(', ')}. ` +
     `Either add them to the promise, or make them stop emitting the envelope. Silently shipping a ` +
@@ -128,13 +145,9 @@ test('API-STABILITY §2a promises the envelope for every command that emits one'
 test('API-STABILITY §2a does not list a command that does not exist', () => {
   // The inverse drift: a command gets renamed or removed and the frozen-contract list keeps
   // promising it. Cheaper to catch here than in a user's broken pipeline.
-  const doc = read('API-STABILITY.md');
-  const section = doc.slice(doc.indexOf('### a) Data commands'), doc.indexOf('#### a2)'));
-  // Scope to the command list itself — the run of backticked names ending at "all emit". A first
-  // draft scanned every backticked token in the section and reported `--concise` and `data` as
-  // phantom commands; the section's prose is full of backticked field and flag names.
-  const listSentence = section.slice(0, section.indexOf('all emit'));
-  const listed = [...listSentence.matchAll(/`([a-z][a-z-]*)`/g)].map(m => m[1]);
+  // A first draft scanned every backticked token in the whole section and reported `--concise` and
+  // `data` as phantom commands; the section's prose is full of backticked field and flag names.
+  const listed = [...sectionListSentence().matchAll(/`([a-z][a-z-]*)`/g)].map(m => m[1]);
   assert.ok(listed.length > 5, 'could not parse the §2a command list — did its wording change?');
   const real = new Set(commandNames());
   const ghosts = [...new Set(listed.filter(c => !real.has(c)))].sort();
