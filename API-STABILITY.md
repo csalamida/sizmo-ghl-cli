@@ -27,8 +27,9 @@ Every `--json` response carries `schemaVersion` (currently `1`).
 
 ### a) Data commands → the envelope
 
-`brief`, `snapshot`, `triage`, `pipeline`, `noshow`, `receivables`, `reconcile`, `booked-not-paid`,
-`focus`, `segment`, `crm`, `sync`, `doctor` all emit:
+`ack`, `booked-not-paid`, `brief`, `crm`, `diff`, `doctor`, `export`, `focus`, `forms`, `list`,
+`noshow`, `pipeline`, `receivables`, `reconcile`, `segment`, `snapshot`, `surveys`, `sync`,
+`transactions`, `triage` all emit:
 
 ```json
 {
@@ -44,6 +45,12 @@ Every `--json` response carries `schemaVersion` (currently `1`).
 
 - `data` holds the command's payload. `degraded: true` + `warnings[]` mean a source was blocked
   (treat a blocked source as **unknown**, never zero).
+
+> Seven of these (`ack`, `diff`, `export`, `forms`, `list`, `surveys`, `transactions`) emitted this
+> exact envelope since they shipped but were missing from this list until 2026-07-27 — so they were
+> stable in practice while promising nothing on paper. They are covered now. The list is enforced
+> against the source by `test/docs/stability-claims.test.mjs`: any read-only command that emits an
+> envelope must appear here.
 - `--fields a,b` projects list items to those keys (every list-bearing recipe). `--concise` returns
   a leaner payload (currently `brief` only). Both are token-lean affordances for agents and are
   stable within `1.x`. `cacheAgeMs` appears when served from cache.

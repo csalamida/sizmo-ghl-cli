@@ -365,7 +365,7 @@ The JSON `_meta` block in every `crm` response lets agents branch on staleness w
 ## Safety model
 
 - **Reads are always free.** Read commands never change anything in GoHighLevel.
-- **Writes require explicit `--confirm`.** Tag, note, opp, appointment, and send commands print the exact change + a rerun command and exit 5 (confirmation-required) without `--confirm`. Nothing fires silently — safe for agent use.
+- **Writes require explicit `--confirm`.** Every write command — `appointment`, `business`, `calendar`, `contact`, `field`, `invoice`, `link`, `note`, `opp`, `send`, `tag`, `value` — prints the exact change + a rerun command and exits 5 (confirmation-required) without `--confirm`. Nothing fires silently — safe for agent use. (This list is enforced against the source by `test/docs/stability-claims.test.mjs`; it named only five commands until 2026-07-27, which made seven gated commands look ungated.)
 - **The PIT scope is the gate (since 2.0).** sizmo exposes only what your token's scopes + GoHighLevel's public API allow — a missing scope fails with `AUTH` + the fix. There is **no card-charging command** (no public endpoint exists); the money-side writes are draft/send an invoice, both confirm-gated. Reads never change anything.
 - **`--dry-run` available on all writes.** Shows the change description without executing. Exits 0.
 - **PIT never in argv.** Credentials are passed via stdin (`--pit-stdin`) or env var (`--pit-env VAR`). Never logged, never echoed raw.
