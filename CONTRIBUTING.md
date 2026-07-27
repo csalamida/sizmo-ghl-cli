@@ -4,10 +4,15 @@ Thanks for looking at sizmo. A few rules before you open a PR.
 
 ## Ground rules
 
-- **Money never moves.** The tool performs confirm-gated *operational* writes (tag, note, opportunity, appointment, message) — every one requires `--confirm`. It never charges, collects, refunds, or issues an invoice; payments and invoices are read-only. Any PR that adds a money-moving path will be closed.
+- **No card-charging path.** Every write — operational *or* money — is confirm-gated. sizmo never charges, captures, collects or refunds: GoHighLevel exposes no public endpoint for it, and no PR may add one.
+  **It does draft and send invoices** (`invoice draft`, `invoice send`) when your PIT carries `invoices.write` — a sent invoice is a real document a customer receives. Payments and transactions are read-only; invoices are not. (This bullet used to say the opposite, contradicting both the shipped code and `SECURITY.md`.) Any PR that adds a charge/capture/refund path will be closed.
 - **No new scopes.** Do not add GoHighLevel API scopes beyond what is already used.
 - **No secrets in code.** No PITs, no location IDs, no personal paths. The test suite uses synthetic IDs (e.g. `LOC_TEST_000`, `pit-TEST...`).
-- **Tests must pass.** Run `node --test` before opening a PR — the full suite must stay green. Add tests for new behavior.
+- **Tests must pass.** Run `npm test` before opening a PR — the full suite must stay green. Add tests for new behavior.
+  Use `npm test`, not a bare `node --test`: the script pins `--test-concurrency=1`, because several
+  suites swap `XDG_CONFIG_HOME` and `process.env` around a shared profile store. A version of that
+  pattern once corrupted a real profile through an unawaited async race (see the note at the top of
+  `test/client/router-verb.test.mjs`).
 
 ## Development setup
 
@@ -15,7 +20,7 @@ Thanks for looking at sizmo. A few rules before you open a PR.
 git clone <repo>
 cd sizmo-ghl-cli
 node --version   # must be 22+
-node --test      # run the test suite
+npm test         # run the test suite (pins --test-concurrency=1)
 ```
 
 No `npm install` needed — zero production dependencies.
@@ -23,7 +28,7 @@ No `npm install` needed — zero production dependencies.
 ## Running tests
 
 ```sh
-node --test
+npm test
 ```
 
 All tests run in-process against mock HTTP. No live GoHighLevel connection required to run the test suite.
@@ -33,8 +38,11 @@ All tests run in-process against mock HTTP. No live GoHighLevel connection requi
 1. Create `commands/your-command.mjs` — export `meta` (name, summary, flags, readOnly: true) and `run(args, ctx)`
 2. Add it to `lib/registry.mjs`
 3. Write tests in `test/commands/your-command.test.mjs` + a golden fixture in `test/golden/`
-4. Run `node --test` — all tests pass
-5. Update `README.md` command table (the table is generated from `sizmo schema`)
+4. Run `npm test` — all tests pass
+5. Update the `README.md` command table **by hand** — nothing generates it. `test/docs/agent-docs-drift.test.mjs`
+   checks it against the source and will fail your PR if a command or its key flags are missing.
+   (This step used to claim the table "is generated from `sizmo schema`". No such generator exists,
+   so contributors reasonably left the table alone and hit the drift guard instead.)
 
 ## Security & secrets
 
@@ -61,7 +69,7 @@ The ritual, in order:
 ```sh
 # 1. bump the version in package.json
 # 2. update CHANGELOG.md (move [Unreleased] → the new version)
-node --test                       # full suite green
+npm test                          # full suite green
 git add -A && git commit -m "..."  # commit everything (gate requires a clean tree)
 git tag -a vX.Y.Z -m "..."         # tag must match package.json (gate requires it at HEAD)
 npm publish                        # prepublish-gate + tests run automatically; aborts if not clean+tagged

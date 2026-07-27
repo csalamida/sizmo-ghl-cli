@@ -251,3 +251,64 @@ test('API-STABILITY §2b: the shapes the code emits match the ones the table pro
     `${missing.join(', ')}. §2b is a FROZEN contract — either the code dropped a documented key, ` +
     `or the table promises something that was never built.`);
 });
+
+// ── 6. CONTRIBUTING.md — the contribution boundary must match the code ───────
+
+test('CONTRIBUTING does not claim invoices are read-only — sizmo drafts AND sends them', () => {
+  // The money bullet read: "It never charges, collects, refunds, or issues an invoice; payments and
+  // invoices are read-only." commands/invoice.mjs is `readOnly: false` and does
+  //     POST /invoices/            (creates a draft)
+  //     POST /invoices/{id}/send   (sends a real document to a real customer)
+  // so the claim was false against the code AND against SECURITY.md, which correctly says a PIT
+  // with invoices.write "includes creating or sending an invoice".
+  //
+  // This is the most dangerous shape of doc drift: a security-adjacent assurance in the file a
+  // reviewer reads to learn the project's boundaries. The no-card-charging claim is TRUE and is
+  // pinned separately in security-claims.test.mjs; only "invoices are read-only" was false.
+  const src = read('CONTRIBUTING.md');
+
+  const invoiceIsWrite = /readOnly:\s*false/.test(readFileSync(join(REPO, 'commands', 'invoice.mjs'), 'utf8'));
+  assert.ok(invoiceIsWrite, 'sanity: commands/invoice.mjs should still be a write command');
+
+  assert.ok(!/invoices are read-only/i.test(src),
+    'CONTRIBUTING claims invoices are read-only, but `invoice draft` and `invoice send` are write ' +
+    'operations that produce a document a customer receives. Say "no charge/capture/refund path" ' +
+    'instead — that claim is true; this one is not.');
+  assert.ok(!/never\s+(charges,\s*)?collects,?\s*refunds,?\s*or\s+issues\s+an\s+invoice/i.test(src),
+    'CONTRIBUTING claims sizmo never issues an invoice — `sizmo invoice send` does exactly that.');
+});
+
+test('CONTRIBUTING tells contributors to run the project\'s own test command', () => {
+  // package.json pins --test-concurrency=1 because several suites swap XDG_CONFIG_HOME and other
+  // environment variables around a shared profile store; an unawaited race in that pattern once
+  // corrupted a real profile. CONTRIBUTING told contributors to run a bare `node --test` in four
+  // places, which diverges from the pinned invocation.
+  //
+  // NOT claimed here: that a concurrent run fails. It was tried on 2026-07-27 and passed 941/941.
+  // Races are nondeterministic, so that proves nothing either way — the point is simply that
+  // contributors should run what the project runs.
+  const pinned = JSON.parse(read('package.json')).scripts.test;
+  assert.match(pinned, /--test-concurrency=1/,
+    'package.json no longer pins concurrency — if that was deliberate, update CONTRIBUTING too');
+
+  const src = read('CONTRIBUTING.md');
+  const bareRuns = src.split('\n').filter(l =>
+    /^\s*(node --test|\$ node --test)\s*$/.test(l) ||           // a command line in a fenced block
+    /Run `node --test`/.test(l));                                // or an instruction in prose
+  assert.deepEqual(bareRuns, [],
+    `CONTRIBUTING instructs a bare "node --test" here: ${JSON.stringify(bareRuns)}. ` +
+    `Use \`npm test\`, which pins ${pinned}.`);
+});
+
+test('CONTRIBUTING does not claim the README table is generated', () => {
+  // It said the command table "is generated from `sizmo schema`". No generator exists — scripts/
+  // holds api-coverage, daily-loop and prepublish-gate only. A contributor who believed it would
+  // leave the table alone and be failed by the drift guard instead.
+  const src = read('CONTRIBUTING.md');
+  const claimsGenerated = /table is generated from/i.test(src);
+  const generatorExists = readdirSync(join(REPO, 'scripts'))
+    .some(f => /readme|table|schema/i.test(f));
+  assert.ok(!claimsGenerated || generatorExists,
+    'CONTRIBUTING says the README command table is generated, but scripts/ contains no generator. ' +
+    'Either build one or tell contributors to edit the table by hand.');
+});
