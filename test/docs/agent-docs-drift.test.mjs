@@ -21,6 +21,11 @@ import { fileURLToPath } from 'node:url';
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SKILL = readFileSync(join(REPO, 'SKILL.md'), 'utf8');
 const AGENTS = readFileSync(join(REPO, 'AGENTS.md'), 'utf8');
+// README joined the guarded set 2026-07-27. It had been excluded, which is how it kept claiming
+// "email subject auto-generated from the message's first line — no separate --subject flag" for a
+// full iteration AFTER --subject shipped, surviving a green 793-test run. README is the file most
+// humans read first and the one npm renders on the package page.
+const README = readFileSync(join(REPO, 'README.md'), 'utf8');
 
 const commandNames = readdirSync(join(REPO, 'commands'))
   .filter(f => f.endsWith('.mjs'))
@@ -162,4 +167,102 @@ test('ack is documented in both docs as local-only state', () => {
       `${label} must state that acked items are hidden rather than deleted — that is the honesty ` +
       `contract in commands/ack.mjs, and an agent needs it to explain a missing contact.`);
   }
+});
+
+// ── README (added 2026-07-27) ────────────────────────────────────────────────
+// Scope note, because the obvious broader guard was tried and rejected: a generic detector for
+// "prose that contradicts source" — scanning for negative claims like "there is no `--x`" and
+// checking whether --x exists — produces mostly FALSE POSITIVES. It flagged four, all wrong:
+// "delete takes one id, there is no `--all`" is scoped to delete (--all is real on `list`), and
+// "with no `--ai-key` set" means unset, not nonexistent. Prose carries scope and mood that a regex
+// cannot read. So README gets the same mechanical checks the agent docs get — command coverage and
+// per-command flag validity — plus targeted pins for claims that have already gone stale once.
+
+test('README documents every command', () => {
+  const missing = expected.filter(c => !mentions(README, c));
+  assert.deepEqual(missing, [],
+    `Commands absent from README: ${missing.join(', ')}. README is the first thing a human reads ` +
+    `and what npm renders — a command missing here is invisible to everyone who has not run --help.`);
+});
+
+test('README: every flag in a shell example is valid FOR THAT COMMAND', () => {
+  const fences = [...README.matchAll(/```(?:sh|bash)?\n([\s\S]*?)```/g)].map(m => m[1]).join('\n');
+  const problems = [];
+  for (const rawLine of fences.split('\n')) {
+    const line = rawLine.replace(/#.*$/, '').trim();
+    const m = /^sizmo\s+([a-z0-9-]+)/i.exec(line);
+    if (!m) continue;
+    const cmd = m[1].toLowerCase();
+    const known = flagsFor.get(cmd);
+    const used = [...line.matchAll(/\s(--[a-z0-9-]+)/gi)]
+      .map(f => f[1].toLowerCase())
+      .filter(f => /^--[a-z0-9]/.test(f));
+    for (const flag of used) {
+      if (realFlags.has(flag) && !known) continue;
+      if (!realFlags.has(flag)) { problems.push(`${cmd}: ${flag} (exists nowhere)`); continue; }
+      if (known && !known.has(flag) && !GLOBALS.has(flag)) {
+        problems.push(`${cmd}: ${flag} (real flag, but not on \`sizmo ${cmd}\`)`);
+      }
+    }
+  }
+  assert.deepEqual([...new Set(problems)].sort(), [],
+    `README shows flags that will fail as written:\n  ${[...new Set(problems)].sort().join('\n  ')}`);
+});
+
+test('README command table: the Key-flags column matches source', () => {
+  // The table is where the --subject lie lived. Table cells are structured enough to check
+  // mechanically, unlike the surrounding prose.
+  const problems = [];
+  for (const line of README.split('\n')) {
+    if (!line.startsWith('|')) continue;
+    const cm = /`sizmo\s+([a-z0-9-]+)/.exec(line);
+    if (!cm) continue;
+    const cmd = cm[1].toLowerCase();
+    const known = flagsFor.get(cmd);
+    if (!known) continue;
+    // Cells 3..n-1 joined, NOT cells[3]. A markdown table escapes a literal pipe as \| , and
+    // split('|') splits on those too — `--for 7d\|48h\|30m` fragments across three indices, so
+    // reading cells[3] alone checked only "`--for 7d\" and silently skipped the rest of the row.
+    const cells = line.split('|');
+    const flagCell = cells.slice(3, -1).join('|');
+    // No trailing backtick in the pattern. Table cells write flags WITH their argument —
+    // `--days 7`, `--clear <contactId>`, `--reason "..."` — so requiring a closing backtick
+    // matched only bare flags like `--list` and skipped every documented flag that takes a value,
+    // which is most of them. Verified: with the closing backtick required, planting `--days` on
+    // ack's row produced zero failures.
+    for (const m of flagCell.matchAll(/`(--[a-z0-9-]+)/g)) {
+      const flag = m[1].toLowerCase();
+      // Order matters. A first draft ended with `|| realFlags.has(flag)) continue`, which swallowed
+      // EVERY real flag and made this test unfailable — putting `--days` (real, but belongs to
+      // reconcile/triage) on ack's row produced zero failures. Same per-command logic as the
+      // fenced-example check above, deliberately mirrored rather than re-invented.
+      if (GLOBALS.has(flag)) continue;              // valid on any command
+      if (known.has(flag)) continue;                // declared by this command
+      problems.push(realFlags.has(flag)
+        ? `${cmd}: ${flag} (real flag, but not on \`sizmo ${cmd}\`)`
+        : `${cmd}: ${flag} (exists nowhere)`);
+    }
+  }
+  assert.deepEqual([...new Set(problems)].sort(), [],
+    `README's table lists flags that do not exist: ${[...new Set(problems)].join(', ')}`);
+});
+
+test('README does not claim --subject is missing (it shipped 2026-07-27)', () => {
+  // The exact regression this guard exists for. Pinned by shape rather than detected generically,
+  // because generic negative-claim detection does not work (see the scope note above).
+  assert.ok(!/no separate\s+`?--subject`?\s*flag/i.test(README),
+    'README claims there is no --subject flag. It exists on `sizmo send`.');
+  assert.ok(!/subject auto-generated from the message'?s? first line\s*—\s*no separate/i.test(README),
+    'README still carries the pre---subject wording.');
+});
+
+test('all three doc surfaces agree on which commands exist', () => {
+  // SKILL and AGENTS were already cross-checked; README was not, so it could drift alone.
+  const inconsistent = expected.filter(c => {
+    const seen = [mentions(SKILL, c), mentions(AGENTS, c), mentions(README, c)];
+    return seen.some(Boolean) && !seen.every(Boolean);
+  }).sort();
+  assert.deepEqual(inconsistent, [],
+    `These commands appear in some doc surfaces but not others: ${inconsistent.join(', ')}. ` +
+    `A user's picture of what the CLI can do should not depend on which file they opened.`);
 });

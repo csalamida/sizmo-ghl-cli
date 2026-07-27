@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — README was excluded from the doc-drift guard
+
+`test/docs/agent-docs-drift.test.mjs` validated `SKILL.md` and `AGENTS.md` but not `README.md` —
+which is how README kept claiming "no separate `--subject` flag" for a full iteration after
+`--subject` shipped, surviving a green 793-test run. README is the file most humans read first and
+the one npm renders on the package page.
+
+README now gets the same mechanical checks: every command documented, every flag in a fenced
+example valid *for that command*, every flag in the command table valid for its row, all three doc
+surfaces agreeing on which commands exist, plus a pin against the specific `--subject` wording.
+`sizmo ack` was missing from README entirely and is now documented.
+
+Deliberately **not** added: a generic "prose contradicts source" detector. It was built, run, and
+rejected — it flagged four claims, all false positives ("delete takes one id, there is no `--all`"
+is scoped to delete, where it is true; "with no `--ai-key` set" means unset, not nonexistent).
+Prose carries scope and mood a regex cannot read.
+
 ### Added — `sizmo send --schedule`
 
 sizmo already shipped `send cancel <messageId>`, whose entire purpose is cancelling a **scheduled**

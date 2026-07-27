@@ -135,6 +135,7 @@ Command list generated from `sizmo schema` (authoritative — pulled directly fr
 | `sizmo reconcile` | Money reconciliation — collected by source, flags, recurring | `--days N` (default 30), `--top N` (default 20) |
 | `sizmo booked-not-paid` | Sessions with no invoice or payment — the money leak | `--days N` (default 30), `--top N` (default 15) |
 | `sizmo focus` | One ranked to-do queue by money at stake | `--top N` (default 15), `--stuck-days N` (default 7) |
+| `sizmo ack <contactId>` | Snooze a contact so it stops surfacing in `focus`/`brief`. Local state only — never writes to GoHighLevel, so no `--confirm`. Acked items are **hidden, not deleted**, and the count is always shown in the footer; reveal with `--show-acked` | `--for 7d\|48h\|30m` (default 7d), `--reason "..."`, `--list`, `--clear <contactId>` |
 | `sizmo segment` | Find contacts by criteria — tag, phone, age, etc. | `--tag X`, `--without-tag X`, `--no-tags`, `--created-days N`, `--has-phone`, `--no-phone`, `--top N` (default 20) |
 | `sizmo crm` | Query the local CRM model — counts, lists, staleness | `--all` (show all items) |
 | `sizmo list [entity]` | List any of 12 cached entities (pipelines, calendars, tags, fields, users, forms, surveys, products, links, businesses, objects) or an overview | `[entity]` (else 3-group overview) |
