@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > inline, and their changes are real: they reached users inside the release named there. Verify
 > what actually exists with `npm view sizmo versions`.
 
-## [Unreleased]
+## [2.4.10] — 2026-07-27
 
 ### Added — seven commands now carry the JSON stability promise
 
