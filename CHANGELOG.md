@@ -13,6 +13,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — seven commands now carry the JSON stability promise
+
+`API-STABILITY.md` §2a froze the `--json` envelope for 13 commands. Twenty emit it. `ack`, `diff`,
+`export`, `forms`, `list`, `surveys` and `transactions` have shipped the byte-identical envelope
+since they landed while carrying **no** stability promise — verified live:
+
+```
+sizmo ack --list --json
+→ {"schemaVersion":1,"command":"ack","location":"…","data":{…},"degraded":false,"warnings":[]}
+```
+
+Consumers depend on that shape regardless; without the promise a patch release was free to break
+them. The promise now matches reality. Nothing about the output changed — only what is guaranteed.
+
+### Fixed — README understated which commands are confirm-gated
+
+The **"Writes require explicit `--confirm`"** bullet — the safety claim an operator reads before
+granting this tool write access — named five commands. Twelve are gated. `business`, `calendar`,
+`contact`, `field`, `invoice`, `link` and `value` appeared to fire without confirmation.
+
+The gate itself was always correct and `security-claims.test.mjs` already asserted every write
+routes through `requireConfirm()`. That is source-vs-source; nothing checked the promise a human
+reads. It does now.
+
+### Fixed — `INSTALL.md` told new users `sizmo --version` prints `0.4.0`
+
+Two majors stale. A first-time installer sees a different number at step one and concludes the
+install failed. The number is gone rather than updated — a hand-typed version is correct only on
+release day.
+
+### Added — a guard for the exit-code table
+
+The table is hand-typed in three documents plus `lib/errors.mjs`. Adding a code to `EXIT` would
+have rotted all three with nothing failing. Now checked for numbers **and** wording, so two docs
+cannot describe code `4` differently while both matching `EXIT`.
+
 ### Fixed — a malformed numeric flag silently blanked the stored value
 
 `Number('abc')` is `NaN`, and `JSON.stringify({ x: NaN })` is `{"x":null}`. On an update verb that
