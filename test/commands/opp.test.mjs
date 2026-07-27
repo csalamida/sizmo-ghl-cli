@@ -412,3 +412,60 @@ test('opp create: rerun command carries --status and --assigned-user', async () 
   assert.ok(cmd.includes('--status won'), `got: ${cmd}`);
   assert.ok(cmd.includes('--assigned-user usr-9'), `got: ${cmd}`);
 });
+
+// ── opp update: name + assignee (2026-07-27) ─────────────────────────────────
+// PUT /opportunities/{id} accepts name and assignedTo; opp update sent only monetaryValue and
+// status. A deal could be assigned at creation but never REASSIGNED, and never renamed — both
+// meant dropping into the GHL UI.
+
+const OPP_ID = 'opp-77';
+const UPD_URL = `PUT /opportunities/${OPP_ID}`;
+const updFixture = { [UPD_URL]: { status: 200, j: { opportunity: { id: OPP_ID } } } };
+
+test('opp update: --assigned-user reassigns (maps to assignedTo)', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: updFixture });
+  await run({ _: ['update', OPP_ID], 'assigned-user': 'usr-42' }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies()[0].body.assignedTo, 'usr-42', 'assignedTo, not assignedUser');
+});
+
+test('opp update: --name renames the deal', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: updFixture });
+  await run({ _: ['update', OPP_ID], name: 'Q4 Retainer' }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies()[0].body.name, 'Q4 Retainer');
+});
+
+test('opp update: only the passed fields are sent', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: updFixture });
+  await run({ _: ['update', OPP_ID], value: 5000 }, ctx);
+  ctx.out.flush();
+  assert.deepEqual(Object.keys(getCalledBodies()[0].body), ['monetaryValue'],
+    'unset flags must not appear — sending name:undefined could blank the deal title');
+});
+
+test('opp update: --status still works via the generic endpoint', async () => {
+  // PUT /opportunities/{id} accepts `status` directly (verified via describe_operation), so the
+  // dedicated /status endpoint is a redundant convenience route, not a missing capability.
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: updFixture });
+  await run({ _: ['update', OPP_ID], status: 'won' }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies()[0].body.status, 'won');
+});
+
+test('opp update: no fields at all → USAGE, no write fired', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true, model: MODEL, fixture: updFixture });
+  await assert.rejects(() => run({ _: ['update', OPP_ID] }, ctx),
+    (e) => e.code === EXIT.USAGE && /--name or --assigned-user/.test(e.message));
+  assert.equal(getCalledWrites().length, 0);
+});
+
+test('opp update: new flags round-trip into the rerun command', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ model: MODEL });
+  await run({ _: ['update', OPP_ID], name: 'Q4', 'assigned-user': 'usr-42', status: 'won' }, ctx);
+  ctx.out.flush();
+  const cmd = JSON.parse(getPrinted()).data.confirmCommand;
+  for (const frag of ['--name "Q4"', '--assigned-user usr-42', '--status won']) {
+    assert.ok(cmd.includes(frag), `rerun must carry ${frag} — got: ${cmd}`);
+  }
+});

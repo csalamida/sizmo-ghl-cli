@@ -37,6 +37,7 @@ const DELIBERATE_OMISSIONS = {
   'record-order-payment':        'order payments belong to the store surface sizmo does not expose.',
   'update-estimate-template':    'estimate templates depend on an estimates surface sizmo has not built.',
   'export-messages-by-location': 'bulk export; `sizmo triage` covers the operational read.',
+  'update-opportunity-status':   'REDUNDANT, not missing. PUT /opportunities/{id} accepts `status` directly (verified via describe_operation), and `sizmo opp update --status won|lost|abandoned` already uses it. The dedicated /status route is a convenience alias for the same capability — implementing it would add a second way to do one thing.',
 };
 
 // Endpoints sizmo calls, extracted from source rather than maintained by hand — a hand-kept list

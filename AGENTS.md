@@ -128,6 +128,8 @@ sizmo opp create --name "Deal" --pipeline "Sales Pipeline" --stage "New Lead" --
 # --assigned-user <userId>  give the deal an owner (`sizmo list users` for ids)
 sizmo opp move <id> --stage "Won" --confirm
 sizmo opp update <id> --value 5000 --status won --confirm
+# opp update also takes --name (rename) and --assigned-user <userId> (REASSIGN a deal —
+#   previously only settable at creation, so handing a deal over meant using the GHL UI).
 sizmo opp delete <id> --confirm
 
 # Tags / Notes — flat commands, no subcommand

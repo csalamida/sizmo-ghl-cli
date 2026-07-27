@@ -23,13 +23,13 @@ export const meta = {
   name: 'opp',
   summary: 'create, move, update, or delete a pipeline opportunity',
   flags: [
-    { name: '--name',     type: 'string', desc: 'opportunity title (create)' },
+    { name: '--name',     type: 'string', desc: 'opportunity title (create/update)' },
     { name: '--pipeline', type: 'string', desc: 'pipeline name (create)' },
     { name: '--stage',    type: 'string', desc: 'stage name (create / move)' },
     { name: '--value',    type: 'string', desc: 'monetary value e.g. 5000 (create / update)' },
     { name: '--contact',  type: 'string', desc: 'contact id to associate (create)' },
     { name: '--status',   type: 'string', desc: 'open|won|lost|abandoned (create defaults to open / update)' },
-    { name: '--assigned-user', type: 'string', desc: 'user id to own the deal (create) — `sizmo list users`' },
+    { name: '--assigned-user', type: 'string', desc: 'user id to own the deal (create/update) — `sizmo list users`' },
   ],
   readOnly: false,
 };
@@ -258,8 +258,10 @@ export async function run(args, ctx) {
     const status = args.status ?? null;
 
     if (!oppId) throw new GhlError('usage: sizmo opp update <oppId> [--value --status]', EXIT.USAGE);
-    if (!value && !status) {
-      throw new GhlError('opp update requires at least one of --value or --status', EXIT.USAGE);
+    const newName     = args.name ?? null;
+    const assignedTo  = args['assigned-user'] ?? null;
+    if (!value && !status && !newName && !assignedTo) {
+      throw new GhlError('opp update requires at least one of --value, --status, --name or --assigned-user', EXIT.USAGE);
     }
 
     if (status && !VALID_STATUS.includes(status)) {
@@ -268,20 +270,29 @@ export async function run(args, ctx) {
 
     const changes = [
       `Update opportunity ${oppId}`,
-      ...(value  ? [`  value:  ${value}`]  : []),
-      ...(status ? [`  status: ${status}`] : []),
+      ...(newName    ? [`  name:     ${newName}`]    : []),
+      ...(value      ? [`  value:    ${value}`]      : []),
+      ...(status     ? [`  status:   ${status}`]     : []),
+      ...(assignedTo ? [`  assigned: ${assignedTo}`] : []),
     ];
     const valuePart  = value  ? ` --value "${value}"` : '';
     const statusPart = status ? ` --status ${status}` : '';
-    const rerunCommand = `sizmo opp update ${oppId}${valuePart}${statusPart} --confirm`;
+    const namePart   = newName ? ` --name "${String(newName).replace(/"/g, '\\"')}"` : '';
+    const assignPart = assignedTo ? ` --assigned-user ${assignedTo}` : '';
+    const rerunCommand = `sizmo opp update ${oppId}${namePart}${valuePart}${statusPart}${assignPart} --confirm`;
 
     const gate = requireConfirm({ command: 'opp update', changes, rerunCommand }, ctx);
     if (!gate.proceed) return gate.code;
 
     // Execute
+    // PUT /opportunities/{id} also accepts name and assignedTo (verified via describe_operation).
+    // Without them a deal could never be renamed or handed to another person after creation —
+    // `--assigned-user` existed on create only, so a reassignment meant editing in the GHL UI.
     const body = {
-      ...(value  != null ? { monetaryValue: Number(value) } : {}),
-      ...(status != null ? { status } : {}),
+      ...(newName    != null ? { name: newName } : {}),
+      ...(value      != null ? { monetaryValue: Number(value) } : {}),
+      ...(status     != null ? { status } : {}),
+      ...(assignedTo != null ? { assignedTo } : {}),
     };
     const r = await ctx.http.put(`/opportunities/${encodeURIComponent(oppId)}`, body);
 

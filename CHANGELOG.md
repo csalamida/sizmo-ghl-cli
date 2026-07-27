@@ -45,6 +45,18 @@ Because a scheduled send fires later with nobody watching — unlike every other
 the confirm preview states it does **not** send now, names the exact fire time, and prints the
 `send cancel` command needed to call it back.
 
+### Added — `sizmo opp update --name` and `--assigned-user`
+
+`PUT /opportunities/{id}` accepts `name` and `assignedTo`, but `opp update` sent only
+`monetaryValue` and `status`. A deal could be assigned at creation and then **never reassigned**, and
+never renamed — handing a deal to someone else meant dropping into the GoHighLevel UI.
+
+### Docs — `update-opportunity-status` is redundant, not missing
+
+Recorded as a deliberate omission rather than left unreviewed. `PUT /opportunities/{id}` accepts
+`status` directly, and `opp update --status` already uses it; the dedicated `/status` route is a
+convenience alias for the same capability. Implementing it would add a second way to do one thing.
+
 ### Added — `sizmo contact update`
 
 `contact` had create, upsert and delete but no way to edit a contact you already hold the id for.

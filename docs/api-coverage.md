@@ -13,8 +13,8 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 | | count | share |
 |---|---:|---:|
 | Covered by a sizmo command | 24 | 44% |
-| Deliberately not implemented | 14 | 25% |
-| **Unreviewed — needs a decision** | **17** | **31%** |
+| Deliberately not implemented | 15 | 27% |
+| **Unreviewed — needs a decision** | **16** | **29%** |
 | Inventory total | 55 | |
 
 ## Unreviewed — needs a decision
@@ -29,7 +29,6 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 | `update-task-completed` | PUT | `/contacts/{contactId}/tasks/{taskId}/completed` | contacts |
 | `delete-task` | DELETE | `/contacts/{contactId}/tasks/{taskId}` | contacts |
 | `get-all-tasks` | GET | `/contacts/{contactId}/tasks` | contacts |
-| `update-opportunity-status` | PUT | `/opportunities/{id}/status` | opportunities |
 | `edit-appointment` | PUT | `/calendars/events/appointments/{eventId}` | calendars |
 | `get-appointment` | GET | `/calendars/events/appointments/{eventId}` | calendars |
 | `delete-event` | DELETE | `/calendars/events/{eventId}` | calendars |
@@ -44,6 +43,7 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 | Operation | Reason |
 |---|---|
 | `contacts.bulk-tags` | bulk write. sizmo's delete/write commands are single-target by design — a bulk tag update cannot be previewed meaningfully per contact. |
+| `update-opportunity-status` | REDUNDANT, not missing. PUT /opportunities/{id} accepts `status` directly (verified via describe_operation), and `sizmo opp update --status won|lost|abandoned` already uses it. The dedicated /status route is a convenience alias for the same capability — implementing it would add a second way to do one thing. |
 | `create-block-slot` | calendar availability editing is a UI-shaped task; no CLI demand seen. |
 | `edit-block-slot` | same as create-block-slot. |
 | `get-blocked-slots` | same as create-block-slot. |
