@@ -14,11 +14,13 @@ const valuesUrl = `GET /locations/${LOC}/customValues`;
 
 // ── entity validation ─────────────────────────────────────────────────────────
 
-test('list: unknown entity → EXIT.USAGE', async () => {
+test('list: unknown entity → throws USAGE (not a returned code)', async () => {
+  // CONTRACT CHANGE 2026-07-27. list's AUTH/API paths were converted to GhlError earlier; this
+  // USAGE path was missed, so `sizmo list frobnicate --json` printed a success-shaped envelope on
+  // stdout while exiting 2. Now it throws, so --json gets {error, code, remediation} on stderr.
   const { ctx } = makeFakeCtx({ model: { entities: {} } });
-  const code = await run({ _: ['frobnicate'] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.USAGE);
+  await assert.rejects(() => run({ _: ['frobnicate'] }, ctx),
+    (e) => e.code === EXIT.USAGE && /frobnicate/.test(e.message));
 });
 
 test('list: no entity → overview, EXIT.OK', async () => {

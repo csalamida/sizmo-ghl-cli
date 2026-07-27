@@ -194,6 +194,7 @@ sizmo transactions --json              # machine-readable envelope
 # B2B companies (confirm-gated writes)
 sizmo business list                    # list companies (from cache)
 sizmo business create --name "Acme" --website "https://..." --confirm
+sizmo business update <id> --city "Cebu" --confirm     # partial edit; only what you pass changes
 sizmo business delete <id> --confirm
 ```
 
@@ -245,7 +246,7 @@ Pronoun follow-ups ("her") resolve from a local cache — the AI only ever sees 
 Providers: `anthropic` (default, claude-haiku-4-5-20251001) · `openai` (gpt-4o-mini).
 
 **Fires directly:** tag, note, send, contact (create/upsert/delete), opp (create/move/**delete**),
-value (create), field (create/delete), calendar (create/delete), business (create/delete),
+value (create), field (create/delete), calendar (create/delete), business (create/update/delete),
 link (create). **Resolve-and-print only** (needs a bare id, or is money/scheduling that stays a
 deliberate manual step): `opp update`, `appointment book/cancel/note`, `send cancel`, `link delete`,
 `invoice draft/send`. Full walkthrough with examples: `docs/how-to/ask.md`.

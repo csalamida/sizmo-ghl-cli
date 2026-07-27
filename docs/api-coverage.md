@@ -129,6 +129,7 @@ than alarming — but refresh the inventory if one looks like it should be track
 - `POST /invoices`
 - `POST /invoices/{}/send`
 - `POST /links`
+- `PUT /businesses/{}`
 
 ## Resolver limits
 

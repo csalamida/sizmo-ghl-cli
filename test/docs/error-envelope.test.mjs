@@ -52,6 +52,21 @@ function returnsAuthOrApi(src) {
   return /return\s+EXIT\.(AUTH|API)\b/.test(stripComments(src));
 }
 
+// USAGE was NOT in the regex above, and that omission let the identical bug survive in a file that
+// had already been fixed once. business.mjs threw correctly on AUTH/API but still did
+//     ctx.out.line('--name required'); return EXIT.USAGE;
+// so `sizmo business create --json` with no --name printed a success-shaped envelope
+// (data:null, degraded:false, no error) on STDOUT while exiting 2. Same for its unknown-subcommand
+// branch and for list.mjs's unknown-entity branch — a leftover from list's own AUTH/API conversion.
+//
+// A returned USAGE is less dangerous than a returned AUTH on a write (nothing was attempted), but
+// the envelope is equally dishonest: an agent parsing stdout sees a clean no-op with no error.
+//
+// `ask` is the one deliberate exception, for the reason recorded below.
+function returnsUsage(src) {
+  return /return\s+EXIT\.USAGE\b/.test(stripComments(src));
+}
+
 test('every WRITE command surfaces auth/API failures by throwing GhlError', () => {
   const offenders = WRITE_COMMANDS
     .filter(cmd => returnsAuthOrApi(sourceOf(cmd)))
@@ -116,4 +131,29 @@ test('no NEW command adopts return-style error handling', () => {
   assert.deepEqual(offenders, [],
     `New return-style error handling in: ${offenders.join(', ')}. Throw GhlError so --json gets a ` +
     `real error envelope instead of a success-shaped one.`);
+});
+
+// `ask` returns EXIT.USAGE by design: it is an orchestrator whose usage errors are part of the
+// pending-plan/confirm conversation, not a terminal failure. Every other command must throw.
+const KNOWN_RETURN_STYLE_USAGE = new Set(['ask']);
+
+test('no command RETURNS EXIT.USAGE instead of throwing', () => {
+  const all = readdirSync(CMD_DIR).filter(f => f.endsWith('.mjs')).map(f => f.replace('.mjs', ''));
+  const offenders = all
+    .filter(cmd => returnsUsage(sourceOf(cmd)))
+    .filter(cmd => !KNOWN_RETURN_STYLE_USAGE.has(cmd))
+    .sort();
+  assert.deepEqual(offenders, [],
+    `These return EXIT.USAGE instead of throwing GhlError: ${offenders.join(', ')}. ` +
+    `A returned code skips the CLI's error handler, so --json prints a success-shaped envelope ` +
+    `(data:null, degraded:false, no error) on STDOUT while the process exits 2. Throw ` +
+    `new GhlError(msg, EXIT.USAGE, hint) so the envelope carries {error, code, remediation} on stderr.`);
+});
+
+test('the return-style USAGE exception list only shrinks', () => {
+  const stale = [...KNOWN_RETURN_STYLE_USAGE]
+    .filter(cmd => !returnsUsage(sourceOf(cmd)))
+    .sort();
+  assert.deepEqual(stale, [],
+    `These are listed as return-style USAGE but no longer are: ${stale.join(', ')}. Remove them.`);
 });

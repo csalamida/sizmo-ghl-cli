@@ -194,6 +194,7 @@ sizmo send cancel <messageId> --channel sms|email --confirm             # stop a
 # B2B companies
 sizmo business list                                                      # list companies (from cache, no confirm)
 sizmo business create --name "Acme" --website "https://..." --confirm
+sizmo business update <id> --city "Cebu" --confirm                       # partial edit; only what you pass changes
 sizmo business delete <id> --confirm
 
 # Invoices — draft/send only, there is no void/charge command
@@ -350,7 +351,7 @@ Pronoun follow-ups ("her", "that deal") resolve from a local cache; the AI only 
 placeholder token, never the real name. Providers: `anthropic` (claude-haiku-4-5-20251001) · `openai` (gpt-4o-mini).
 
 **Fires directly:** `tag`, `note`, `send`, `contact` (create/upsert/delete), `opp` (create/move/delete),
-`value create`, `field` (create/delete), `calendar` (create/delete), `business` (create/delete), `link create`.
+`value create`, `field` (create/delete), `calendar` (create/delete), `business` (create/update/delete), `link create`.
 
 **Resolve-and-print only** (money + scheduling stay a deliberate manual step): `opp update`,
 `appointment` (book/cancel/note), `send cancel`, `link delete`, `invoice` (draft/send).

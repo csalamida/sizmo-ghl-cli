@@ -1,6 +1,8 @@
 // commands/business.mjs — B2B company (business) management.
 // sizmo business list                            → list companies (from model cache)
-// sizmo business create --name "Acme" [--email] [--phone] [--website] --confirm
+// sizmo business create --name "Acme" [--email --phone --website --address --city --state
+//                        --postal-code --country --description] --confirm
+// sizmo business update <id> [same optional flags, plus --name] --confirm
 // sizmo business delete <id> --confirm
 //
 // SECURITY: create/delete are confirm-gated. Money never moves here.
@@ -19,14 +21,63 @@ const SCOPE_FIX_R = 'GoHighLevel → Settings → Private Integrations → edit 
 
 export const meta = {
   name: 'business',
-  summary: 'manage B2B companies — list, create, delete',
+  summary: 'manage B2B companies — list, create, update, delete',
   flags: [
-    { name: '--name',    type: 'string', desc: 'company name' },
-    { name: '--email',   type: 'string', desc: 'company email' },
-    { name: '--phone',   type: 'string', desc: 'company phone' },
-    { name: '--website', type: 'string', desc: 'company website URL' },
+    { name: '--name',        type: 'string', desc: 'company name (required on create)' },
+    { name: '--email',       type: 'string', desc: 'company email' },
+    { name: '--phone',       type: 'string', desc: 'company phone' },
+    { name: '--website',     type: 'string', desc: 'company website URL' },
+    { name: '--address',     type: 'string', desc: 'street address' },
+    { name: '--city',        type: 'string', desc: 'city' },
+    { name: '--state',       type: 'string', desc: 'state/region' },
+    { name: '--postal-code', type: 'string', desc: 'postal code' },
+    { name: '--country',     type: 'string', desc: 'ISO country code, e.g. PH' },
+    { name: '--description', type: 'string', desc: 'company description' },
   ],
 };
+
+// Optional fields shared by create and update — one fact, one place.
+//
+// `create-business` and `update-business` accept the SAME ten fields (verified via
+// describe_operation 2026-07-27). sizmo exposed only four of them: name, email, phone, website.
+// The other six were never a decision — no comment justified the omission, and commands/contact.mjs
+// already exposes exactly this address set, so the precedent for "address data is in scope" was
+// already established elsewhere in the codebase.
+//
+// The `--postal-code` flag maps to the API's `postalCode`; the flag name matches contact's.
+const OPTIONAL = [
+  ['email',       'email'],
+  ['phone',       'phone'],
+  ['website',     'website'],
+  ['address',     'address'],
+  ['city',        'city'],
+  ['state',       'state'],
+  ['postal-code', 'postalCode'],
+  ['country',     'country'],
+  ['description', 'description'],
+];
+
+// Unset flags are OMITTED, never sent as null — a null here blanks the stored field.
+function optionalFields(parsed) {
+  const out = {};
+  for (const [flag, apiKey] of OPTIONAL) {
+    const v = parsed[flag];
+    if (v != null && String(v).trim() !== '') out[apiKey] = v;
+  }
+  return out;
+}
+
+function optionalChanges(parsed) {
+  return OPTIONAL
+    .filter(([flag]) => parsed[flag] != null && String(parsed[flag]).trim() !== '')
+    .map(([flag]) => `  ${(flag + ':').padEnd(13)} ${parsed[flag]}`);
+}
+
+function optionalRerunParts(parsed) {
+  return OPTIONAL
+    .filter(([flag]) => parsed[flag] != null && String(parsed[flag]).trim() !== '')
+    .map(([flag]) => `--${flag} "${String(parsed[flag]).replace(/"/g, '\\"')}"`);
+}
 
 export async function run(parsed, ctx) {
   const sub = parsed._?.[0] ?? 'list';
@@ -34,11 +85,17 @@ export async function run(parsed, ctx) {
   switch (sub) {
     case 'list':   return listBusinesses(ctx);
     case 'create': return createBusiness(parsed, ctx);
+    case 'update': return updateBusiness(parsed, ctx);
     case 'delete': return deleteBusiness(parsed, ctx);
     default:
-      ctx.out.line(`unknown subcommand "${sub}"`);
-      ctx.out.line('valid: list | create | delete');
-      return EXIT.USAGE;
+      // THROW, do not return. A returned exit code skips the CLI's error handler, so `--json`
+      // emitted a success-shaped envelope (data:null, degraded:false, no error) on stdout while
+      // exiting 2 — an agent parsing it saw a clean no-op. This file had the identical bug fixed
+      // for its AUTH/API paths earlier; USAGE was missed because the guard only matched
+      // `return EXIT.(AUTH|API)`.
+      throw new GhlError(
+        `unknown subcommand "${sub}" — valid: list | create | update | delete`,
+        EXIT.USAGE, 'sizmo business --help');
   }
 }
 
@@ -81,29 +138,18 @@ async function listBusinesses(ctx) {
 async function createBusiness(parsed, ctx) {
   const name = parsed.name?.trim();
   if (!name) {
-    ctx.out.line('--name required');
-    return EXIT.USAGE;
+    throw new GhlError('business create requires --name "<company>"', EXIT.USAGE,
+      'sizmo business create --name "Acme Corp" --confirm');
   }
 
   const loc  = ctx.cfg.loc;
-  const body = {
-    name,
-    locationId: loc,
-    ...(parsed.email   && { email:   parsed.email }),
-    ...(parsed.phone   && { phone:   parsed.phone }),
-    ...(parsed.website && { website: parsed.website }),
-  };
+  const body = { name, locationId: loc, ...optionalFields(parsed) };
 
-  const changes = [
-    `Create business "${name}"`,
-    ...(parsed.email   ? [`  email:   ${parsed.email}`]   : []),
-    ...(parsed.phone   ? [`  phone:   ${parsed.phone}`]   : []),
-    ...(parsed.website ? [`  website: ${parsed.website}`] : []),
+  const changes = [`Create business "${name}"`, ...optionalChanges(parsed)];
+  const rerunParts = [
+    `sizmo business create --name "${name.replace(/"/g, '\\"')}"`,
+    ...optionalRerunParts(parsed),
   ];
-  const rerunParts = [`sizmo business create --name "${name.replace(/"/g, '\\"')}"`];
-  if (parsed.email)   rerunParts.push(`--email "${parsed.email}"`);
-  if (parsed.phone)   rerunParts.push(`--phone "${parsed.phone}"`);
-  if (parsed.website) rerunParts.push(`--website "${parsed.website}"`);
   rerunParts.push('--confirm');
   const gate = requireConfirm({ command: 'business create', changes, rerunCommand: rerunParts.join(' ') }, ctx);
   if (!gate.proceed) return gate.code;
@@ -139,13 +185,89 @@ async function createBusiness(parsed, ctx) {
   return EXIT.OK;
 }
 
+// ── update ────────────────────────────────────────────────────────────────────
+//
+// Added 2026-07-27. `business` could create and delete but never EDIT: a typo'd company name could
+// only be fixed by deleting and recreating, which drops the contact associations that make a
+// business record useful in the first place. PUT /businesses/{id} has always existed
+// (verified via describe_operation) — sizmo simply never exposed it.
+//
+// Follows the same shape as contact/field/value update: fetch first so the preview names the real
+// record and a wrong id 404s before anything is written, then PUT only the flags actually passed.
+
+async function updateBusiness(parsed, ctx) {
+  const id = parsed._?.[1];
+  if (!id || !String(id).trim()) {
+    throw new GhlError('usage: sizmo business update <businessId> [--name] [--email] …', EXIT.USAGE,
+      'sizmo business list  # to find the id');
+  }
+
+  const changed = optionalFields(parsed);
+  const newName = parsed.name != null && String(parsed.name).trim() !== '' ? String(parsed.name).trim() : null;
+  if (!newName && Object.keys(changed).length === 0) {
+    throw new GhlError(
+      `business update requires at least one field to change — one of: --name, ${OPTIONAL.map(([f]) => '--' + f).join(', ')}`,
+      EXIT.USAGE);
+  }
+
+  // Fetch first: names the record in the preview, and a wrong id 404s before any write fires.
+  const got = await ctx.http.get(`/businesses/${encodeURIComponent(id)}`);
+  if (got.code === 401 || got.code === 403) {
+    throw new GhlError(`HTTP ${got.code} — your PIT lacks businesses.readonly (needed to read the business before updating it)`,
+      EXIT.AUTH, SCOPE_FIX_R);
+  }
+  if (got.code === 404) throw new GhlError(`no business with id ${id} — nothing changed`, EXIT.NOTFOUND);
+  if (!got.ok) throw new GhlError(`could not read business ${id} — HTTP ${got.code}`, EXIT.API);
+
+  const cur = got.j?.business ?? got.j ?? {};
+  const oldName = cur.name ?? '(unnamed)';
+
+  const body = { ...(newName ? { name: newName } : {}), ...changed };
+
+  const changes = [
+    `Update business "${oldName}" (id ${id})`,
+    ...(newName ? [`  name:         ${newName}`] : []),
+    ...optionalChanges(parsed),
+  ];
+  const rerunCommand = [
+    `sizmo business update ${id}`,
+    ...(newName ? [`--name "${newName.replace(/"/g, '\\"')}"`] : []),
+    ...optionalRerunParts(parsed),
+    '--confirm',
+  ].join(' ');
+
+  const gate = requireConfirm({ command: 'business update', changes, rerunCommand }, ctx);
+  if (!gate.proceed) return gate.code;
+
+  let result;
+  try {
+    const r = await ctx.http.put(`/businesses/${encodeURIComponent(id)}`, body);
+    if (r.code === 401 || r.code === 403) {
+      throw new GhlError(`HTTP ${r.code} — your PIT lacks businesses.write`, EXIT.AUTH, SCOPE_FIX_W);
+    }
+    if (r.code === 404) throw new GhlError(`no business with id ${id} — nothing changed`, EXIT.NOTFOUND);
+    if (!r.ok) {
+      throw new GhlError(`business update failed — HTTP ${r.code}: ${r.j?.message ?? r.j?.msg ?? 'unknown'}`, EXIT.API);
+    }
+    result = r.j?.business ?? r.j;
+  } catch (e) {
+    if (e instanceof GhlError) throw e;
+    throw new GhlError(`could not update business: ${e.message}`, EXIT.API);
+  }
+
+  ctx.out.data({ status: 'ok', command: 'business update', id, name: result?.name ?? newName ?? oldName });
+  ctx.out.line(`  ✓ business ${id} updated`);
+  ctx.out.line('  Run sizmo sync businesses to refresh the local cache.\n');
+  return EXIT.OK;
+}
+
 // ── delete ────────────────────────────────────────────────────────────────────
 
 async function deleteBusiness(parsed, ctx) {
   const id = parsed._?.[1];
-  if (!id) {
-    ctx.out.line('business ID required: sizmo business delete <id> --confirm');
-    return EXIT.USAGE;
+  if (!id || !String(id).trim()) {
+    throw new GhlError('usage: sizmo business delete <businessId> — exactly one id, never bulk',
+      EXIT.USAGE, 'sizmo business list  # to find the id');
   }
 
   // Fetch the business first so we can show the name and confirm correctness.

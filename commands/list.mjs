@@ -23,9 +23,11 @@ export async function run(parsed, ctx) {
   const showAll = !!parsed.all;
 
   if (entity && !ENTITIES.includes(entity)) {
-    ctx.out.line(`unknown entity "${entity}"`);
-    ctx.out.line(`valid: ${ENTITIES.join(' | ')}`);
-    return EXIT.USAGE;
+    // THROW, not return. list's AUTH/API paths were converted to GhlError on 2026-07-27; this
+    // USAGE path was missed, so `sizmo list frobnicate --json` still printed a success-shaped
+    // envelope (data:null, degraded:false, no error) on stdout while exiting 2.
+    throw new GhlError(`unknown entity "${entity}" — valid: ${ENTITIES.join(' | ')}`,
+      EXIT.USAGE, 'sizmo list  # with no argument shows an overview');
   }
 
   // live-fetch-only entities (not model-backed)
