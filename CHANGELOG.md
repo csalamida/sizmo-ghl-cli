@@ -11,6 +11,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > inline, and their changes are real: they reached users inside the release named there. Verify
 > what actually exists with `npm view sizmo versions`.
 
+## [2.4.12] — 2026-07-27
+
+### Fixed — the PIT temp file could inherit permissions instead of being created 0600
+
+`SECURITY.md` promises the profile is written *"via a temp file created at mode `0600` then renamed
+— no window where it's world-readable."* That held only when no temp already existed.
+
+Node honours `writeFileSync`'s `mode` **only when it creates the file**:
+
+```
+fresh create with mode 0600 -> 600
+pre-existing file at 644    -> 644   after writeFileSync(..., {mode: 0o600})
+```
+
+The temp path is derived from the pid, and the cleanup that removes it does not run on `SIGKILL` or
+power loss. A surviving temp could therefore be written into by a later run that got the same pid,
+storing a **cleartext PIT at whatever permissions that leftover file carried**.
+
+Now uses an explicit unlink plus `flag: 'wx'`, so creating the file is the only possible outcome. If
+another process wins a race to that path, the write fails rather than inheriting its permissions —
+refusing is the correct outcome when the alternative is writing a credential into someone else's
+file.
+
+No action needed on your side: `~/.config/sizmo/profiles.json` was already `0600` in every normal
+run, and this closes the crash-and-pid-reuse path that could have bypassed it.
+
+### Changed — the config directory is now created `0700`
+
+Previously the default `0755`. The profile file itself was always `0600`, so the PIT was never
+exposed; a world-readable directory only leaked metadata (that the store exists, its size, its
+mtime). Now matches the convention `ssh` enforces on `~/.ssh`. An existing directory keeps its
+current mode.
+
+### Added — the credential store's permissions are now tested
+
+Nothing covered them before. Six tests: file mode, directory mode, the leftover-temp case, temp
+cleanup, atomicity under repeated writes, and the file staying `0600` even when the directory is
+loose.
+
 ## [2.4.11] — 2026-07-27
 
 ### Fixed — `sizmo brief` exited 0 during a total API outage
