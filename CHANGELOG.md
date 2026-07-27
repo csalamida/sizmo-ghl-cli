@@ -13,6 +13,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a report that was DENIED its data no longer exits 0
+
+Seven reports produced a scrupulously honest envelope and then contradicted it with the exit code:
+
+```
+$ sizmo receivables --json
+{"blocked": 401, "totalOwed": null, "outstanding": null}   # UNKNOWN, never zero — correct
+$ echo $?
+0                                                          # "all fine" — wrong
+```
+
+So `sizmo receivables && ship-it` proceeded, and an agent checking `$?` read "nothing owed" as fact
+when the truth was "your token is not allowed to look at invoices." `brief` was fixed for this
+earlier; `receivables`, `booked-not-paid`, `reconcile`, `noshow`, `triage`, `pipeline` and
+`segment` had the identical shape and were missed. They now exit `AUTH` (3) when denied.
+
+Deliberately unchanged: a **non-auth** failure (500, 429) still exits 0. Treating any failure as
+fatal would fail a legitimately-empty account whose auth is fine — worse than the bug being fixed.
+
+### Fixed — `sizmo crm` could not tell a missing scope from a broken API
+
+It returned `1` for both, so "your PIT lacks `locations/tags.readonly`" was indistinguishable from
+"the API is down." Retrying on `1` is reasonable agent behaviour; retrying a missing scope forever
+is not. `crm` now throws — `AUTH` on a scope denial, `API` when a real HTTP status is present —
+matching `list` and `surveys`, which already drew this line. That also fixes its `--json` output,
+which was previously success-shaped on stdout.
+
 ### Fixed — `sizmo open` emitted a wrong URL instead of refusing a typo
 
 `open` takes an id and infers the kind from `--opp`, but the rest of the CLI reads
