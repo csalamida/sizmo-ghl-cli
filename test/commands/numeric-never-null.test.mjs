@@ -26,6 +26,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run as runOpp } from '../../commands/opp.mjs';
 import { run as runCalendar } from '../../commands/calendar.mjs';
+import { run as runField } from '../../commands/field.mjs';
 import { makeFakeCtx } from '../_helpers.mjs';
 import { EXIT } from '../../lib/errors.mjs';
 
@@ -180,4 +181,105 @@ test('no write command coerces a numeric flag with a bare Number() into a reques
     `These build a request body with an unguarded Number(): ${offenders.join(' | ')}. ` +
     `Number('abc') is NaN and JSON.stringify(NaN) is null, so a typo blanks the stored value. ` +
     `Validate with Number.isFinite() and throw EXIT.USAGE before the confirm preview.`);
+});
+
+// ── field create/update --position and --max-files ───────────────────────────
+// These two flags were NOT found by hand. The manual grep that found opp --value filtered on money
+// words ('value|amount|price|total|monetary'), and neither 'position' nor 'max-files' matches — so
+// both shipped with the same blanking bug. The class-wide source guard below found them.
+//
+// They are pinned BEHAVIOURALLY here, not just by that source guard, because mutation testing
+// proved the source guard alone does not cover them: once the fix assigns to a local
+// (`const position = parseNumericFlag(...)`) and the body uses shorthand `{ position }`, the
+// `key: Number(` pattern no longer matches, so reverting the guard is invisible to it. The source
+// scan catches the NEXT command written in the old inline style; these tests catch a regression
+// in THIS one. Neither alone is sufficient.
+const FIELD_BASE = '/locations/L-TEST/customFields';
+const EXISTING_FIELD = {
+  status: 200,
+  j: { customField: { id: 'fld-1', name: 'Budget', dataType: 'TEXT', model: 'contact' } },
+};
+
+for (const [flag, bad] of [
+  ['position',  'abc'], ['position',  '-1'],  ['position',  '2.5'],
+  ['max-files', 'abc'], ['max-files', '0'],   ['max-files', '-3'],
+]) {
+  test(`field create --${flag} '${bad}': refused with USAGE, nothing sent`, async () => {
+    const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true });
+    await assert.rejects(
+      () => runField({ _: ['create'], name: 'Budget', [flag]: bad }, ctx),
+      (e) => e.code === EXIT.USAGE,
+      `field create --${flag} '${bad}' must be refused, not coerced to null`);
+    assert.deepEqual(getCalledWrites(), []);
+  });
+
+  test(`field update --${flag} '${bad}': refused, no PUT fires`, async () => {
+    const { ctx, getCalledWrites } = makeFakeCtx({
+      confirmed: true,
+      fixture: { [`GET ${FIELD_BASE}/fld-1`]: EXISTING_FIELD },
+    });
+    await assert.rejects(
+      () => runField({ _: ['update', 'fld-1'], [flag]: bad }, ctx),
+      (e) => e.code === EXIT.USAGE,
+      `field update --${flag} '${bad}' must be refused — on update, null BLANKS the stored value`);
+    assert.deepEqual(getCalledWrites(), [],
+      'no PUT may fire for input that was refused');
+  });
+}
+
+test('field create --position 3 --max-files 5: both land as numbers', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true,
+    fixture: { [`POST ${FIELD_BASE}`]: { status: 200, j: { customField: { id: 'fld-new' } } } },
+  });
+  await runField({ _: ['create'], name: 'Budget', position: '3', 'max-files': '5' }, ctx);
+  ctx.out.flush();
+  const body = getCalledBodies()[0].body;
+  assert.strictEqual(body.position, 3);
+  assert.strictEqual(body.maxNumberOfFiles, 5);
+  assertNoNullNumerics(body, 'field create');
+});
+
+test('field create --position 0 IS allowed — position is an index, first slot is 0', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true,
+    fixture: { [`POST ${FIELD_BASE}`]: { status: 200, j: { customField: { id: 'fld-new' } } } },
+  });
+  await runField({ _: ['create'], name: 'Budget', position: '0' }, ctx);
+  ctx.out.flush();
+  assert.strictEqual(getCalledBodies()[0].body.position, 0,
+    'position 0 must survive as the number 0 — it is a valid index, not a missing value');
+});
+
+test('field update: omitted --position is ABSENT from the body, never null', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true,
+    fixture: {
+      [`GET ${FIELD_BASE}/fld-1`]: EXISTING_FIELD,
+      [`PUT ${FIELD_BASE}/fld-1`]: { status: 200, j: { customField: { id: 'fld-1' } } },
+    },
+  });
+  await runField({ _: ['update', 'fld-1'], placeholder: 'new hint' }, ctx);
+  ctx.out.flush();
+  const body = getCalledBodies().find(b => b.method === 'PUT').body;
+  assert.ok(!('position' in body),
+    'position must be ABSENT when --position was not passed, never present-and-null');
+  assertNoNullNumerics(body, 'field update');
+});
+
+test('field update: a malformed numeric flag is refused BEFORE the fetch — zero API calls', async () => {
+  // Asserts getCalledPaths(), not getCalledWrites(). The write-only assertion above passes even
+  // when a wasted GET fires, because a GET is not a write — which is exactly how this shipped:
+  // validation sat after the fetch, so `field update f1 --position 2.5` against a bad token
+  // reported exit 3 (AUTH) instead of exit 2 (USAGE), blaming the token for a purely local typo.
+  // A local input error must never depend on, or be masked by, a network result.
+  const { ctx, getCalledPaths } = makeFakeCtx({
+    confirmed: true,
+    fixture: { [`GET ${FIELD_BASE}/fld-1`]: EXISTING_FIELD },
+  });
+  await assert.rejects(
+    () => runField({ _: ['update', 'fld-1'], position: '2.5' }, ctx),
+    (e) => e.code === EXIT.USAGE);
+  assert.deepEqual(getCalledPaths(), [],
+    'no request of any kind may fire for input that is invalid on its face');
 });

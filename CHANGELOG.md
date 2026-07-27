@@ -13,6 +13,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a malformed numeric flag silently blanked the stored value
+
+`Number('abc')` is `NaN`, and `JSON.stringify({ x: NaN })` is `{"x":null}`. On an update verb that
+`null` **overwrote real data with a blank**:
+
+```
+sizmo opp update <id> --value abc --confirm     →  PUT {"monetaryValue":null}
+```
+
+The confirm preview made this worse rather than catching it: it echoed `value: abc` back as though
+the input had been understood, so the user approved a destructive write presented as a normal edit.
+
+This is the coercion sibling of the existing rule *"unset flags must be OMITTED, never sent as
+null."* That rule covered flags the user never passed; this is the same blanking outcome reached
+through a flag the user **did** pass, badly. `invoice.mjs` had guarded `--item` amounts this way
+since 2.4.x — the rule existed, it just was not applied anywhere else. Now shared in
+`lib/numeric.mjs`.
+
+Flags fixed, all validated before the confirm preview so bad input never reaches an approvable
+screen:
+
+| Command | Flag | Rule |
+|---|---|---|
+| `opp create` / `opp update` | `--value` | number ≥ 0 |
+| `calendar create` | `--slot-min` | whole number ≥ 1 |
+| `field create` / `field update` | `--position` | whole number ≥ 0 |
+| `field create` / `field update` | `--max-files` | whole number ≥ 1 |
+
+`--value 0` and `--position 0` stay legal — a deal can be worth nothing and `position` is a
+zero-based index. This deliberately diverges from `invoice --item`, which requires amount > 0
+because a zero-amount line item is meaningless.
+
+`field`'s two flags were not found by hand: the manual search that found `opp --value` filtered on
+money words, and neither `position` nor `max-files` matches. A source-level guard in the new test
+file found them, and now blocks the next command written in the old inline style.
+
+### Fixed — `field update` validated numeric flags after its fetch
+
+`field update <id> --position 2.5` fired a pointless API round-trip and then exited **3 (AUTH)**
+instead of **2 (USAGE)** when the token was also bad — blaming the token for a purely local typo.
+A local input error must never depend on, or be masked by, a network result.
+
+### Fixed — `opp update` did not map 404
+
+It was the only update verb in the CLI that didn't. `contact`, `field`, `value` and `appointment`
+all mapped it, on both their GET and their PUT. A typo'd id exited **1 (API — "the server broke,
+retry")** instead of **4 (NOTFOUND — "your id is wrong, do not retry")**. sizmo's primary consumer
+is an agent branching on exit codes, and retry-on-1 is a reasonable agent policy; retrying a
+permanently-bad id forever is not.
+
 ### Fixed — README was excluded from the doc-drift guard
 
 `test/docs/agent-docs-drift.test.mjs` validated `SKILL.md` and `AGENTS.md` but not `README.md` —

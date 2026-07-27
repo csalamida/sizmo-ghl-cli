@@ -161,6 +161,19 @@ async function updateField(args, ctx) {
     throw new GhlError(`field update requires at least one of: ${EDITABLE.map(k => '--' + k).join(', ')}`, EXIT.USAGE);
   }
 
+  // Validate numeric flags BEFORE the fetch, not merely before the confirm preview.
+  // Number('abc') is NaN, which JSON-serializes to null and BLANKS the stored value on update
+  // (see lib/numeric.mjs). These parsers need only `args`, so running them after the GET meant a
+  // typo'd --position burned a pointless API round-trip and then reported exit 3 (AUTH) instead of
+  // exit 2 (USAGE) whenever the token was also bad — the wrong cause, for a purely local mistake.
+  // A local input error must never depend on, or be masked by, a network result.
+  const position = args.position != null
+    ? parseNumericFlag(args.position, { flag: '--position', context: 'field update', integer: true, min: 0, example: '3' })
+    : null;
+  const maxFiles = args['max-files'] != null
+    ? parseNumericFlag(args['max-files'], { flag: '--max-files', context: 'field update', integer: true, min: 1, example: '5' })
+    : null;
+
   const base = `/locations/${encodeURIComponent(ctx.cfg.loc)}/customFields/${encodeURIComponent(id)}`;
   const got = await ctx.http.get(base);
   if (got.code === 401 || got.code === 403) {
@@ -180,15 +193,6 @@ async function updateField(args, ctx) {
     ? String(args['textbox-option']).split(',').map(o => o.trim()).filter(Boolean) : null;
   const accepted = args.accept
     ? String(args.accept).split(',').map(f => f.trim()).filter(Boolean) : null;
-
-  // Validate BEFORE the confirm preview — Number('abc') is NaN, which JSON-serializes to null and
-  // (on update) BLANKS the stored value. See lib/numeric.mjs.
-  const position = args.position != null
-    ? parseNumericFlag(args.position, { flag: '--position', context: 'field update', integer: true, min: 0, example: '3' })
-    : null;
-  const maxFiles = args['max-files'] != null
-    ? parseNumericFlag(args['max-files'], { flag: '--max-files', context: 'field update', integer: true, min: 1, example: '5' })
-    : null;
 
   const body = {
     name,
