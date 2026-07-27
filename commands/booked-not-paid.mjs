@@ -38,7 +38,11 @@ export async function collect(args, ctx) {
   const cr = await ctx.http.get('/calendars/', { query: { locationId: LOC }, version: '2021-04-15' });
   if (!cr.ok) {
     ctx.out.warn(`can't see calendars → HTTP ${cr.code}`, { degraded: true });
-    return { location: LOC, days: DAYS, calendars: 0, contactsWithSessions: 0, neverBilled: [], billedUnpaid: [], billedUnpaidTotal: 0, currency: 'PHP', settled: 0, caveat: 'calendars blocked' };
+    // UNKNOWN, not zero. This IS a money surface despite sitting last in the sweep:
+    // billedUnpaidTotal is money owed and `settled` asserts reconciled sessions. The existing
+    // `caveat` string was partial honesty — it explained the situation in prose while the numbers
+    // still read as measured facts to anything consuming --json.
+    return { location: LOC, days: DAYS, blocked: cr.code, calendars: null, contactsWithSessions: null, neverBilled: [], billedUnpaid: [], billedUnpaidTotal: null, currency: null, settled: null, caveat: 'calendars blocked' };
   }
   const cals = cr.j.calendars || [];
   const byContact = new Map();
@@ -210,6 +214,14 @@ export async function run(args, ctx) {
     new Date(t).toLocaleString('en-US', { timeZone: tz, month: 'short', day: 'numeric' });
 
   ctx.out.card(() => {
+    if (data.blocked) {
+      ctx.out.line(`\n  BOOKED-NOT-PAID — UNKNOWN · can't see calendars (HTTP ${data.blocked}) · last ${DAYS}d · loc ${data.location}`);
+      ctx.out.line('  ' + '─'.repeat(72));
+      ctx.out.line('  This is NOT "no money leaking" — no session was read at all,');
+      ctx.out.line('  so unpaid totals and settled counts are unknown.');
+      ctx.out.line('  Needs calendars.readonly in GoHighLevel → Private Integrations.\n');
+      return;
+    }
     ctx.out.line(`\n  BOOKED-NOT-PAID — last ${DAYS}d · ${data.contactsWithSessions} contact(s) with sessions · loc ${data.location}`);
     ctx.out.line('  ' + '─'.repeat(72));
     if (data.invoicesBlocked) ctx.out.line(`  ⚠ can't see invoices (${data.invoicesBlocked}) — NEVER-BILLED bucket suppressed, can't tell billed from not`);

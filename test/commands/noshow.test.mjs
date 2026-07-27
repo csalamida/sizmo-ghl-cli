@@ -203,3 +203,25 @@ test('C2-noshow: STALE model → modelMeta.stale=true in envelope', async () => 
   assert.ok(envelope.data.modelMeta, 'modelMeta must be present');
   assert.ok(envelope.data.modelMeta.stale === true, 'stale model must set modelMeta.stale=true');
 });
+
+// ── blocked ≠ zero (2026-07-27) ───────────────────────────────────────────────
+// `noshows: 0` reads as "nobody to re-book" — recovered revenue that silently never gets
+// recovered, because the calendars were unreadable rather than empty.
+const CALS_URL = 'GET /calendars/?locationId=L-TEST';
+
+test('noshow: blocked → noshows is null (unknown), never 0', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [CALS_URL]: { status: 401, j: {} } } });
+  await run({}, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.noshows, null, 'a denied read must not report 0 no-shows');
+  assert.equal(d.calendars, null);
+  assert.equal(d.blocked, 401);
+});
+
+test('noshow: blocked render never implies there were no no-shows', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [CALS_URL]: { status: 403, j: {} } }, json: false });
+  await run({}, ctx);
+  ctx.out.flush();
+  assert.ok(/NOT "no no-shows"/.test(getPrinted()));
+});

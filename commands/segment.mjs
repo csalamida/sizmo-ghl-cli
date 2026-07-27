@@ -89,7 +89,9 @@ export async function collect(args, ctx) {
 
   if (firstErr && scanned === 0) {
     ctx.out.warn(`can't see contacts → HTTP ${firstErr}`, { degraded: true });
-    return { location: LOC, criteria: crit, scanned: 0, matched: 0, contactIds: [], sample: [] };
+    // UNKNOWN, not zero. `matched: 0` reads as "no contacts fit this segment" when the contacts
+    // were never readable — a targeting decision made on a number nobody measured.
+    return { location: LOC, criteria: crit, blocked: firstErr, scanned: null, matched: null, contactIds: [], sample: [] };
   }
 
   const FULL = !!args.full;
@@ -129,6 +131,13 @@ export async function run(args, ctx) {
   const TOP = args.top ?? 20;
 
   ctx.out.card(() => {
+    if (data.blocked) {
+      ctx.out.line(`\n  SEGMENT — UNKNOWN · can't see contacts (HTTP ${data.blocked})  ·  loc ${data.location}`);
+      ctx.out.line('  ' + '─'.repeat(70));
+      ctx.out.line('  This is NOT "no contacts match" — no contact was read at all.');
+      ctx.out.line('  Needs contacts.readonly in GoHighLevel → Private Integrations.\n');
+      return;
+    }
     ctx.out.line(`\n  SEGMENT — ${data.matched} contact(s) match [${data.criteria.join(' AND ')}]  ·  ${data.scanned} scanned  ·  loc ${data.location}`);
     ctx.out.line('  ' + '─'.repeat(70));
     if (!data.sample.length) {

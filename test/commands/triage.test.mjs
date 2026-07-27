@@ -113,3 +113,36 @@ test('triage: paginates all pages before applying --top cap', async () => {
   assert.equal(data.threads[0].conversationId, 'conv-deep', 'deep-page thread must be found');
   assert.equal(data.threads[0].snippet, 'hello from deep page');
 });
+
+// ── blocked ≠ zero (2026-07-27) ───────────────────────────────────────────────
+// `waiting: 0` answers "who is waiting on a reply?" with "nobody" when the conversations were
+// never readable — the single question brief exists to answer, so a real customer waiting on a
+// human goes invisible.
+const CONV_URL = 'GET /conversations/search?locationId=L-TEST&limit=100&offset=0';
+
+test('triage: blocked → waiting is null (unknown), never 0', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [CONV_URL]: { status: 401, j: {} } } });
+  await run({}, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.waiting, null, 'a denied read must not report 0 waiting');
+  assert.equal(d.scanned, null);
+  assert.equal(d.blocked, 401);
+});
+
+test('triage: blocked render never says "nobody waiting"', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [CONV_URL]: { status: 403, j: {} } }, json: false });
+  await run({}, ctx);
+  ctx.out.flush();
+  assert.ok(/UNKNOWN/.test(getPrinted()));
+  assert.ok(/NOT "nobody waiting"/.test(getPrinted()));
+});
+
+test('triage: genuinely empty but READABLE inbox still reports 0', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [CONV_URL]: { status: 200, j: { conversations: [] } } } });
+  await run({}, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.blocked, undefined);
+  assert.equal(d.waiting, 0, 'genuinely nobody waiting is 0, not null');
+});

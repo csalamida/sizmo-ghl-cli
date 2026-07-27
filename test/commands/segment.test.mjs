@@ -139,3 +139,34 @@ test('segment: --full flag declared in meta.flags', async () => {
   assert.ok(fullFlag, '--full must be in meta.flags');
   assert.equal(fullFlag.type, 'bool', '--full must be type bool');
 });
+
+// ── blocked ≠ zero (2026-07-27) ───────────────────────────────────────────────
+// `matched: 0` reads as "no contacts fit this segment" when the contacts were never readable —
+// a targeting decision made on a number nobody measured.
+const CONTACTS_URL = 'GET /contacts/?locationId=L-TEST&limit=100';
+
+test('segment: blocked → matched is null (unknown), never 0', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [CONTACTS_URL]: { status: 401, j: {} } } });
+  await run({ tag: 'vip' }, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.matched, null, 'a denied read must not report 0 matches');
+  assert.equal(d.scanned, null);
+  assert.equal(d.blocked, 401);
+});
+
+test('segment: blocked render never says "no contacts match"', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [CONTACTS_URL]: { status: 403, j: {} } }, json: false });
+  await run({ tag: 'vip' }, ctx);
+  ctx.out.flush();
+  assert.ok(/NOT "no contacts match"/.test(getPrinted()));
+});
+
+test('segment: genuinely zero matches on a READABLE list still reports 0', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [CONTACTS_URL]: { status: 200, j: { contacts: [] } } } });
+  await run({ tag: 'vip' }, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.blocked, undefined);
+  assert.equal(d.matched, 0, 'genuinely no matches is 0, not null');
+});

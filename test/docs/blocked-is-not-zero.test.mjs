@@ -26,19 +26,23 @@ const CMD_DIR = join(REPO, 'commands');
 //
 // This list may only ever SHRINK. Adding to it means shipping a new fabricated zero — fix the
 // command instead. Removing one means it now reports unknown, so drop it here in the same commit.
-const KNOWN_FABRICATES_ZERO = new Set([
-  'booked-not-paid', // carries a `caveat` string, but calendars/settled/billedUnpaidTotal are 0
-  'noshow',
-  'segment',
-  'triage',
-]);
+// EMPTY as of 2026-07-27 — the sweep is complete. Every command that can be blocked now reports
+// null with a `blocked: <httpStatus>` marker instead of a zero it never measured, so README's
+// promise ("a blocked source is not zero — treat it as unknown") holds without qualification.
+//
+// Keep the mechanism, not just the outcome: the test below still runs across every command, so a
+// NEW fabricated zero fails the build rather than silently reopening the class.
+const KNOWN_FABRICATES_ZERO = new Set([]);
 
 // Commands proven to report unknown rather than zero. Regression-protected: if one of these
 // starts returning a hardcoded 0 next to a "can't see" warning again, this fails.
 // pipeline joined 2026-07-27 — it had TWO blocked branches (pipelines unreadable, and
 // opportunities unreadable inside readable pipelines); both had to be fixed or one path would
 // still assert a false zero.
-const MUST_REPORT_UNKNOWN = ['receivables', 'pipeline', 'reconcile'];
+const MUST_REPORT_UNKNOWN = [
+  'receivables', 'pipeline', 'reconcile',        // money surfaces, fixed first
+  'triage', 'noshow', 'segment', 'booked-not-paid',
+];
 
 function sourceOf(cmd) {
   return readFileSync(join(CMD_DIR, `${cmd}.mjs`), 'utf8');

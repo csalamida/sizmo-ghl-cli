@@ -62,7 +62,10 @@ export async function collect(args, ctx) {
 
   if (convErr && convos.length === 0) {
     ctx.out.warn(`can't see conversations → HTTP ${convErr}`, { degraded: true });
-    return { location: LOC, scanned: 0, waiting: 0, shown: 0, threads: [] };
+    // UNKNOWN, not zero. `waiting: 0` answers "who is waiting on a reply?" with "nobody" when
+    // the conversations were never readable — the single question brief exists to answer, and a
+    // customer waiting on a human goes invisible.
+    return { location: LOC, blocked: convErr, scanned: null, waiting: null, shown: null, threads: [] };
   }
 
   const waiting = convos
@@ -121,6 +124,13 @@ export async function run(args, ctx) {
   };
 
   ctx.out.card(() => {
+    if (data.blocked) {
+      ctx.out.line(`\n  TRIAGE — UNKNOWN · can't see conversations (HTTP ${data.blocked})  ·  loc ${LOC}`);
+      ctx.out.line('  ' + '─'.repeat(72));
+      ctx.out.line('  This is NOT "nobody waiting" — no conversation was read at all.');
+      ctx.out.line('  Needs conversations.readonly in GoHighLevel → Private Integrations.\n');
+      return;
+    }
     ctx.out.line(`\n  TRIAGE — ${data.waiting} thread(s) waiting on you  ·  showing top ${data.shown}  ·  last ${DAYS}d  ·  loc ${LOC}`);
     ctx.out.line('  ' + '─'.repeat(72));
     if (!data.threads.length) {

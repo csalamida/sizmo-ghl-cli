@@ -56,7 +56,9 @@ export async function collect(args, ctx) {
     const cr = await ctx.http.get('/calendars/', { query: { locationId: LOC }, version: '2021-04-15' });
     if (!cr.ok) {
       ctx.out.warn(`can't see calendars → HTTP ${cr.code}`, { degraded: true });
-      return { location: LOC, calendars: 0, noshows: 0, shown: 0, list: [], ...(modelMeta ? { modelMeta } : {}) };
+      // UNKNOWN, not zero. `noshows: 0` reads as "nobody to re-book" — recovered revenue that
+      // silently never gets recovered because the calendars were unreadable.
+      return { location: LOC, blocked: cr.code, calendars: null, noshows: null, shown: null, list: [], ...(modelMeta ? { modelMeta } : {}) };
     }
     cals = cr.j.calendars || [];
   }
@@ -131,6 +133,12 @@ export async function run(args, ctx) {
     new Date(t).toLocaleString('en-US', { timeZone: tz, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   ctx.out.card(() => {
+    if (data.blocked) {
+      ctx.out.line(`\n  NO-SHOW RECOVERY — UNKNOWN · can't see calendars (HTTP ${data.blocked}) · loc ${data.location}`);
+      ctx.out.line('  This is NOT "no no-shows" — the calendars could not be read at all.');
+      ctx.out.line('  Needs calendars.readonly in GoHighLevel → Private Integrations.\n');
+      return;
+    }
     ctx.out.line(`\n  NO-SHOW RECOVERY — ${data.noshows} no-show(s) · last ${DAYS}d · ${data.calendars} calendars · loc ${data.location}`);
     // C2: staleness note when model is old/offline
     if (data.modelMeta) {

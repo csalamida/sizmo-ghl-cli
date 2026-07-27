@@ -292,3 +292,28 @@ test('booked-not-paid: golden data keys present', () => {
     assert.ok(k in data, `golden must have key: ${k}`);
   }
 });
+
+// ── blocked ≠ zero (2026-07-27) ───────────────────────────────────────────────
+// This IS a money surface: billedUnpaidTotal is money owed and `settled` asserts reconciled
+// sessions. The pre-existing `caveat: 'calendars blocked'` string was partial honesty — it
+// explained the situation in prose while the numbers still read as measured facts to --json.
+const CALS_URL_BNP = 'GET /calendars/?locationId=L-TEST';
+
+test('booked-not-paid: blocked → money totals null, caveat retained', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [CALS_URL_BNP]: { status: 401, j: {} } } });
+  await run({}, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.billedUnpaidTotal, null, 'money owed must not read as 0 when nothing was read');
+  assert.equal(d.settled, null, 'settled sessions are unknown, not zero');
+  assert.equal(d.contactsWithSessions, null);
+  assert.equal(d.blocked, 401);
+  assert.equal(d.caveat, 'calendars blocked', 'the existing prose caveat stays alongside the marker');
+});
+
+test('booked-not-paid: blocked render never implies no money is leaking', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [CALS_URL_BNP]: { status: 403, j: {} } }, json: false });
+  await run({}, ctx);
+  ctx.out.flush();
+  assert.ok(/NOT "no money leaking"/.test(getPrinted()));
+});
