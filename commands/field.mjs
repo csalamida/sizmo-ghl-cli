@@ -4,6 +4,7 @@
 // names it in the preview, and DELETEs that one resource — it can never bulk-delete.
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
+import { parseNumericFlag } from '../lib/numeric.mjs';
 
 // GHL customField dataTypes (v2). Kept as an allow-list so a typo fails locally, not after a round-trip.
 const DATA_TYPES = new Set([
@@ -83,14 +84,23 @@ async function createField(args, ctx) {
     ? String(args.accept).split(',').map(f => f.trim()).filter(Boolean)
     : null;
 
+  // Validate BEFORE the confirm preview — Number('abc') is NaN, which JSON-serializes to null and
+  // (on update) BLANKS the stored value. See lib/numeric.mjs.
+  const position = args.position != null
+    ? parseNumericFlag(args.position, { flag: '--position', context: 'field create', integer: true, min: 0, example: '3' })
+    : null;
+  const maxFiles = args['max-files'] != null
+    ? parseNumericFlag(args['max-files'], { flag: '--max-files', context: 'field create', integer: true, min: 1, example: '5' })
+    : null;
+
   const body = {
     name, dataType, model,
     ...(args.placeholder ? { placeholder: args.placeholder } : {}),
-    ...(args.position != null ? { position: Number(args.position) } : {}),
+    ...(position != null ? { position } : {}),
     ...(textboxOptions ? { textBoxListOptions: textboxOptions } : {}),
     ...(accepted ? { acceptedFormat: accepted } : {}),
     ...(args['multiple-files'] ? { isMultipleFile: true } : {}),
-    ...(args['max-files'] != null ? { maxNumberOfFiles: Number(args['max-files']) } : {}),
+    ...(maxFiles != null ? { maxNumberOfFiles: maxFiles } : {}),
   };
   const changes = [
     `Create custom field "${name}" (type ${dataType}, model ${model})`,
@@ -171,15 +181,24 @@ async function updateField(args, ctx) {
   const accepted = args.accept
     ? String(args.accept).split(',').map(f => f.trim()).filter(Boolean) : null;
 
+  // Validate BEFORE the confirm preview — Number('abc') is NaN, which JSON-serializes to null and
+  // (on update) BLANKS the stored value. See lib/numeric.mjs.
+  const position = args.position != null
+    ? parseNumericFlag(args.position, { flag: '--position', context: 'field update', integer: true, min: 0, example: '3' })
+    : null;
+  const maxFiles = args['max-files'] != null
+    ? parseNumericFlag(args['max-files'], { flag: '--max-files', context: 'field update', integer: true, min: 1, example: '5' })
+    : null;
+
   const body = {
     name,
     ...(args.placeholder != null ? { placeholder: String(args.placeholder) } : {}),
-    ...(args.position != null ? { position: Number(args.position) } : {}),
+    ...(position != null ? { position } : {}),
     ...(args.model != null ? { model: String(args.model).toLowerCase() } : {}),
     ...(textboxOptions ? { textBoxListOptions: textboxOptions } : {}),
     ...(accepted ? { acceptedFormat: accepted } : {}),
     ...(args['multiple-files'] ? { isMultipleFile: true } : {}),
-    ...(args['max-files'] != null ? { maxNumberOfFiles: Number(args['max-files']) } : {}),
+    ...(maxFiles != null ? { maxNumberOfFiles: maxFiles } : {}),
   };
 
   const changes = [`Update custom field ${id} (type ${cur.dataType ?? '?'} — unchanged, types cannot be edited)`];

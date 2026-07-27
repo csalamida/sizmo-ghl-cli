@@ -13,11 +13,21 @@
 // id 404s before touching anything), single-target only, never bulk.
 import { requireConfirm } from '../lib/confirm.mjs';
 
+import { GhlError, EXIT } from '../lib/errors.mjs';
+import { parseNumericFlag } from '../lib/numeric.mjs';
+import { isStale, fetchLiveEntity } from '../lib/model.mjs';
+
 // Shared by create and update. Was declared inside update only, which is part of how create ended
 // up hardcoding status instead of accepting one.
 const VALID_STATUS = ['open', 'won', 'lost', 'abandoned'];
-import { GhlError, EXIT } from '../lib/errors.mjs';
-import { isStale, fetchLiveEntity } from '../lib/model.mjs';
+
+// Shared by create and update — one fact, one place.
+//
+// min 0, not min 1: an opportunity legitimately can be worth 0 (a won deal with no cash attached).
+// This deliberately diverges from invoice.mjs, which rejects amounts <= 0 because a zero-amount
+// line item is meaningless. Negative is rejected in both — there is no such deal.
+const parseMonetaryValue = (raw, verb) =>
+  parseNumericFlag(raw, { flag: '--value', context: `opp ${verb}`, min: 0, example: '5000' });
 
 export const meta = {
   name: 'opp',
@@ -89,6 +99,10 @@ export async function run(args, ctx) {
     const stName  = args.stage;
     const value   = args.value   ?? null;
     const contact = args.contact ?? null;
+
+    // Validate BEFORE the confirm preview — a bad value must be rejected outright, never shown
+    // in a preview the user can approve.
+    const monetary = value != null ? parseMonetaryValue(value, 'create') : null;
 
     if (!name)    throw new GhlError('opp create requires --name',     EXIT.USAGE);
     if (!plName)  throw new GhlError('opp create requires --pipeline', EXIT.USAGE);
@@ -170,7 +184,7 @@ export async function run(args, ctx) {
       // opportunity landed open, inflating `sizmo pipeline`'s totalValue by the entire history.
       status: createStatus,
       contactId: contact,
-      ...(value != null ? { monetaryValue: Number(value) } : {}),
+      ...(monetary != null ? { monetaryValue: monetary } : {}),
       ...(assignedUser ? { assignedTo: assignedUser } : {}),
     };
     const r = await ctx.http.post('/opportunities/', body);
@@ -268,6 +282,10 @@ export async function run(args, ctx) {
       throw new GhlError(`opp update: invalid --status '${status}' — must be one of ${VALID_STATUS.join('|')}`, EXIT.USAGE);
     }
 
+    // Validate BEFORE the confirm preview — see parseMonetaryValue. An unparseable --value used to
+    // reach the wire as null and blank the deal.
+    const monetary = value != null ? parseMonetaryValue(value, 'update') : null;
+
     const changes = [
       `Update opportunity ${oppId}`,
       ...(newName    ? [`  name:     ${newName}`]    : []),
@@ -290,7 +308,7 @@ export async function run(args, ctx) {
     // `--assigned-user` existed on create only, so a reassignment meant editing in the GHL UI.
     const body = {
       ...(newName    != null ? { name: newName } : {}),
-      ...(value      != null ? { monetaryValue: Number(value) } : {}),
+      ...(monetary   != null ? { monetaryValue: monetary } : {}),
       ...(status     != null ? { status } : {}),
       ...(assignedTo != null ? { assignedTo } : {}),
     };
@@ -302,6 +320,13 @@ export async function run(args, ctx) {
         EXIT.AUTH,
         'GoHighLevel → Settings → Private Integrations → edit your PIT → add opportunities.write scope'
       );
+    }
+    // opp update was the ONLY update verb in the CLI that did not map 404 — contact, field, value
+    // and appointment all do, on both their GET and their PUT. A typo'd id therefore exited 1 (API,
+    // "the server broke, retry") instead of 4 (NOTFOUND, "your id is wrong, do not retry"). An agent
+    // consuming these exit codes cannot tell a transient outage from a permanent bad id without it.
+    if (r.code === 404) {
+      throw new GhlError(`no opportunity with id ${oppId} — nothing changed`, EXIT.NOTFOUND);
     }
     if (!r.ok) {
       throw new GhlError(`opp update failed — HTTP ${r.code}: ${(r.txt || '').slice(0, 200)}`, EXIT.API);

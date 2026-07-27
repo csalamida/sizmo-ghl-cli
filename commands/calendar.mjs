@@ -4,6 +4,7 @@
 // DELETEs that one record — it can never bulk-delete.
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
+import { parseNumericFlag } from '../lib/numeric.mjs';
 
 export const meta = {
   name: 'calendar',
@@ -45,11 +46,20 @@ async function createCalendar(args, ctx) {
     );
   }
 
+  // Same NaN-to-null class as opp's --value: Number('abc') is NaN and JSON.stringify(NaN) is null,
+  // so a typo'd --slot-min sent {"slotDuration":null} instead of refusing. Validated here, before
+  // the confirm preview, so the bad input never reaches a screen the user can approve.
+  const slotDuration = args['slot-min'] != null
+    ? parseNumericFlag(args['slot-min'], {
+        flag: '--slot-min', context: 'calendar create', integer: true, min: 1, example: '30',
+      })
+    : null;
+
   const body = {
     locationId: ctx.cfg.loc,
     name: String(name),
     ...(args.type ? { calendarType: String(args.type) } : {}),
-    ...(args['slot-min'] != null ? { slotDuration: Number(args['slot-min']), slotDurationUnit: 'mins' } : {}),
+    ...(slotDuration != null ? { slotDuration, slotDurationUnit: 'mins' } : {}),
     ...(teamMemberIds.length > 0 ? { teamMembers: teamMemberIds.map(userId => ({ userId })) } : {}),
   };
 

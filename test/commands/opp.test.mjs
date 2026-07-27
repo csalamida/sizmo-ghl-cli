@@ -469,3 +469,27 @@ test('opp update: new flags round-trip into the rerun command', async () => {
     assert.ok(cmd.includes(frag), `rerun must carry ${frag} — got: ${cmd}`);
   }
 });
+
+// ── opp update: 404 → NOTFOUND ────────────────────────────────────────────────
+// opp update was the ONLY update verb in the CLI that did not map 404. contact, field, value and
+// appointment all did, on both their GET and their PUT. A typo'd id therefore exited 1 (API — "the
+// server broke, retry") instead of 4 (NOTFOUND — "your id is wrong, do not retry"). sizmo's primary
+// consumer is an agent branching on exit codes, and retry-on-1 is a sane agent policy; retrying a
+// permanently-bad id forever is not. Found 2026-07-27 inducing failure paths.
+
+test('opp update: 404 → EXIT.NOTFOUND, not EXIT.API', async () => {
+  const fixture = { 'PUT /opportunities/ghost-1': { status: 404, j: { message: 'not found' } } };
+  const { ctx } = makeFakeCtx({ confirmed: true, model: MODEL, fixture });
+  await assert.rejects(
+    () => run({ _: ['update', 'ghost-1'], status: 'won' }, ctx),
+    (e) => e.code === EXIT.NOTFOUND && /ghost-1/.test(e.message),
+    'a nonexistent opportunity id must exit NOTFOUND(4) and name the id, never API(1)');
+});
+
+test('opp update: 500 still → EXIT.API (404 mapping must not swallow real server errors)', async () => {
+  const fixture = { 'PUT /opportunities/opp-1': { status: 500, j: { message: 'boom' } } };
+  const { ctx } = makeFakeCtx({ confirmed: true, model: MODEL, fixture });
+  await assert.rejects(
+    () => run({ _: ['update', 'opp-1'], status: 'won' }, ctx),
+    (e) => e.code === EXIT.API);
+});
