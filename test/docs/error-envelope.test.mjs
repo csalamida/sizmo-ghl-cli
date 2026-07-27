@@ -76,9 +76,16 @@ test('business specifically: no return-style error paths remain', () => {
   const src = sourceOf('business');
   assert.equal(returnsAuthOrApi(src), false, 'business.mjs must throw, not return, on AUTH/API');
   assert.ok(/import \{ GhlError/.test(src), 'business.mjs must import GhlError');
-  assert.ok(/e instanceof GhlError\) throw e/.test(src),
-    'business.mjs catch blocks must rethrow GhlError — otherwise a deliberate 401-with-remediation ' +
-    'gets swallowed and downgraded to a generic API error, losing both the code and the fix line.');
+  // COUNT, not presence. A first draft asserted only that a rethrow existed somewhere, and a
+  // mutation removing ONE of the three passed cleanly — the swallow bug would have returned on
+  // that single path invisibly. Every catch must rethrow, so the counts have to match.
+  const catches   = (src.match(/\}\s*catch\s*\(/g)   || []).length;
+  const rethrows  = (src.match(/instanceof GhlError\)\s*throw e/g) || []).length;
+  assert.equal(rethrows, catches,
+    `business.mjs has ${catches} catch block(s) but only ${rethrows} rethrow GhlError. Any catch ` +
+    `that does not rethrow swallows a deliberate 401-with-remediation and downgrades it to a ` +
+    `generic API error, losing both the exit code and the fix line.`);
+  assert.ok(catches > 0, 'expected business.mjs to still have transport-error catches');
 });
 
 test('the return-style read list only shrinks', () => {
