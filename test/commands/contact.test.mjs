@@ -250,3 +250,109 @@ test('contact create: rerun command round-trips every optional flag', async () =
     assert.ok(cmd.includes(frag), `confirmCommand must carry ${frag} — got: ${cmd}`);
   }
 });
+
+// ── contact update (2026-07-27) ──────────────────────────────────────────────
+// Distinct from upsert, which people conflate: upsert MATCHES on email/phone and rewrites what it
+// finds; update targets a contact you already hold the id for. Every sizmo read hands you contact
+// ids (segment, focus, brief, triage) and until now there was no way to act on one.
+
+const C_ID = 'cid-999';
+const C_GET = `GET /contacts/${C_ID}`;
+const C_PUT = `PUT /contacts/${C_ID}`;
+const curContact = { status: 200, j: { contact: { id: C_ID, firstName: 'Ana', lastName: 'Cruz', email: 'old@x.com', tags: ['vip', 'lead'] } } };
+
+test('contact update: --tag is REFUSED — the endpoint overwrites the whole tag list', async () => {
+  // The endpoint's own schema warns `tags` "overwrites all tags". That is exactly the bug sizmo
+  // shipped in upsert and fixed in 2.4.7 (a contact with two tags was left with one). Refusing and
+  // routing to `sizmo tag` is the fix; re-implementing the merge here would reintroduce the risk.
+  const { ctx, getCalledPaths } = makeFakeCtx({ confirmed: true, fixture: { [C_GET]: curContact } });
+  await assert.rejects(
+    () => run({ _: ['update', C_ID], tag: 'newtag' }, ctx),
+    (e) => e.code === EXIT.USAGE && /OVERWRITES/.test(e.message) && /sizmo tag/.test(String(e.remediation)));
+  assert.equal(getCalledPaths().length, 0, 'must refuse before touching the API');
+});
+
+test('contact update: never sends a tags field even when the contact has tags', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true, fixture: { [C_GET]: curContact, [C_PUT]: { status: 200, j: {} } },
+  });
+  await run({ _: ['update', C_ID], email: 'new@x.com' }, ctx);
+  ctx.out.flush();
+  const wrote = getCalledBodies().find(b => b.method === 'PUT');
+  assert.equal('tags' in wrote.body, false, 'a tags key here would wipe the existing list');
+});
+
+test('contact update: --company is refused (update endpoint has no companyName)', async () => {
+  const { ctx, getCalledPaths } = makeFakeCtx({ confirmed: true, fixture: { [C_GET]: curContact } });
+  await assert.rejects(
+    () => run({ _: ['update', C_ID], company: 'Acme' }, ctx),
+    (e) => e.code === EXIT.USAGE && /no companyName/.test(e.message));
+  assert.equal(getCalledPaths().length, 0);
+});
+
+test('contact update: only the passed fields are sent (partial update)', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true, fixture: { [C_GET]: curContact, [C_PUT]: { status: 200, j: {} } },
+  });
+  await run({ _: ['update', C_ID], email: 'new@x.com', first: 'Anna' }, ctx);
+  ctx.out.flush();
+  const wrote = getCalledBodies().find(b => b.method === 'PUT');
+  assert.deepEqual(Object.keys(wrote.body).sort(), ['email', 'firstName']);
+  assert.equal(wrote.body.firstName, 'Anna');
+});
+
+test('contact update: flags map to their real API field names', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true, fixture: { [C_GET]: curContact, [C_PUT]: { status: 200, j: {} } },
+  });
+  await run({ _: ['update', C_ID], last: 'Reyes', 'assigned-user': 'usr-3',
+              'postal-code': '1000', dob: '1990-09-25', address: '1 Main St' }, ctx);
+  ctx.out.flush();
+  const { body } = getCalledBodies().find(b => b.method === 'PUT');
+  assert.equal(body.lastName, 'Reyes');
+  assert.equal(body.assignedTo, 'usr-3', 'assignedTo, not assignedUser');
+  assert.equal(body.postalCode, '1000', 'postalCode, not postal_code');
+  assert.equal(body.dateOfBirth, '1990-09-25', 'dateOfBirth, not dob');
+  assert.equal(body.address1, '1 Main St', 'address1, not address');
+});
+
+test('contact update: --no-dnd sends dnd:false (clearing is only possible on update)', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({
+    confirmed: true, fixture: { [C_GET]: curContact, [C_PUT]: { status: 200, j: {} } },
+  });
+  await run({ _: ['update', C_ID], 'no-dnd': true }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies().find(b => b.method === 'PUT').body.dnd, false);
+});
+
+test('contact update: --dnd and --no-dnd together are refused', async () => {
+  const { ctx } = makeFakeCtx({ confirmed: true, fixture: { [C_GET]: curContact } });
+  await assert.rejects(() => run({ _: ['update', C_ID], dnd: true, 'no-dnd': true }, ctx),
+    (e) => e.code === EXIT.USAGE && /contradict/.test(e.message));
+});
+
+test('contact update: no fields → USAGE, nothing fetched', async () => {
+  const { ctx, getCalledPaths } = makeFakeCtx({ confirmed: true });
+  await assert.rejects(() => run({ _: ['update', C_ID] }, ctx), (e) => e.code === EXIT.USAGE);
+  assert.equal(getCalledPaths().length, 0);
+});
+
+test('contact update: unknown id → NOTFOUND, no PUT fired', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({
+    confirmed: true, fixture: { [C_GET]: { status: 404, j: {} } },
+  });
+  await assert.rejects(() => run({ _: ['update', C_ID], email: 'x@y.com' }, ctx),
+    (e) => e.code === EXIT.NOTFOUND);
+  assert.equal(getCalledWrites().length, 0);
+});
+
+test('contact update: preview shows before → after and states tags are untouched', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [C_GET]: curContact } });
+  const code = await run({ _: ['update', C_ID], email: 'new@x.com' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  const changes = JSON.parse(getPrinted()).data.changes.join('\n');
+  assert.match(changes, /old@x\.com/, 'must show what is being replaced');
+  assert.match(changes, /new@x\.com/);
+  assert.match(changes, /tags untouched/);
+});

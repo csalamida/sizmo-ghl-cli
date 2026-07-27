@@ -107,6 +107,10 @@ Every flag name below is verified against the actual source. If a flag ever look
 # Contacts
 sizmo contact create --email a@b.co --name "Ana Cruz" --confirm
 sizmo contact upsert --email a@b.co --name "Ana Cruz" --confirm   # de-dupes on email/phone; merges
+sizmo contact update <contactId> --email new@x.com --confirm    # edit a contact you have the ID for
+#   update ≠ upsert: upsert MATCHES on email/phone; update targets a known id (every read gives you ids).
+#   --tag is REFUSED on update — that endpoint overwrites the whole tag list. Use `sizmo tag` instead.
+#   --no-dnd clears do-not-disturb; --company is not accepted (update endpoint has no companyName).
 # provenance + ownership + compliance — create AND upsert both accept these:
 #   --source "webinar-jul"     where the lead came from (without it every sizmo-created
 #                              contact is indistinguishable from a manual entry)

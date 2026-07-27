@@ -18,7 +18,7 @@ A full terminal interface to one GoHighLevel location — **read it, build it, b
 | **See** (read-only) | `brief` · `snapshot` · `triage` · `pipeline` · `receivables` · `reconcile` · `booked-not-paid` · `noshow` · `focus` · `segment` · `crm` · `list` (12 entities) · `forms` · `surveys` · `transactions` |
 | **Version** (read-only) | `export` (location → one diffable file) · `diff` (file vs live, or file vs file — *what changed?*) |
 | **Act** | `tag` · `note` · `opp` (create/move/update) · `appointment` (book/cancel) · `send` (SMS/email) |
-| **Build** | `contact create` · `contact upsert` (de-dupe) · `field create` · `field update` · `value create` · `value update` · `calendar create` · `business create` |
+| **Build** | `contact create` · `contact upsert` (de-dupe) · `contact update` · `field create` · `field update` · `value create` · `value update` · `calendar create` · `business create` |
 | **Delete** (single-target, accident-proof) | `contact delete` · `field delete` · `value delete` · `calendar delete` · `business delete` |
 | **Bill** (scope-gated) | `invoice draft` · `invoice send` (pay-link — *not* a card charge) |
 | **Operate** | `init` · `doctor` · `open` · `completions` · `api` · multi-client profiles |

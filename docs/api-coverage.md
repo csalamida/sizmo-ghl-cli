@@ -12,16 +12,15 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 
 | | count | share |
 |---|---:|---:|
-| Covered by a sizmo command | 23 | 42% |
+| Covered by a sizmo command | 24 | 44% |
 | Deliberately not implemented | 14 | 25% |
-| **Unreviewed — needs a decision** | **18** | **33%** |
+| **Unreviewed — needs a decision** | **17** | **31%** |
 | Inventory total | 55 | |
 
 ## Unreviewed — needs a decision
 
 | Operation | Method | Path | Domain |
 |---|---|---|---|
-| `update-contact` | PUT | `/contacts/{contactId}` | contacts |
 | `update-note` | PUT | `/contacts/{contactId}/notes/{id}` | contacts |
 | `delete-note` | DELETE | `/contacts/{contactId}/notes/{id}` | contacts |
 | `get-all-notes` | GET | `/contacts/{contactId}/notes` | contacts |
@@ -64,6 +63,7 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 | Operation | Method | Path | Reached by |
 |---|---|---|---|
 | `create-contact` | POST | `/contacts/` | contact |
+| `update-contact` | PUT | `/contacts/{contactId}` | contact |
 | `add-tags` | POST | `/contacts/{contactId}/tags` | tag |
 | `remove-tags` | DELETE | `/contacts/{contactId}/tags` | tag |
 | `create-note` | POST | `/contacts/{contactId}/notes` | note |

@@ -23,6 +23,13 @@ export const meta = {
     { name: '--timezone',      type: 'string', desc: 'IANA timezone, e.g. Asia/Manila — affects booking times' },
     { name: '--country',       type: 'string', desc: 'ISO country code, e.g. PH — affects phone normalisation' },
     { name: '--dnd',           type: 'bool',   desc: 'mark do-not-disturb: suppresses messaging to this contact' },
+    { name: '--no-dnd',        type: 'bool',   desc: 'CLEAR do-not-disturb (update only) — makes the contact messageable again' },
+    { name: '--website',       type: 'string', desc: 'website URL (update)' },
+    { name: '--address',       type: 'string', desc: 'street address (update)' },
+    { name: '--city',          type: 'string', desc: 'city (update)' },
+    { name: '--state',         type: 'string', desc: 'state/region (update)' },
+    { name: '--postal-code',   type: 'string', desc: 'postal code (update)' },
+    { name: '--dob',           type: 'string', desc: 'date of birth YYYY-MM-DD (update)' },
   ],
   readOnly: false,
 };
@@ -33,8 +40,9 @@ export async function run(args, ctx) {
   const sub = args._?.[0];
   if (sub === 'create') return createContact(args, ctx);
   if (sub === 'upsert') return upsertContact(args, ctx);
+  if (sub === 'update') return updateContact(args, ctx);
   if (sub === 'delete') return deleteContact(args, ctx);
-  throw new GhlError('usage: sizmo contact create … | sizmo contact upsert --email|--phone … | sizmo contact delete <contactId>', EXIT.USAGE, 'sizmo contact --help');
+  throw new GhlError('usage: sizmo contact create … | sizmo contact upsert --email|--phone … | sizmo contact update <contactId> … | sizmo contact delete <contactId>', EXIT.USAGE, 'sizmo contact --help');
 }
 
 // Shared so create and upsert cannot drift apart. They built identical bodies by copy-paste, which
@@ -192,6 +200,100 @@ async function upsertContact(args, ctx) {
   const created = r.j?.new === true;
   ctx.out.data({ status: 'ok', command: 'contact upsert', contactId: id, created, updated: !created });
   ctx.out.line(`  contact ${created ? 'created' : 'updated'} · id ${id ?? '(see response)'}`);
+  return EXIT.OK;
+}
+
+// PUT /contacts/{contactId}. Distinct from upsert, which people conflate: upsert MATCHES on
+// email/phone and rewrites whatever it finds; update targets a contact you already hold the id for.
+// Every sizmo read hands you contact ids (segment, focus, brief, triage), and until now there was
+// no way to act on one — you had to know the contact's email and route through upsert instead.
+//
+// --tag is REFUSED here on purpose. The endpoint's own schema warns that `tags` "overwrites all
+// tags", which is precisely the bug sizmo shipped in upsert and fixed in 2.4.7 (a contact with two
+// existing tags was left with only the new one). `sizmo tag` uses the dedicated add/remove
+// endpoints and cannot wipe history; routing there is the fix, not re-implementing the merge.
+//
+// --company is absent because the UPDATE endpoint does not accept companyName, though create does.
+async function updateContact(args, ctx) {
+  const id = args._?.[1];
+  if (!id || !String(id).trim()) {
+    throw new GhlError('usage: sizmo contact update <contactId> [--email] [--phone] [--first] …',
+      EXIT.USAGE, 'sizmo segment --tag X   # to find contact ids');
+  }
+  if (args.tag != null) {
+    throw new GhlError(
+      'contact update does not take --tag: this endpoint OVERWRITES a contact\'s entire tag list, ' +
+      'which would silently erase tags it did not know about',
+      EXIT.USAGE,
+      `sizmo tag ${id} --add "<tag>" --confirm   # adds without removing anything`);
+  }
+  if (args.company != null) {
+    throw new GhlError(
+      'contact update does not take --company — the update endpoint accepts no companyName field',
+      EXIT.USAGE,
+      'set it at creation with `sizmo contact create --company`, or edit the contact in GoHighLevel');
+  }
+
+  const FIELDS = {
+    first: 'firstName', last: 'lastName', name: 'name', email: 'email', phone: 'phone',
+    source: 'source', 'assigned-user': 'assignedTo', timezone: 'timezone', country: 'country',
+    website: 'website', address: 'address1', city: 'city', state: 'state', 'postal-code': 'postalCode',
+    dob: 'dateOfBirth',
+  };
+  const body = {};
+  for (const [flag, apiField] of Object.entries(FIELDS)) {
+    if (args[flag] != null) body[apiField] = String(args[flag]);
+  }
+  // dnd is tri-state on update: set it, clear it, or leave it alone. create only ever sets it,
+  // because a new contact has nothing to clear.
+  if (args.dnd) body.dnd = true;
+  if (args['no-dnd']) body.dnd = false;
+  if (args.dnd && args['no-dnd']) {
+    throw new GhlError('contact update: --dnd and --no-dnd contradict each other', EXIT.USAGE);
+  }
+  if (Object.keys(body).length === 0) {
+    throw new GhlError(
+      `contact update requires at least one field to change: ${Object.keys(FIELDS).map(f => '--' + f).join(', ')}, --dnd, --no-dnd`,
+      EXIT.USAGE);
+  }
+
+  // Fetch first: proves the id exists before writing, and lets the preview show what is being
+  // replaced rather than only what it is being replaced with.
+  const got = await ctx.http.get(`/contacts/${encodeURIComponent(id)}`);
+  if (got.code === 401 || got.code === 403) throw new GhlError(`HTTP ${got.code} — your PIT lacks contacts.write`, EXIT.AUTH, SCOPE_FIX);
+  if (got.code === 404) throw new GhlError(`no contact with id ${id} — nothing changed`, EXIT.NOTFOUND);
+  if (!got.ok) throw new GhlError(`could not read contact ${id} — HTTP ${got.code}`, EXIT.API);
+  const cur = got.j?.contact ?? got.j ?? {};
+
+  const who = [cur.firstName, cur.lastName].filter(Boolean).join(' ') || cur.name || cur.email || id;
+  const changes = [`Update contact ${id} (${who})`];
+  for (const [flag, apiField] of Object.entries(FIELDS)) {
+    if (args[flag] == null) continue;
+    const before = cur[apiField];
+    changes.push(`  ${apiField}: ${before ? `"${before}"  →  ` : ''}"${args[flag]}"`);
+  }
+  if (args.dnd)        changes.push('  ⚠ DND ON — this contact will stop receiving messages');
+  if (args['no-dnd'])  changes.push('  ⚠ DND OFF — this contact becomes messageable again');
+  changes.push('  (tags untouched — use `sizmo tag` to change them)');
+
+  const parts = [`sizmo contact update ${id}`];
+  for (const flag of Object.keys(FIELDS)) {
+    if (args[flag] != null) parts.push(`--${flag} "${String(args[flag]).replace(/"/g, '\\"')}"`);
+  }
+  if (args.dnd)       parts.push('--dnd');
+  if (args['no-dnd']) parts.push('--no-dnd');
+  const rerunCommand = parts.join(' ') + ' --confirm';
+
+  const gate = requireConfirm({ command: 'contact update', changes, rerunCommand }, ctx);
+  if (!gate.proceed) return gate.code;
+
+  const r = await ctx.http.put(`/contacts/${encodeURIComponent(id)}`, body);
+  if (r.code === 401 || r.code === 403) throw new GhlError(`HTTP ${r.code} — your PIT lacks contacts.write`, EXIT.AUTH, SCOPE_FIX);
+  if (r.code === 404) throw new GhlError(`no contact with id ${id} — nothing changed`, EXIT.NOTFOUND);
+  if (!r.ok) throw new GhlError(`contact update failed — HTTP ${r.code}: ${(r.txt || '').slice(0, 200).replace(/\s+/g, ' ')}`, EXIT.API);
+
+  ctx.out.data({ status: 'ok', command: 'contact update', contactId: id, changed: Object.keys(body) });
+  ctx.out.line(`  contact ${id} updated — ${Object.keys(body).length} field(s), tags untouched`);
   return EXIT.OK;
 }
 

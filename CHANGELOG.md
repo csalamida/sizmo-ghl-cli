@@ -45,6 +45,23 @@ Because a scheduled send fires later with nobody watching — unlike every other
 the confirm preview states it does **not** send now, names the exact fire time, and prints the
 `send cancel` command needed to call it back.
 
+### Added — `sizmo contact update`
+
+`contact` had create, upsert and delete but no way to edit a contact you already hold the id for.
+`upsert` is **not** the same verb — it *matches* on email/phone and rewrites whatever it finds.
+Every sizmo read hands you contact ids (`segment`, `focus`, `brief`, `triage`), and acting on one
+meant knowing that contact's email and routing through upsert instead.
+
+**`--tag` is refused here.** The endpoint's own schema warns that `tags` "overwrites all tags" —
+precisely the bug sizmo shipped in upsert and fixed in 2.4.7, where a contact with two existing tags
+was left holding only the new one. `sizmo tag` uses the dedicated add/remove endpoints and cannot
+erase history, so `contact update` points there rather than re-implementing a merge that could get
+it wrong again. A test asserts no `tags` key is ever sent, even when the contact has tags.
+
+`--company` is likewise refused: the update endpoint accepts no `companyName`, though create does.
+`--no-dnd` is new and update-only — clearing do-not-disturb is meaningless on a contact that does
+not exist yet.
+
 ### Added — `sizmo field update`
 
 Same gap `value` had, with worse consequences. `field` shipped create + delete only, so renaming a
