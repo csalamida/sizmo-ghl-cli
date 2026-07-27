@@ -6,8 +6,16 @@
 // SECURITY: create/delete are confirm-gated. Money never moves here.
 // Businesses link to contacts as accounts (B2B use case).
 
-import { EXIT } from '../lib/errors.mjs';
+import { GhlError, EXIT } from '../lib/errors.mjs';
 import { requireConfirm } from '../lib/confirm.mjs';
+
+// Same remediation shape every other write command uses. business.mjs printed a bare line and
+// RETURNED the exit code instead of throwing, which meant `--json` emitted a success-shaped
+// envelope on a hard 401: degraded:false, warnings:[], no error, no remediation. An agent parsing
+// the envelope saw a clean no-op; only the exit code disagreed. Throwing routes through the CLI's
+// error handler, which is what produces {error, code, remediation}.
+const SCOPE_FIX_W = 'GoHighLevel → Settings → Private Integrations → edit your PIT → add businesses.write scope';
+const SCOPE_FIX_R = 'GoHighLevel → Settings → Private Integrations → edit your PIT → add businesses.readonly scope';
 
 export const meta = {
   name: 'business',
@@ -44,11 +52,9 @@ async function listBusinesses(ctx) {
     // httpCode present = a real (non-401/403) API error reached the PIT — not a scope issue,
     // even though sync marks it "blocked" the same way as a real 401/403.
     if (ents.businesses.httpCode) {
-      ctx.out.line(`✖ businesses — API error ${ents.businesses.httpCode} (not a scope issue — please report this)`);
-      return EXIT.API;
+      throw new GhlError(`businesses — API error ${ents.businesses.httpCode} (not a scope issue — please report this)`, EXIT.API);
     }
-    ctx.out.line('✖ businesses blocked — needs businesses.readonly scope');
-    return EXIT.AUTH;
+    throw new GhlError('businesses blocked — your PIT lacks businesses.readonly', EXIT.AUTH, SCOPE_FIX_R);
   }
 
   const items = ents.businesses?.items ?? [];
@@ -106,17 +112,20 @@ async function createBusiness(parsed, ctx) {
   try {
     const r = await ctx.http.post(`/businesses/`, body);
     if (r.code === 401 || r.code === 403) {
-      ctx.out.line('✖ businesses.write scope required — add in GHL Private Integrations');
-      return EXIT.AUTH;
+      throw new GhlError(`HTTP ${r.code} — your PIT lacks businesses.write`, EXIT.AUTH, SCOPE_FIX_W);
     }
     if (!r.ok) {
-      ctx.out.line(`✖ API error ${r.code}: ${r.j?.message ?? r.j?.msg ?? 'unknown'}`);
-      return EXIT.API;
+      throw new GhlError(`business create failed — HTTP ${r.code}: ${r.j?.message ?? r.j?.msg ?? 'unknown'}`, EXIT.API);
     }
     result = r.j?.business ?? r.j;
   } catch (e) {
-    ctx.out.warn(`could not create business: ${e.message}`);
-    return EXIT.API;
+    // Deliberate GhlErrors raised above must pass through — swallowing them here downgrades a
+    // precise 401-plus-remediation into a generic API error and loses the fix line.
+    if (e instanceof GhlError) throw e;
+    // Transport failure (DNS, timeout, socket). Throw rather than warn-and-return so it gets the
+    // same {error, code} envelope as everything else — warn alone leaves degraded:false and no
+    // `error` field, which reads as success to anything parsing --json.
+    throw new GhlError(`could not create business: ${e.message}`, EXIT.API);
   }
 
   const id = result?.id ?? result?._id;
@@ -144,21 +153,23 @@ async function deleteBusiness(parsed, ctx) {
   try {
     const r = await ctx.http.get(`/businesses/${encodeURIComponent(id)}`);
     if (r.code === 401 || r.code === 403) {
-      ctx.out.line('✖ businesses.readonly scope required');
-      return EXIT.AUTH;
+      throw new GhlError(`HTTP ${r.code} — your PIT lacks businesses.readonly`, EXIT.AUTH, SCOPE_FIX_R);
     }
     if (r.code === 404) {
-      ctx.out.line(`✖ business not found: ${id}`);
-      return EXIT.NOTFOUND;
+      throw new GhlError(`no business with id ${id} — nothing deleted`, EXIT.NOTFOUND);
     }
     if (!r.ok) {
-      ctx.out.line(`✖ API error ${r.code}`);
-      return EXIT.API;
+      throw new GhlError(`business lookup failed — HTTP ${r.code}`, EXIT.API);
     }
     biz = r.j?.business ?? r.j;
   } catch (e) {
-    ctx.out.warn(`could not fetch business: ${e.message}`);
-    return EXIT.API;
+    // Deliberate GhlErrors raised above must pass through — swallowing them here downgrades a
+    // precise 401-plus-remediation into a generic API error and loses the fix line.
+    if (e instanceof GhlError) throw e;
+    // Transport failure (DNS, timeout, socket). Throw rather than warn-and-return so it gets the
+    // same {error, code} envelope as everything else — warn alone leaves degraded:false and no
+    // `error` field, which reads as success to anything parsing --json.
+    throw new GhlError(`could not fetch business: ${e.message}`, EXIT.API);
   }
 
   const name = biz?.name ?? id;
@@ -173,20 +184,22 @@ async function deleteBusiness(parsed, ctx) {
   try {
     const r = await ctx.http.delete(`/businesses/${encodeURIComponent(id)}`);
     if (r.code === 401 || r.code === 403) {
-      ctx.out.line('✖ businesses.write scope required');
-      return EXIT.AUTH;
+      throw new GhlError(`HTTP ${r.code} — your PIT lacks businesses.write`, EXIT.AUTH, SCOPE_FIX_W);
     }
     if (r.code === 404) {
-      ctx.out.line(`✖ business not found (already deleted?): ${id}`);
-      return EXIT.NOTFOUND;
+      throw new GhlError(`no business with id ${id} (already deleted?) — nothing changed`, EXIT.NOTFOUND);
     }
     if (!r.ok) {
-      ctx.out.line(`✖ API error ${r.code}: ${r.j?.message ?? 'unknown'}`);
-      return EXIT.API;
+      throw new GhlError(`business delete failed — HTTP ${r.code}: ${r.j?.message ?? 'unknown'}`, EXIT.API);
     }
   } catch (e) {
-    ctx.out.warn(`could not delete business: ${e.message}`);
-    return EXIT.API;
+    // Deliberate GhlErrors raised above must pass through — swallowing them here downgrades a
+    // precise 401-plus-remediation into a generic API error and loses the fix line.
+    if (e instanceof GhlError) throw e;
+    // Transport failure (DNS, timeout, socket). Throw rather than warn-and-return so it gets the
+    // same {error, code} envelope as everything else — warn alone leaves degraded:false and no
+    // `error` field, which reads as success to anything parsing --json.
+    throw new GhlError(`could not delete business: ${e.message}`, EXIT.API);
   }
 
   ctx.out.data({ deleted: true, id, name });

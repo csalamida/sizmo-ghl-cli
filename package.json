@@ -1,7 +1,7 @@
 {
   "name": "sizmo",
   "version": "2.4.9",
-  "description": "Unofficial GoHighLevel CLI — read your CRM and make confirm-gated, scope-gated changes from the terminal (build, send, delete — only what your PIT allows). Not affiliated with HighLevel.",
+  "description": "Unofficial GoHighLevel CLI \u2014 read your CRM and make confirm-gated, scope-gated changes from the terminal (build, send, delete \u2014 only what your PIT allows). Not affiliated with HighLevel.",
   "type": "module",
   "bin": {
     "sizmo": "bin/sizmo.mjs"
@@ -36,6 +36,7 @@
     "lib/",
     "commands/",
     "examples/",
+    "!examples/demo/*.gif",
     "SKILL.md",
     "INSTALL.md",
     "SECURITY.md",

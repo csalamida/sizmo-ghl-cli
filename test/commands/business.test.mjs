@@ -57,22 +57,20 @@ test('business list: empty array → EXIT.OK with zero items', async () => {
   assert.equal(JSON.parse(getPrinted()).data.items.length, 0);
 });
 
-test('business list: blocked without httpCode → EXIT.AUTH (scope issue)', async () => {
+test('business list: blocked without httpCode → throws AUTH (scope issue)', async () => {
+  // Contract changed 2026-07-27: business throws GhlError like every other write command. The old
+  // return-style meant --json emitted a success-shaped envelope on a hard 401.
   const model = { entities: { businesses: { blocked: true } } };
   const { ctx } = makeFakeCtx({ model });
-  const code = await run({ _: ['list'] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: ['list'] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
-test('business list: blocked WITH httpCode → EXIT.API (real API error, not scope)', async () => {
+test('business list: blocked WITH httpCode → throws API (real API error, not scope)', async () => {
   // The distinction matters: sync marks both the same way, but a 500 is not a missing scope and
   // telling the user to add a scope would send them down the wrong path.
   const model = { entities: { businesses: { blocked: true, httpCode: 500 } } };
   const { ctx } = makeFakeCtx({ model });
-  const code = await run({ _: ['list'] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.API);
+  await assert.rejects(() => run({ _: ['list'] }, ctx), (e) => e.code === EXIT.API);
 });
 
 // ── unknown subcommand ────────────────────────────────────────────────────────
@@ -168,9 +166,7 @@ test('business create: 401 → EXIT.AUTH', async () => {
     confirmed: true,
     fixture: { 'POST /businesses/': { status: 401, j: {} } },
   });
-  const code = await run({ _: ['create'], name: 'Acme' }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: ['create'], name: 'Acme' }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('business create: 403 → EXIT.AUTH', async () => {
@@ -178,9 +174,7 @@ test('business create: 403 → EXIT.AUTH', async () => {
     confirmed: true,
     fixture: { 'POST /businesses/': { status: 403, j: {} } },
   });
-  const code = await run({ _: ['create'], name: 'Acme' }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: ['create'], name: 'Acme' }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('business create: 422 → EXIT.API', async () => {
@@ -188,9 +182,7 @@ test('business create: 422 → EXIT.API', async () => {
     confirmed: true,
     fixture: { 'POST /businesses/': { status: 422, j: { message: 'name taken' } } },
   });
-  const code = await run({ _: ['create'], name: 'Acme' }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.API);
+  await assert.rejects(() => run({ _: ['create'], name: 'Acme' }, ctx), (e) => e.code === EXIT.API);
 });
 
 test('business create: 200 but no id in response → still EXIT.OK, id null', async () => {
@@ -221,9 +213,7 @@ test('business delete: fetch 404 → EXIT.NOTFOUND, no DELETE fired', async () =
     confirmed: true,
     fixture: { [`GET /businesses/${BIZ_ID}`]: { status: 404, j: {} } },
   });
-  const code = await run({ _: ['delete', BIZ_ID] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.NOTFOUND);
+  await assert.rejects(() => run({ _: ['delete', BIZ_ID] }, ctx), (e) => e.code === EXIT.NOTFOUND);
   assert.equal(getCalledWrites().length, 0);
 });
 
@@ -232,9 +222,7 @@ test('business delete: fetch 401 → EXIT.AUTH, no DELETE fired', async () => {
     confirmed: true,
     fixture: { [`GET /businesses/${BIZ_ID}`]: { status: 401, j: {} } },
   });
-  const code = await run({ _: ['delete', BIZ_ID] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: ['delete', BIZ_ID] }, ctx), (e) => e.code === EXIT.AUTH);
   assert.equal(getCalledWrites().length, 0);
 });
 
@@ -243,9 +231,7 @@ test('business delete: fetch 500 → EXIT.API, no DELETE fired', async () => {
     confirmed: true,
     fixture: { [`GET /businesses/${BIZ_ID}`]: { status: 500, j: {} } },
   });
-  const code = await run({ _: ['delete', BIZ_ID] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.API);
+  await assert.rejects(() => run({ _: ['delete', BIZ_ID] }, ctx), (e) => e.code === EXIT.API);
   assert.equal(getCalledWrites().length, 0);
 });
 
@@ -302,9 +288,7 @@ test('business delete: DELETE returns 404 → EXIT.NOTFOUND (already deleted)', 
       [`DELETE /businesses/${BIZ_ID}`]: { status: 404, j: {} },
     },
   });
-  const code = await run({ _: ['delete', BIZ_ID] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.NOTFOUND);
+  await assert.rejects(() => run({ _: ['delete', BIZ_ID] }, ctx), (e) => e.code === EXIT.NOTFOUND);
 });
 
 test('business delete: DELETE returns 403 → EXIT.AUTH', async () => {
@@ -315,9 +299,7 @@ test('business delete: DELETE returns 403 → EXIT.AUTH', async () => {
       [`DELETE /businesses/${BIZ_ID}`]: { status: 403, j: {} },
     },
   });
-  const code = await run({ _: ['delete', BIZ_ID] }, ctx);
-  ctx.out.flush();
-  assert.equal(code, EXIT.AUTH);
+  await assert.rejects(() => run({ _: ['delete', BIZ_ID] }, ctx), (e) => e.code === EXIT.AUTH);
 });
 
 test('business delete: id is URL-encoded in both fetch and delete paths', async () => {

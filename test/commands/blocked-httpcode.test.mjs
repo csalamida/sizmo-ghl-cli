@@ -18,20 +18,23 @@ function makeCtx(entities) {
   return { ctx, getPrinted: () => printed };
 }
 
-test('business list: real scope block → "needs businesses.readonly scope", exit AUTH', async () => {
-  const { ctx, getPrinted } = makeCtx({ businesses: { blocked: true, scope: 'businesses.readonly' } });
-  const code = await runBusiness({ _: ['list'] }, ctx);
-  assert.equal(code, EXIT.AUTH);
-  assert.match(getPrinted(), /needs businesses\.readonly scope/);
+test('business list: real scope block → throws AUTH naming businesses.readonly', async () => {
+  // Contract changed 2026-07-27: business now THROWS GhlError like every other write command,
+  // instead of printing and returning the code. Returning meant `--json` emitted a success-shaped
+  // envelope (degraded:false, warnings:[], no error, no remediation) on a hard 401.
+  const { ctx } = makeCtx({ businesses: { blocked: true, scope: 'businesses.readonly' } });
+  await assert.rejects(
+    () => runBusiness({ _: ['list'] }, ctx),
+    (e) => e.code === EXIT.AUTH && /businesses\.readonly/.test(e.message));
 });
 
-test('business list: non-auth API error (httpCode) → real error, not "needs <scope>", exit API', async () => {
-  const { ctx, getPrinted } = makeCtx({ businesses: { blocked: true, scope: 'businesses.readonly', httpCode: 422 } });
-  const code = await runBusiness({ _: ['list'] }, ctx);
-  assert.equal(code, EXIT.API);
-  const out = getPrinted();
-  assert.match(out, /API error 422/);
-  assert.doesNotMatch(out, /needs businesses\.readonly/);
+test('business list: non-auth API error (httpCode) → throws API, never blames the scope', async () => {
+  const { ctx } = makeCtx({ businesses: { blocked: true, scope: 'businesses.readonly', httpCode: 422 } });
+  await assert.rejects(
+    () => runBusiness({ _: ['list'] }, ctx),
+    (e) => e.code === EXIT.API
+        && /API error 422/.test(e.message)
+        && !/needs businesses\.readonly/.test(e.message));
 });
 
 test('surveys: real scope block → "needs surveys.readonly scope", exit AUTH', async () => {
