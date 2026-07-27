@@ -218,3 +218,18 @@ test('CLAIM: the ask confirm-leg description covers BOTH --confirm paths', () =>
       `previews first.`);
   }
 });
+
+test('CLAIM: the profile temp file cannot be written at anything but 0600', () => {
+  // SECURITY.md: "a temp file created at mode 0600 then renamed — no window where it's
+  // world-readable". Node honours `mode` only when writeFileSync CREATES the file, so that promise
+  // held only when no temp already existed. `flag: 'wx'` makes creation the only possible outcome:
+  // if anything is already at that path the write throws rather than inheriting its permissions.
+  const src = readFileSync(join(REPO, 'lib', 'config.mjs'), 'utf8');
+  assert.match(src, /flag:\s*'wx'/,
+    "saveProfiles must create its temp exclusively. Without flag:'wx', writeFileSync silently " +
+    "reuses an existing file AND IGNORES ITS OWN mode argument, so a leftover temp from a crashed " +
+    "run could receive a cleartext PIT at whatever permissions it already had.");
+  assert.match(src, /mode:\s*0o600/, 'the temp must still be created 0600');
+  assert.match(src, /mkdirSync\([^)]*mode:\s*0o700/,
+    'the config directory should be 0700 — a world-readable credential dir leaks metadata');
+});
