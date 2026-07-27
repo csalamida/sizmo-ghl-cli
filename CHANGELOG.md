@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `sizmo brief` exited 0 during a total API outage
+
+Every lane failing with a 500 still reported success, so `sizmo brief && deploy` proceeded while
+GoHighLevel was down. This had been recorded in the source as a known limitation needing "a real
+refactor" — the sub-collects marking their own lane blocked instead of swallowing the failure into
+a well-formed zero. They already did, and had for a while; `brief` simply wasn't reading it.
+
+Exit codes by failure mode now:
+
+| Situation | Exit |
+|---|---|
+| denied on every lane (401/403) | `3` AUTH |
+| every lane down (500/429) | `1` API |
+| mixed denial + outage | `3` AUTH — the actionable diagnosis |
+| one lane down, others readable | `0` — the report still produced real data |
+| everything readable, account empty | `0` — empty is an answer |
+
 ### Fixed — a report that was DENIED its data no longer exits 0
 
 Seven reports produced a scrupulously honest envelope and then contradicted it with the exit code:
@@ -29,8 +46,9 @@ when the truth was "your token is not allowed to look at invoices." `brief` was 
 earlier; `receivables`, `booked-not-paid`, `reconcile`, `noshow`, `triage`, `pipeline` and
 `segment` had the identical shape and were missed. They now exit `AUTH` (3) when denied.
 
-Deliberately unchanged: a **non-auth** failure (500, 429) still exits 0. Treating any failure as
-fatal would fail a legitimately-empty account whose auth is fine — worse than the bug being fixed.
+A **non-auth** failure (500, 429) now exits `API` (1) rather than 0 — an outage is not success. It
+is deliberately *not* `AUTH`, because a server outage must never tell you your token is wrong. A
+readable-but-empty account still exits 0: empty is a real answer, not a failure.
 
 ### Fixed — `sizmo crm` could not tell a missing scope from a broken API
 
