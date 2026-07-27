@@ -224,7 +224,12 @@ test('CLAIM: the profile temp file cannot be written at anything but 0600', () =
   // world-readable". Node honours `mode` only when writeFileSync CREATES the file, so that promise
   // held only when no temp already existed. `flag: 'wx'` makes creation the only possible outcome:
   // if anything is already at that path the write throws rather than inheriting its permissions.
-  const src = readFileSync(join(REPO, 'lib', 'config.mjs'), 'utf8');
+  // Strip comments FIRST. A previous version of this test matched the raw file and passed even
+  // with flag:'wx' deleted from the call — because the explanatory comment directly above it also
+  // contains the words `flag: 'wx'`. That is the third time in this codebase that prose in the
+  // guarded file has defeated a guard reading it; a source guard must only ever see code.
+  const src = readFileSync(join(REPO, 'lib', 'config.mjs'), 'utf8')
+    .split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
   assert.match(src, /flag:\s*'wx'/,
     "saveProfiles must create its temp exclusively. Without flag:'wx', writeFileSync silently " +
     "reuses an existing file AND IGNORES ITS OWN mode argument, so a leftover temp from a crashed " +
