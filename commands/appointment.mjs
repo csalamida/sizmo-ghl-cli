@@ -29,6 +29,7 @@ export const meta = {
     { name: '--address',  type: 'string', desc: 'meeting location (book) — e.g. "Zoom" or a street address' },
     { name: '--no-notify', type: 'bool',  desc: 'book WITHOUT firing the location\'s automations (default: they fire)' },
     { name: '--text',     type: 'string', desc: 'note body text (note)' },
+    { name: '--status',   type: 'string', desc: 'update: confirmed | showed | noshow | cancelled | invalid' },
   ],
   readOnly: false,
 };
@@ -47,10 +48,11 @@ function calendarAgeNote(model, now) {
 }
 
 export async function run(args, ctx) {
-  const sub = args._?.[0]; // 'book' | 'cancel' | 'note'
-  if (!sub || !['book', 'cancel', 'note'].includes(sub)) {
+  const sub = args._?.[0]; // 'book' | 'update' | 'cancel' | 'note'
+  if (!sub || !['book', 'update', 'cancel', 'note'].includes(sub)) {
     throw new GhlError(
       'usage: sizmo appointment book --calendar <name> --contact <id> --start <iso>\n' +
+      '       sizmo appointment update <apptId> [--start] [--end] [--status]\n' +
       '       sizmo appointment cancel <apptId>\n' +
       '       sizmo appointment note <apptId> --text "..."',
       EXIT.USAGE, 'sizmo schema'
@@ -170,6 +172,115 @@ export async function run(args, ctx) {
 
     ctx.out.data({ status: 'ok', command: 'appointment book', appointmentId: r.j?.id ?? null, calendarId: cal.id });
     ctx.out.line(`  appointment booked on '${calName}' for contact ${contact} at ${start}`);
+    return EXIT.OK;
+  }
+
+  // ── update (reschedule / mark outcome) ───────────────────────────────────────
+  // PUT /calendars/events/appointments/{eventId}. sizmo could BOOK and CANCEL but not MOVE a
+  // booking — the single most common calendar action a coach takes was a UI trip. It also could
+  // not mark an outcome: `sizmo noshow` REPORTS no-shows by reading appointmentStatus, while
+  // nothing could set it. You could see who no-showed and not record that you had seen it.
+  if (sub === 'update') {
+    const apptId = args._?.[1];
+    if (!apptId) {
+      throw new GhlError('usage: sizmo appointment update <apptId> [--start ISO] [--end ISO] [--status ...]',
+        EXIT.USAGE, 'sizmo noshow   # to find appointment ids');
+    }
+
+    // Spellings sizmo's own reader already accepts from real GHL data (noshow.mjs), normalised to
+    // one canonical form. HONEST LIMIT: which spelling GHL accepts on WRITE is unverified — its
+    // read-side data carries all three, and confirming would mean mutating a real booking. If a
+    // no-show write is ever rejected, this normalisation is the first thing to check.
+    const STATUS_ALIASES = {
+      confirmed: 'confirmed', showed: 'showed', cancelled: 'cancelled', canceled: 'cancelled',
+      invalid: 'invalid', noshow: 'noshow', 'no-show': 'noshow', 'no_show': 'noshow',
+    };
+    let apptStatus = null;
+    if (args.status != null) {
+      const key = String(args.status).toLowerCase();
+      apptStatus = STATUS_ALIASES[key] ?? null;
+      if (!apptStatus) {
+        throw new GhlError(
+          `appointment update: unknown --status '${args.status}' — one of: ${[...new Set(Object.values(STATUS_ALIASES))].join(' | ')}`,
+          EXIT.USAGE);
+      }
+    }
+
+    const start = args.start ?? null;
+    const end   = args.end ?? null;
+    for (const [flag, v] of [['--start', start], ['--end', end]]) {
+      if (v != null && isNaN(Date.parse(v))) {
+        throw new GhlError(`appointment update: invalid ${flag} '${v}' — must be ISO 8601`, EXIT.USAGE);
+      }
+    }
+    if (start != null && end != null && Date.parse(end) <= Date.parse(start)) {
+      throw new GhlError(`appointment update: --end (${end}) must be after --start (${start})`, EXIT.USAGE);
+    }
+
+    const EDITABLE = { title: 'title', address: 'address', 'assigned-user': 'assignedUserId' };
+    const body = {
+      ...(start ? { startTime: start } : {}),
+      ...(end ? { endTime: end } : {}),
+      ...(apptStatus ? { appointmentStatus: apptStatus } : {}),
+      ...(args['no-notify'] ? { toNotify: false } : {}),
+    };
+    for (const [flag, api] of Object.entries(EDITABLE)) {
+      if (args[flag] != null) body[api] = String(args[flag]);
+    }
+    if (Object.keys(body).length === 0) {
+      throw new GhlError(
+        'appointment update requires at least one of --start, --end, --status, --title, --address, --assigned-user',
+        EXIT.USAGE);
+    }
+
+    // Fetch first: proves the id exists before writing and lets the preview show what time the
+    // booking is moving FROM, which is the whole point of a reschedule confirmation.
+    const got = await ctx.http.get(`/calendars/events/appointments/${encodeURIComponent(apptId)}`);
+    if (got.code === 401 || got.code === 403) {
+      throw new GhlError(`HTTP ${got.code} — your PIT lacks calendars.write`, EXIT.AUTH,
+        'GoHighLevel → Settings → Private Integrations → edit your PIT → add calendars.write scope');
+    }
+    if (got.code === 404) throw new GhlError(`no appointment with id ${apptId} — nothing changed`, EXIT.NOTFOUND);
+    if (!got.ok) throw new GhlError(`could not read appointment ${apptId} — HTTP ${got.code}`, EXIT.API);
+    const cur = got.j?.appointment ?? got.j?.event ?? got.j ?? {};
+
+    const changes = [`Update appointment ${apptId}${cur.title ? ` ("${cur.title}")` : ''}`];
+    if (start) changes.push(`  start:  ${cur.startTime ? `${cur.startTime}  →  ` : ''}${start}`);
+    if (end)   changes.push(`  end:    ${cur.endTime ? `${cur.endTime}  →  ` : ''}${end}`);
+    if (start && !end) {
+      changes.push('  ⚠ moving --start without --end: the booking\'s duration is decided by GHL, not preserved here');
+    }
+    if (apptStatus) changes.push(`  status: ${cur.appointmentStatus ?? '?'}  →  ${apptStatus}`);
+    for (const [flag, api] of Object.entries(EDITABLE)) {
+      if (args[flag] != null) changes.push(`  ${api}: ${args[flag]}`);
+    }
+    changes.push(args['no-notify']
+      ? '  ⚠ automations SUPPRESSED (--no-notify) — the contact will NOT be told it moved'
+      : '  ⚠ this fires the location\'s automations — the contact is notified of the change');
+
+    const parts = [`sizmo appointment update ${apptId}`];
+    if (start) parts.push(`--start "${start}"`);
+    if (end)   parts.push(`--end "${end}"`);
+    if (args.status != null) parts.push(`--status ${apptStatus}`);
+    for (const flag of Object.keys(EDITABLE)) {
+      if (args[flag] != null) parts.push(`--${flag} "${String(args[flag]).replace(/"/g, '\\"')}"`);
+    }
+    if (args['no-notify']) parts.push('--no-notify');
+    const rerunCommand = parts.join(' ') + ' --confirm';
+
+    const gate = requireConfirm({ command: 'appointment update', changes, rerunCommand }, ctx);
+    if (!gate.proceed) return gate.code;
+
+    const r = await ctx.http.put(`/calendars/events/appointments/${encodeURIComponent(apptId)}`, body);
+    if (r.code === 401 || r.code === 403) {
+      throw new GhlError(`HTTP ${r.code} — your PIT lacks calendars.write`, EXIT.AUTH,
+        'GoHighLevel → Settings → Private Integrations → edit your PIT → add calendars.write scope');
+    }
+    if (r.code === 404) throw new GhlError(`no appointment with id ${apptId} — nothing changed`, EXIT.NOTFOUND);
+    if (!r.ok) throw new GhlError(`appointment update failed — HTTP ${r.code}: ${(r.txt || '').slice(0, 200)}`, EXIT.API);
+
+    ctx.out.data({ status: 'ok', command: 'appointment update', appointmentId: apptId, changed: Object.keys(body) });
+    ctx.out.line(`  appointment ${apptId} updated — ${Object.keys(body).length} field(s)`);
     return EXIT.OK;
   }
 

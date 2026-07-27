@@ -12,29 +12,20 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 
 | | count | share |
 |---|---:|---:|
-| Covered by a sizmo command | 24 | 44% |
-| Deliberately not implemented | 15 | 27% |
-| **Unreviewed — needs a decision** | **16** | **29%** |
+| Covered by a sizmo command | 26 | 47% |
+| Deliberately not implemented | 22 | 40% |
+| **Unreviewed — needs a decision** | **7** | **13%** |
 | Inventory total | 55 | |
 
 ## Unreviewed — needs a decision
 
 | Operation | Method | Path | Domain |
 |---|---|---|---|
-| `update-note` | PUT | `/contacts/{contactId}/notes/{id}` | contacts |
-| `delete-note` | DELETE | `/contacts/{contactId}/notes/{id}` | contacts |
-| `get-all-notes` | GET | `/contacts/{contactId}/notes` | contacts |
 | `create-task` | POST | `/contacts/{contactId}/tasks` | contacts |
 | `update-task` | PUT | `/contacts/{contactId}/tasks/{taskId}` | contacts |
 | `update-task-completed` | PUT | `/contacts/{contactId}/tasks/{taskId}/completed` | contacts |
 | `delete-task` | DELETE | `/contacts/{contactId}/tasks/{taskId}` | contacts |
 | `get-all-tasks` | GET | `/contacts/{contactId}/tasks` | contacts |
-| `edit-appointment` | PUT | `/calendars/events/appointments/{eventId}` | calendars |
-| `get-appointment` | GET | `/calendars/events/appointments/{eventId}` | calendars |
-| `delete-event` | DELETE | `/calendars/events/{eventId}` | calendars |
-| `update-appointment-note` | PUT | `/calendars/appointments/{appointmentId}/notes/{noteId}` | calendars |
-| `delete-appointment-note` | DELETE | `/calendars/appointments/{appointmentId}/notes/{noteId}` | calendars |
-| `get-appointment-notes` | GET | `/calendars/appointments/{appointmentId}/notes` | calendars |
 | `record-invoice` | POST | `/invoices/{invoiceId}/record-payment` | invoices |
 | `update-estimate` | PUT | `/invoices/estimate/{estimateId}` | invoices |
 
@@ -43,7 +34,14 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 | Operation | Reason |
 |---|---|
 | `contacts.bulk-tags` | bulk write. sizmo's delete/write commands are single-target by design — a bulk tag update cannot be previewed meaningfully per contact. |
+| `update-note` | note surfaces are create-only by an existing decision (2.4.8) — a note is an append-only record; editing rewrites history. |
+| `delete-note` | same create-only decision (2.4.8). Deleting a note destroys the record of a conversation; the UI is the right place for that. |
+| `get-all-notes` | same create-only decision (2.4.8). Reading notes back is a UI task; sizmo surfaces the conversation via `triage`, not note archaeology. |
 | `update-opportunity-status` | REDUNDANT, not missing. PUT /opportunities/{id} accepts `status` directly (verified via describe_operation), and `sizmo opp update --status won|lost|abandoned` already uses it. The dedicated /status route is a convenience alias for the same capability — implementing it would add a second way to do one thing. |
+| `delete-event` | REDUNDANT for appointments: `sizmo appointment cancel` uses the appointment-specific DELETE /calendars/events/appointments/{id}. This generic route also covers block slots, which are already a deliberate omission. |
+| `update-appointment-note` | same create-only decision (2.4.8), applied to appointment notes for consistency with contact notes. |
+| `delete-appointment-note` | same create-only decision (2.4.8). |
+| `get-appointment-notes` | same create-only decision (2.4.8). |
 | `create-block-slot` | calendar availability editing is a UI-shaped task; no CLI demand seen. |
 | `edit-block-slot` | same as create-block-slot. |
 | `get-blocked-slots` | same as create-block-slot. |
@@ -71,6 +69,8 @@ Inventory captured **2026-07-27** via LeadConnector MCP for Anthropic (/mcp/anth
 | `create-opportunity` | POST | `/opportunities/` | opp |
 | `update-opportunity` | PUT | `/opportunities/{id}` | opp |
 | `create-appointment` | POST | `/calendars/events/appointments` | appointment |
+| `edit-appointment` | PUT | `/calendars/events/appointments/{eventId}` | appointment |
+| `get-appointment` | GET | `/calendars/events/appointments/{eventId}` | appointment |
 | `create-appointment-note` | POST | `/calendars/appointments/{appointmentId}/notes` | appointment |
 | `get-calendar-events` | GET | `/calendars/events` | booked-not-paid, noshow, snapshot |
 | `create-calendar` | POST | `/calendars/` | calendar |

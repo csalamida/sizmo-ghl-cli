@@ -45,6 +45,35 @@ Because a scheduled send fires later with nobody watching — unlike every other
 the confirm preview states it does **not** send now, names the exact fire time, and prints the
 `send cancel` command needed to call it back.
 
+### Added — `sizmo appointment update` (reschedule, and record an outcome)
+
+sizmo could **book** and **cancel** but not **move** a booking — the single most common calendar
+action a coach takes was a trip into the GoHighLevel UI.
+
+It also could not record an outcome. `sizmo noshow` *reports* no-shows by reading
+`appointmentStatus`, while nothing could set it: you could see who no-showed and had no way to
+record that you had seen it. `--status confirmed|showed|noshow|cancelled|invalid` closes that
+(`no-show` and `no_show` are accepted too, since sizmo's own reader already handles all three
+spellings in real GHL data).
+
+Rescheduling **notifies the contact** — the preview says so, and `--no-notify` suppresses it. Moving
+`--start` without `--end` is called out explicitly, because the resulting duration is decided by
+GHL rather than preserved.
+
+**Honest limit, recorded in the code:** which no-show spelling GHL accepts on *write* is unverified.
+Its read-side data carries all three, and confirming would mean mutating a real booking. If a
+no-show write is ever rejected, that normalisation is the first thing to check.
+
+### Docs — 7 coverage decisions recorded, 16 unreviewed → 7
+
+Most were not new decisions. `commands/appointment.mjs` already recorded, back in 2.4.8, that "GHL
+supports list/update/delete for both contact AND appointment notes, sizmo deliberately ships neither
+surface beyond create. Consistency over completeness." That decision lived only in a code comment,
+so the coverage report kept asking a question that had already been answered. Now recorded where the
+report can see it, covering all six note operations. `delete-event` is redundant for appointments
+(`appointment cancel` uses the appointment-specific route) and otherwise covers block slots, already
+a deliberate omission.
+
 ### Added — `sizmo opp update --name` and `--assigned-user`
 
 `PUT /opportunities/{id}` accepts `name` and `assignedTo`, but `opp update` sent only

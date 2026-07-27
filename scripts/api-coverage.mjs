@@ -37,6 +37,19 @@ const DELIBERATE_OMISSIONS = {
   'record-order-payment':        'order payments belong to the store surface sizmo does not expose.',
   'update-estimate-template':    'estimate templates depend on an estimates surface sizmo has not built.',
   'export-messages-by-location': 'bulk export; `sizmo triage` covers the operational read.',
+  // Note surfaces: NOT a new decision. commands/appointment.mjs (2.4.8) already recorded it —
+  // "GHL supports list/update/delete for both contact AND appointment notes, sizmo deliberately
+  // ships neither surface beyond create. Consistency over completeness." That decision lived only
+  // in a code comment, so this report kept asking a question that had already been answered.
+  // A note is an append-only record of what was said; editing one rewrites history, and a solo
+  // coach fixing a typo can do it in the UI.
+  'update-note':               'note surfaces are create-only by an existing decision (2.4.8) — a note is an append-only record; editing rewrites history.',
+  'delete-note':               'same create-only decision (2.4.8). Deleting a note destroys the record of a conversation; the UI is the right place for that.',
+  'get-all-notes':             'same create-only decision (2.4.8). Reading notes back is a UI task; sizmo surfaces the conversation via `triage`, not note archaeology.',
+  'update-appointment-note':   'same create-only decision (2.4.8), applied to appointment notes for consistency with contact notes.',
+  'delete-appointment-note':   'same create-only decision (2.4.8).',
+  'get-appointment-notes':     'same create-only decision (2.4.8).',
+  'delete-event':              'REDUNDANT for appointments: `sizmo appointment cancel` uses the appointment-specific DELETE /calendars/events/appointments/{id}. This generic route also covers block slots, which are already a deliberate omission.',
   'update-opportunity-status':   'REDUNDANT, not missing. PUT /opportunities/{id} accepts `status` directly (verified via describe_operation), and `sizmo opp update --status won|lost|abandoned` already uses it. The dedicated /status route is a convenience alias for the same capability — implementing it would add a second way to do one thing.',
 };
 

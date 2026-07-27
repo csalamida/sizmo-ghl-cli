@@ -369,3 +369,107 @@ test('appointment book: unparseable --end → USAGE, no write fired', async () =
     /ISO 8601/i);
   assert.equal(getCalledWrites().length, 0);
 });
+
+// ── appointment update: reschedule + mark outcome (2026-07-27) ───────────────
+// sizmo could BOOK and CANCEL but not MOVE a booking — the most common calendar action a coach
+// takes was a UI trip. It also could not mark an outcome: `sizmo noshow` REPORTS no-shows by
+// reading appointmentStatus while nothing could set it. You could see who no-showed and not
+// record that you had seen it.
+
+const APT = 'appt-55';
+const A_GET = `GET /calendars/events/appointments/${APT}`;
+const A_PUT = `PUT /calendars/events/appointments/${APT}`;
+const curAppt = { status: 200, j: { appointment: { id: APT, title: 'Intro Call',
+  startTime: '2026-08-01T09:00:00Z', endTime: '2026-08-01T10:00:00Z', appointmentStatus: 'confirmed' } } };
+const aptOk = { [A_GET]: curAppt, [A_PUT]: { status: 200, j: {} } };
+
+test('appointment update: --start/--end reschedule the booking', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: aptOk });
+  await run({ _: ['update', APT], start: '2026-08-02T14:00:00Z', end: '2026-08-02T15:00:00Z' }, ctx);
+  ctx.out.flush();
+  const { body } = getCalledBodies().find(b => b.method === 'PUT');
+  assert.equal(body.startTime, '2026-08-02T14:00:00Z', 'startTime, not start');
+  assert.equal(body.endTime, '2026-08-02T15:00:00Z', 'endTime, not end');
+});
+
+test('appointment update: --status noshow maps to appointmentStatus', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: aptOk });
+  await run({ _: ['update', APT], status: 'noshow' }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies().find(b => b.method === 'PUT').body.appointmentStatus, 'noshow');
+});
+
+for (const [input, expected] of [['no-show', 'noshow'], ['no_show', 'noshow'], ['canceled', 'cancelled']]) {
+  test(`appointment update: --status ${input} normalises to ${expected}`, async () => {
+    // sizmo's own reader (noshow.mjs) accepts all three no-show spellings from real GHL data, so
+    // the write side accepts them too rather than making the user guess which one GHL used.
+    const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: aptOk });
+    await run({ _: ['update', APT], status: input }, ctx);
+    ctx.out.flush();
+    assert.equal(getCalledBodies().find(b => b.method === 'PUT').body.appointmentStatus, expected);
+  });
+}
+
+test('appointment update: unknown --status → USAGE, no write fired', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true, fixture: aptOk });
+  await assert.rejects(() => run({ _: ['update', APT], status: 'ghosted' }, ctx),
+    (e) => e.code === EXIT.USAGE && /one of:/.test(e.message));
+  assert.equal(getCalledWrites().length, 0);
+});
+
+test('appointment update: --end before --start → USAGE, no write fired', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({ confirmed: true, fixture: aptOk });
+  await assert.rejects(
+    () => run({ _: ['update', APT], start: '2026-08-02T14:00:00Z', end: '2026-08-02T13:00:00Z' }, ctx),
+    (e) => e.code === EXIT.USAGE && /must be after/.test(e.message));
+  assert.equal(getCalledWrites().length, 0);
+});
+
+test('appointment update: only the passed fields are sent', async () => {
+  const { ctx, getCalledBodies } = makeFakeCtx({ confirmed: true, fixture: aptOk });
+  await run({ _: ['update', APT], status: 'showed' }, ctx);
+  ctx.out.flush();
+  assert.deepEqual(Object.keys(getCalledBodies().find(b => b.method === 'PUT').body), ['appointmentStatus'],
+    'unset flags must be omitted — a stray startTime would silently move the booking');
+});
+
+test('appointment update: preview shows the time it is moving FROM', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [A_GET]: curAppt } });
+  const code = await run({ _: ['update', APT], start: '2026-08-02T14:00:00Z', end: '2026-08-02T15:00:00Z' }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.CONFIRM);
+  const changes = JSON.parse(getPrinted()).data.changes.join('\n');
+  assert.match(changes, /2026-08-01T09:00:00Z/, 'must show the original time being replaced');
+  assert.match(changes, /2026-08-02T14:00:00Z/);
+});
+
+test('appointment update: preview warns that rescheduling notifies the contact', async () => {
+  const { ctx, getPrinted } = makeFakeCtx({ fixture: { [A_GET]: curAppt } });
+  await run({ _: ['update', APT], start: '2026-08-02T14:00:00Z' }, ctx);
+  ctx.out.flush();
+  const changes = JSON.parse(getPrinted()).data.changes.join('\n');
+  assert.match(changes, /fires the location's automations/);
+  assert.match(changes, /duration is decided by GHL/, 'moving start without end must be called out');
+});
+
+test('appointment update: --no-notify suppresses and says so', async () => {
+  const { ctx, getCalledBodies, getPrinted } = makeFakeCtx({ confirmed: true, fixture: aptOk });
+  await run({ _: ['update', APT], status: 'showed', 'no-notify': true }, ctx);
+  ctx.out.flush();
+  assert.equal(getCalledBodies().find(b => b.method === 'PUT').body.toNotify, false);
+});
+
+test('appointment update: unknown id → NOTFOUND, no PUT fired', async () => {
+  const { ctx, getCalledWrites } = makeFakeCtx({
+    confirmed: true, fixture: { [A_GET]: { status: 404, j: {} } },
+  });
+  await assert.rejects(() => run({ _: ['update', APT], status: 'showed' }, ctx),
+    (e) => e.code === EXIT.NOTFOUND);
+  assert.equal(getCalledWrites().length, 0);
+});
+
+test('appointment update: no fields → USAGE, nothing fetched', async () => {
+  const { ctx, getCalledPaths } = makeFakeCtx({ confirmed: true });
+  await assert.rejects(() => run({ _: ['update', APT] }, ctx), (e) => e.code === EXIT.USAGE);
+  assert.equal(getCalledPaths().length, 0);
+});

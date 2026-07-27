@@ -143,6 +143,11 @@ sizmo calendar create --name "Discovery Calls" [--type --slot-min --team-member 
 # (run `sizmo list users` first to find user IDs)
 sizmo calendar delete <id> --confirm
 sizmo appointment book --calendar "Discovery Calls" --contact <id> --start 2026-07-15T14:00:00Z --confirm
+sizmo appointment update <apptId> --start 2026-08-02T14:00:00Z --end ...Z --confirm   # RESCHEDULE
+sizmo appointment update <apptId> --status noshow --confirm     # mark the outcome after the call
+#   --status: confirmed | showed | noshow | cancelled | invalid (no-show/no_show also accepted)
+#   Rescheduling NOTIFIES the contact — --no-notify suppresses it.
+#   `sizmo noshow` only REPORTS no-shows; this is how you record one.
 # optional: --end (ISO, omit = calendar slot duration) · --title · --assigned-user <userId> · --address "Zoom"
 # booking FIRES the location's automations (confirmation SMS/email, workflows) by default.
 # --no-notify suppresses them — use it for backfills/migrations so contacts are not messaged.
