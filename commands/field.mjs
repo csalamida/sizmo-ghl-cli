@@ -18,6 +18,12 @@ export const meta = {
     { name: '--name',  type: 'string', desc: 'field name (create)' },
     { name: '--type',  type: 'string', desc: `data type (create, default TEXT): ${[...DATA_TYPES].join(', ')}` },
     { name: '--model', type: 'string', desc: 'create: contact (default) | opportunity' },
+    { name: '--placeholder', type: 'string', desc: 'placeholder text shown in the field (create)' },
+    { name: '--position', type: 'number', desc: 'display order within the location (create)' },
+    { name: '--textbox-option', type: 'string', desc: 'comma-separated options — REQUIRED for TEXTBOX_LIST' },
+    { name: '--accept', type: 'string', desc: 'comma-separated file formats for FILE_UPLOAD, e.g. ".pdf,.docx"' },
+    { name: '--multiple-files', type: 'bool', desc: 'FILE_UPLOAD: allow more than one file' },
+    { name: '--max-files', type: 'number', desc: 'FILE_UPLOAD: maximum number of files' },
   ],
   readOnly: false,
 };
@@ -43,9 +49,63 @@ async function createField(args, ctx) {
     throw new GhlError(`field create: --model must be contact or opportunity (got '${args.model}')`, EXIT.USAGE);
   }
 
-  const body = { name, dataType, model };
-  const changes = [`Create custom field "${name}" (type ${dataType}, model ${model})`];
-  const rerunCommand = `sizmo field create --name "${name.replace(/"/g, '\\"')}" --type ${dataType} --model ${model} --confirm`;
+  // Types that are unusable without a choice list. sizmo's endpoint
+  // (POST /locations/{id}/customFields) documents `textBoxListOptions` and nothing else for
+  // options, so TEXTBOX_LIST can be populated but SINGLE_OPTIONS/MULTIPLE_OPTIONS/RADIO/CHECKBOX
+  // cannot — the field name for their choices is not part of this endpoint's documented schema.
+  //
+  // Creating one anyway produced a field with NO choices: it appears in GHL, cannot be filled in,
+  // and has to be repaired by hand in the UI. Refusing is more honest than shipping a broken
+  // field silently. Same shape as the `calendar create --type round_robin` gap fixed in 2.4.9 —
+  // a type the CLI let you pick but could not actually make work.
+  const NEEDS_OPTIONS = new Set(['SINGLE_OPTIONS', 'MULTIPLE_OPTIONS', 'RADIO', 'CHECKBOX']);
+  if (NEEDS_OPTIONS.has(dataType)) {
+    throw new GhlError(
+      `field create: ${dataType} needs a list of choices, which this endpoint does not accept from sizmo — ` +
+      `creating it here would leave an empty, unusable field`,
+      EXIT.USAGE,
+      'create this field in GoHighLevel → Settings → Custom Fields, then `sizmo sync fields`');
+  }
+
+  const textboxOptions = args['textbox-option']
+    ? String(args['textbox-option']).split(',').map(o => o.trim()).filter(Boolean)
+    : null;
+  if (dataType === 'TEXTBOX_LIST' && !textboxOptions?.length) {
+    throw new GhlError(
+      'field create: TEXTBOX_LIST requires --textbox-option "A,B,C" — without options the field is unusable',
+      EXIT.USAGE,
+      'sizmo field create --name "..." --type TEXTBOX_LIST --textbox-option "Small,Medium,Large" --confirm');
+  }
+  const accepted = args.accept
+    ? String(args.accept).split(',').map(f => f.trim()).filter(Boolean)
+    : null;
+
+  const body = {
+    name, dataType, model,
+    ...(args.placeholder ? { placeholder: args.placeholder } : {}),
+    ...(args.position != null ? { position: Number(args.position) } : {}),
+    ...(textboxOptions ? { textBoxListOptions: textboxOptions } : {}),
+    ...(accepted ? { acceptedFormat: accepted } : {}),
+    ...(args['multiple-files'] ? { isMultipleFile: true } : {}),
+    ...(args['max-files'] != null ? { maxNumberOfFiles: Number(args['max-files']) } : {}),
+  };
+  const changes = [
+    `Create custom field "${name}" (type ${dataType}, model ${model})`,
+    ...(args.placeholder ? [`  placeholder: ${args.placeholder}`] : []),
+    ...(textboxOptions ? [`  options:     ${textboxOptions.join(', ')}`] : []),
+    ...(accepted ? [`  accepts:     ${accepted.join(', ')}`] : []),
+    ...(args['multiple-files'] ? ['  multiple files: yes'] : []),
+    ...(args['max-files'] != null ? [`  max files:   ${args['max-files']}`] : []),
+    ...(args.position != null ? [`  position:    ${args.position}`] : []),
+  ];
+  const parts = [`sizmo field create --name "${name.replace(/"/g, '\\"')}" --type ${dataType} --model ${model}`];
+  if (args.placeholder)         parts.push(`--placeholder "${String(args.placeholder).replace(/"/g, '\\"')}"`);
+  if (args.position != null)    parts.push(`--position ${args.position}`);
+  if (textboxOptions)           parts.push(`--textbox-option "${textboxOptions.join(',')}"`);
+  if (accepted)                 parts.push(`--accept "${accepted.join(',')}"`);
+  if (args['multiple-files'])   parts.push('--multiple-files');
+  if (args['max-files'] != null) parts.push(`--max-files ${args['max-files']}`);
+  const rerunCommand = parts.join(' ') + ' --confirm';
 
   const gate = requireConfirm({ command: 'field create', changes, rerunCommand }, ctx);
   if (!gate.proceed) return gate.code;

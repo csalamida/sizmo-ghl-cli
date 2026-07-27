@@ -128,6 +128,11 @@ sizmo appointment note <apptId> --text "Confirmed reschedule" --confirm
 
 # Custom Fields / Values — create + delete only, no update
 sizmo field create --name "Coach Goal" [--type TEXT --model contact] --confirm
+# --placeholder "..."  --position N
+# FILE_UPLOAD: --accept ".pdf,.docx"  --multiple-files  --max-files N
+# TEXTBOX_LIST: --textbox-option "Small,Medium,Large"  (REQUIRED for this type)
+# SINGLE_OPTIONS / MULTIPLE_OPTIONS / RADIO / CHECKBOX are REFUSED — this endpoint takes no
+#   choice list, so sizmo would create an empty unusable field. Make those in the GHL UI.
 sizmo field delete <fieldId> --confirm
 sizmo value create --name "Booking Link" --value "https://..." --confirm
 sizmo value delete <valueId> --confirm

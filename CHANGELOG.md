@@ -45,6 +45,24 @@ Because a scheduled send fires later with nobody watching — unlike every other
 the confirm preview states it does **not** send now, names the exact fire time, and prints the
 `send cancel` command needed to call it back.
 
+### Changed — `sizmo field create` refuses types it cannot make work
+
+`--type` advertised 12 data types, but `SINGLE_OPTIONS`, `MULTIPLE_OPTIONS`, `RADIO` and `CHECKBOX`
+all need a list of choices, and `POST /locations/{id}/customFields` documents no field to carry one.
+Creating them anyway produced a field with **no choices** — visible in GoHighLevel, impossible to
+fill in, repairable only by hand in the UI. sizmo now refuses those four with a message pointing at
+the UI, rather than shipping a broken field silently. Same shape as the `calendar create --type
+round_robin` gap fixed in 2.4.9: a type the CLI let you pick but could not actually make work.
+
+`TEXTBOX_LIST` **is** supported — that endpoint documents `textBoxListOptions` — and now requires
+`--textbox-option "A,B,C"`, refusing early rather than creating an empty list.
+
+### Added — `sizmo field create` exposes the rest of the endpoint
+
+The endpoint accepts 9 body fields; sizmo sent 3. Added `--placeholder`, `--position`, and for
+`FILE_UPLOAD`: `--accept ".pdf,.docx"`, `--multiple-files`, `--max-files N`. A plain `TEXT` field
+still sends exactly the original three keys, so existing scripted calls are unchanged.
+
 ### Fixed — read commands emitted a success-shaped envelope on a 401
 
 `forms`, `surveys`, `transactions` and `list` printed a line and *returned* the exit code, which
