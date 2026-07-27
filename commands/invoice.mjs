@@ -8,6 +8,12 @@ import { GhlError, EXIT } from '../lib/errors.mjs';
 
 const SCOPE_FIX = 'GoHighLevel → Settings → Private Integrations → edit your PIT → add invoices.write scope';
 
+// `invoice draft` touches THREE scopes, not one: it reads the contact (contacts.readonly), reads
+// the location for the business name (locations.readonly), then writes the invoice (invoices.write).
+// Naming the wrong one sends the user to add a scope they already have while the real gap stays.
+const scopeFix = (scope) =>
+  `GoHighLevel → Settings → Private Integrations → edit your PIT → add ${scope} scope`;
+
 export const meta = {
   name: 'invoice',
   summary: 'create a draft invoice for a contact, or send an existing invoice (pay-link)',
@@ -57,16 +63,48 @@ async function draftInvoice(args, ctx) {
 
   // Pull the contact so contactDetails carries a real name/email (GHL expects more than a bare id).
   const cg = await ctx.http.get(`/contacts/${encodeURIComponent(contactId)}`);
-  if (cg.code === 401 || cg.code === 403) throw new GhlError(`HTTP ${cg.code} — your PIT lacks invoices.write`, EXIT.AUTH, SCOPE_FIX);
+  // This GET is /contacts/{id} — it needs contacts.readonly. It previously blamed invoices.write.
+  if (cg.code === 401 || cg.code === 403) {
+    throw new GhlError(`HTTP ${cg.code} — your PIT lacks contacts.readonly (needed to read the contact for this invoice)`,
+      EXIT.AUTH, scopeFix('contacts.readonly'));
+  }
   if (cg.code === 404) throw new GhlError(`no contact with id ${contactId} — nothing created`, EXIT.NOTFOUND);
   const c = cg.j?.contact ?? cg.j ?? {};
   const contactName = c.contactName || [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email || 'Customer';
   const contactDetails = { id: contactId, name: contactName, ...(c.email ? { email: c.email } : {}), ...(c.phone ? { phoneNo: c.phone } : {}) };
 
   // GHL requires businessDetails.name — pull it from the location's business profile.
+  //
+  // This response was UNCHECKED until 2026-07-27. A 401/404/500 here fell through to the string
+  // literal 'Business', and the invoice was created and sent anyway with exit 0 and no warning —
+  // so a real customer received a money document naming the vendor "Business". Verified by
+  // fixture: location 401, 404 and 500 all produced businessDetails={"name":"Business"}.
+  //
+  // sizmo already refuses to fabricate NUMBERS on a blocked source (a blocked lane reports UNKNOWN,
+  // never zero — test/docs/blocked-is-not-zero.test.mjs). Fabricating the vendor's NAME on an
+  // invoice is the same rule, and the consequence is more visible: the customer reads it.
+  //
+  // Refusing is the right failure here. The alternative — send it with a placeholder — is a wrong
+  // invoice, and a wrong invoice is worse than no invoice.
   const lg = await ctx.http.get(`/locations/${encodeURIComponent(loc)}`);
+  if (lg.code === 401 || lg.code === 403) {
+    throw new GhlError(
+      `HTTP ${lg.code} — your PIT lacks locations.readonly (needed for the business name on the invoice)`,
+      EXIT.AUTH, scopeFix('locations.readonly'));
+  }
+  if (!lg.ok) {
+    throw new GhlError(
+      `could not read location ${loc} for the business name — HTTP ${lg.code}. Nothing was created.`,
+      EXIT.API);
+  }
   const locItem = lg.j?.location ?? lg.j ?? {};
-  const businessName = locItem.business?.name || locItem.name || 'Business';
+  const businessName = locItem.business?.name || locItem.name;
+  if (!businessName || !String(businessName).trim()) {
+    throw new GhlError(
+      `location ${loc} has no business name set — GHL requires one on every invoice. Nothing was created.`,
+      EXIT.API,
+      'GoHighLevel → Settings → Business Profile → set the business name, then rerun');
+  }
 
   const total = items.reduce((s, i) => s + i.amount * i.qty, 0);
   const name = args.name || `Invoice for ${contactName}`;
