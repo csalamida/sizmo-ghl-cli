@@ -13,6 +13,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — concurrent `sizmo ack` runs silently discarded each other's acks
+
+Every state change in local memory is a read-modify-write: load the whole file, change one key,
+write it back. Each individual write was already atomic, so the file never landed corrupt — but an
+atomic write is not an atomic update. Two processes that both read before either writes each hold a
+stale copy, and the second write throws away the first one's change.
+
+Measured with 12 real `sizmo ack` processes started in parallel, each acking a different contact:
+
+```
+before    8/12 acks survived   (all 12 processes reported success)
+after    12/12 acks survived
+```
+
+So the tool printed `snoozed c4 until 2026-08-06` for a contact that was not snoozed, and the item
+reappeared in the next `focus` run. Nondeterministic — repeated runs lost between 3 and 5 of 12.
+
+The read-modify-write now runs under an exclusive lock. A lock left behind by a crashed process is
+broken after 10 seconds, so one crash cannot wedge `ack` permanently; if the lock cannot be acquired
+within 2 seconds the command fails with a real error and exit code rather than proceeding unlocked,
+because proceeding unlocked is precisely the data loss. `sizmo brief`'s baseline write takes the same
+lock — it also reads and rewrites the ack list, so unlocked it could drop an ack made by a parallel
+`ack` run. A failed baseline write stays non-fatal to `brief`, as before.
+
+### Fixed — an unreadable metric became a fabricated number in the run-over-run delta
+
+The delta engine read each metric's rendered string by deleting every character it did not recognise
+and calling `Number()` on the remains. Measured against the real function:
+
+```
+'—'                       ->  0            <- this is the tool's OWN "unknown" marker
+''                        ->  0            <- Number('') === 0
+'n/a'                     ->  0
+'₱1,234 (3) + $500 (2)'   ->  123435002    <- multi-currency, digits concatenated
+```
+
+The fabricated zero is the damaging half, because it was then stored as the new baseline and
+reported as real movement. With a ₱5,000 baseline, a **Collected metric the tool could not read**
+produced `change: -5000` — "you collected ₱5,000 less than last run" on an account whose figure was
+simply unavailable. The multi-currency case invented ₱123 million out of a ₱1,234 + $500 account.
+
+Values are now parsed by stripping only the decoration the formatter actually adds — a currency
+symbol from the one canonical symbol table, thousands separators, a trailing `%` — and then requiring
+the entire remainder to be a single number. Anything else is UNKNOWN and reports no movement at all.
+A genuine `₱0` still parses as zero, and a real drop from ₱5,000 to ₱0 is still reported as `-5000`.
+
 ### Changed — `reconcile` asks the server for its window instead of downloading all history
 
 `reconcile --days 30` queried `/payments/transactions` with no date filter and paginated to
