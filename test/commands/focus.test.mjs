@@ -204,20 +204,20 @@ test('focus: degraded but STILL surfaced actions → exits 0, because partial si
   // other test green — nothing covered the case where one lane dies and the rest produce real,
   // actionable output. Failing there would make focus useless on any account with one bad scope:
   // the operator sees genuine work to do AND a non-zero exit telling them it did not work.
+  //
+  // Fixture verified by observation, not assumption — a first draft of this test used readable
+  // opportunities and asserted ranked output that the code never actually produces (ranked=0), so
+  // it failed for the wrong reason. An overdue invoice is what reliably yields a ranked action.
   const { ctx, getPrinted } = makeFakeCtx({ json: false });
-  ctx.ensureModel = async () => ({
-    entities: { pipelines: { items: [{ id: 'p1', name: 'Sales', stages: [{ id: 's1', name: 'New', position: 0 }] }] },
-                calendars: { items: [] } },
-  });
-  // Opportunities readable (produces ranked actions); everything else denied.
+  ctx.ensureModel = async () => ({ entities: { pipelines: { items: [] }, calendars: { items: [] } } });
   ctx.http.get = async (path) => {
-    if (String(path).includes('/opportunities/search')) {
-      return { code: 200, ok: true, txt: '{}', j: { opportunities: [
-        { id: 'o1', pipelineId: 'p1', pipelineStageId: 's1', monetaryValue: 50000, status: 'open',
-          updatedAt: new Date(0).toISOString(), contactId: 'c1' },
-      ] } };
+    if (String(path).includes('/invoices')) {
+      return { code: 200, ok: true, txt: '{}', j: { invoices: [{
+        _id: 'inv1', status: 'sent', total: 25000, amountPaid: 0, currency: 'PHP',
+        dueDate: '2020-01-01', contactDetails: { name: 'Ana Cruz', id: 'c1' },
+      }] } };
     }
-    return { code: 403, ok: false, j: {}, txt: '' };
+    return { code: 403, ok: false, j: {}, txt: '' };   // every other lane denied
   };
 
   const code = await run({}, ctx);
@@ -225,7 +225,7 @@ test('focus: degraded but STILL surfaced actions → exits 0, because partial si
 
   assert.equal(ctx.out.degraded, true, 'sanity: some lanes really did fail');
   assert.equal(code, EXIT.OK,
-    'focus produced real ranked output — a partial answer that is still useful must not exit non-zero');
+    'focus produced a real ranked action — a partial answer that is still useful must not exit non-zero');
   assert.ok(!CLAIMS_ALL_CLEAR.test(getPrinted()),
     'and it must not claim all-clear either, since there is both work to do and a blind lane');
 });
