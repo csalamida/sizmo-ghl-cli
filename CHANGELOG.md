@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > inline, and their changes are real: they reached users inside the release named there. Verify
 > what actually exists with `npm view sizmo versions`.
 
+## [Unreleased]
+
+### Fixed — a `429 Retry-After` retried forever instead of giving up
+
+The retry counter only advanced on the fallback path:
+
+```js
+await sleep(Number.isFinite(ra) && ra > 0 ? ra * 1000 : backoff(++attempt, jitter));
+```
+
+`++attempt` lives only in the second arm — so whenever GoHighLevel sent a usable `Retry-After`
+(the entire reason that branch exists), `attempt` never advanced and the loop ran without bound.
+Reproduced with injected `fetch`/`sleep`: **41 attempts and 1230s of sleep on a `maxRetries` of 4**,
+still going.
+
+Nothing caught it because the only 429 test used `retry-after: 0`, which fails the `> 0` check and
+takes the arm that already worked.
+
+If you drive sizmo from an agent, this was the worst possible failure mode: no output, no exit
+code, no timeout — the agent blocks indefinitely instead of seeing exit `1`. On writes it also
+re-transmitted the request body on every iteration, to an API that was explicitly asking it to
+stop.
+
+Now the attempt counter advances on every 429 regardless of which delay is chosen, and `Retry-After`
+is capped at 60s so a `Retry-After: 3600` cannot become a silent one-hour sleep per attempt. A small
+`Retry-After` is still honoured exactly.
+
 ## [2.4.12] — 2026-07-27
 
 ### Fixed — the PIT temp file could inherit permissions instead of being created 0600
