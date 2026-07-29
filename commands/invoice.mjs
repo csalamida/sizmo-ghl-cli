@@ -14,9 +14,15 @@ const SCOPE_FIX = 'GoHighLevel → Settings → Private Integrations → edit yo
 const scopeFix = (scope) =>
   `GoHighLevel → Settings → Private Integrations → edit your PIT → add ${scope} scope`;
 
+// The subcommand list, declared once so `sizmo schema` and the dispatch below cannot
+// disagree. test/client/schema-subcommands.test.mjs extracts the verbs this file actually
+// dispatches on and fails if they differ from this array.
+const SUBCOMMANDS = ['draft', 'send'];
+
 export const meta = {
   name: 'invoice',
   summary: 'create a draft invoice for a contact, or send an existing invoice (pay-link)',
+  subcommands: SUBCOMMANDS,
   flags: [
     { name: '--contact',  type: 'string', desc: 'contact id (draft)' },
     { name: '--item',     type: 'string', desc: 'line item "Name:amount[:qty]" — repeat with commas' },

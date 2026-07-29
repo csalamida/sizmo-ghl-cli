@@ -12,9 +12,15 @@ const DATA_TYPES = new Set([
   'SINGLE_OPTIONS', 'MULTIPLE_OPTIONS', 'DATE', 'TEXTBOX_LIST', 'FILE_UPLOAD', 'RADIO',
 ]);
 
+// The subcommand list, declared once so `sizmo schema` and the dispatch below cannot
+// disagree. test/client/schema-subcommands.test.mjs extracts the verbs this file actually
+// dispatches on and fails if they differ from this array.
+const SUBCOMMANDS = ['create', 'update', 'delete'];
+
 export const meta = {
   name: 'field',
   summary: 'create or delete a custom field (delete is single-target, never bulk)',
+  subcommands: SUBCOMMANDS,
   flags: [
     { name: '--name',  type: 'string', desc: 'field name (create)' },
     { name: '--type',  type: 'string', desc: `data type (create, default TEXT): ${[...DATA_TYPES].join(', ')}` },

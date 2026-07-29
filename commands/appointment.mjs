@@ -16,9 +16,15 @@ import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
 import { fetchLiveEntity } from '../lib/model.mjs';
 
+// The subcommand list, declared once so `sizmo schema` and the dispatch below cannot
+// disagree. test/client/schema-subcommands.test.mjs extracts the verbs this file actually
+// dispatches on and fails if they differ from this array.
+const SUBCOMMANDS = ['book', 'update', 'cancel', 'note'];
+
 export const meta = {
   name: 'appointment',
   summary: 'book, cancel, or note a calendar appointment',
+  subcommands: SUBCOMMANDS,
   flags: [
     { name: '--calendar', type: 'string', desc: 'calendar name (book)' },
     { name: '--contact',  type: 'string', desc: 'contact id (book)' },

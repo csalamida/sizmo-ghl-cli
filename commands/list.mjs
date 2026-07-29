@@ -4,19 +4,23 @@
 
 import { GhlError, EXIT } from '../lib/errors.mjs';
 
+const ENTITIES = [
+  'calendars', 'pipelines', 'tags', 'fields', 'values', 'users',
+  'forms', 'surveys', 'products', 'links', 'businesses', 'objects',
+];
+
 export const meta = {
   name: 'list',
   summary: 'look up CRM entity IDs with full context — calendars, pipelines, tags, fields, values, users',
+  // The same array the dispatch validates against, so `sizmo schema` can never advertise an entity
+  // this command rejects, or omit one it accepts. ENTITIES moved above meta to be initialised first.
+  subcommands: ENTITIES,
   flags: [
     { name: '--all', type: 'bool', desc: 'show all items (skips truncation on tags/fields)' },
   ],
   readOnly: true,
 };
 
-const ENTITIES = [
-  'calendars', 'pipelines', 'tags', 'fields', 'values', 'users',
-  'forms', 'surveys', 'products', 'links', 'businesses', 'objects',
-];
 
 export async function run(parsed, ctx) {
   const entity = parsed._?.[0];

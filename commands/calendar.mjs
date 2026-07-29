@@ -6,9 +6,15 @@ import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
 import { parseNumericFlag } from '../lib/numeric.mjs';
 
+// The subcommand list, declared once so `sizmo schema` and the dispatch below cannot
+// disagree. test/client/schema-subcommands.test.mjs extracts the verbs this file actually
+// dispatches on and fails if they differ from this array.
+const SUBCOMMANDS = ['create', 'delete'];
+
 export const meta = {
   name: 'calendar',
   summary: 'create or delete a calendar (delete is single-target, never bulk)',
+  subcommands: SUBCOMMANDS,
   flags: [
     { name: '--name',        type: 'string', desc: 'calendar name (create)' },
     { name: '--type',        type: 'string', desc: 'calendar type (create) — default event' },

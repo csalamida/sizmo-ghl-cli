@@ -5,9 +5,14 @@
 import { loadModel, syncModel, isStale, ageMs, ENTITY_SPECS, DEFAULT_MODEL_DIR } from '../lib/model.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
 
+const ALIAS = { fields: 'customFields' };
+const VALID_SUBS = ['pipelines', 'calendars', 'tags', 'fields', 'users', 'location'];
+
 export const meta = {
   name: 'crm',
   summary: 'Query the local CRM model — counts, lists, staleness',
+  // Same array the dispatch validates against — declared above meta so it is initialised first.
+  subcommands: VALID_SUBS,
   flags: [
     { name: '--all', type: 'bool', desc: 'show all items (overrides high-cardinality truncation)' },
   ],
@@ -17,8 +22,6 @@ export const meta = {
 const TRUNCATE_ABOVE = 20; // default max items for high-cardinality entities (tags, fields)
 
 // Alias map for subcommands
-const ALIAS = { fields: 'customFields' };
-const VALID_SUBS = ['pipelines', 'calendars', 'tags', 'fields', 'users', 'location'];
 
 export async function run(args, ctx) {
   const dir = ctx._modelDir ?? DEFAULT_MODEL_DIR;

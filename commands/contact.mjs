@@ -7,9 +7,15 @@
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
 
+// The subcommand list, declared once so `sizmo schema` and the dispatch below cannot
+// disagree. test/client/schema-subcommands.test.mjs extracts the verbs this file actually
+// dispatches on and fails if they differ from this array.
+const SUBCOMMANDS = ['create', 'upsert', 'update', 'delete'];
+
 export const meta = {
   name: 'contact',
   summary: 'create, upsert (de-dupe on email/phone), or delete a contact (delete is single-target, never bulk)',
+  subcommands: SUBCOMMANDS,
   flags: [
     { name: '--name',  type: 'string', desc: 'full name (create/upsert)' },
     { name: '--first', type: 'string', desc: 'first name (create/upsert)' },

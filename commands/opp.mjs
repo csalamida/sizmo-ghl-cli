@@ -29,9 +29,15 @@ const VALID_STATUS = ['open', 'won', 'lost', 'abandoned'];
 const parseMonetaryValue = (raw, verb) =>
   parseNumericFlag(raw, { flag: '--value', context: `opp ${verb}`, min: 0, example: '5000' });
 
+// The subcommand list, declared once so `sizmo schema` and the dispatch below cannot
+// disagree. test/client/schema-subcommands.test.mjs extracts the verbs this file actually
+// dispatches on and fails if they differ from this array.
+const SUBCOMMANDS = ['create', 'move', 'update', 'delete'];
+
 export const meta = {
   name: 'opp',
   summary: 'create, move, update, or delete a pipeline opportunity',
+  subcommands: SUBCOMMANDS,
   flags: [
     { name: '--name',     type: 'string', desc: 'opportunity title (create/update)' },
     { name: '--pipeline', type: 'string', desc: 'pipeline name (create)' },
