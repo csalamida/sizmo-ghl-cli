@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a capped page scan reported a floor as if it were the total
+
+`paginate()` had one way to finish, so callers couldn't tell "the server ran out of data" from
+"the page cap stopped us with more still available". Verified against a server with unlimited
+pages and `maxPages: 20`: **2,000 items yielded, caller told nothing.**
+
+`pipeline` and `snapshot`'s Pipeline value both cap at 20 pages of 100 — so an account with 2,500
+open deals reported the value of 2,000 of them **as the whole pipeline**. A 20% understatement of
+a money figure, invisible in the output.
+
+`paginate` now populates an optional `{ pages, truncated }`. `pipeline` reports `degraded: true`
+with a warning naming the cap, and carries `truncated` in its JSON payload so anything summing
+`totalValue` across locations can see it. `snapshot` renders `N+ open deal(s) — truncated`.
+
+Deliberately **not** `blocked` — the data returned is real. It's a floor, not an unknown.
+
 ### Fixed — `sizmo snapshot` reported a real `₱0` pipeline when it couldn't read opportunities
 
 Of the five metrics `snapshot` computes, four correctly reported UNKNOWN when their source failed.
