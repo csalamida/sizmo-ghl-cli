@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.5.0] — 2026-07-30
+
+**Minor, not patch: two JSON field meanings changed.** If you read `truncated` from `sizmo list` or
+`sizmo crm`, read the note in that section before upgrading. Everything else is a fix.
+
+**Run this once after upgrading** — the read cache on disk holds every API response sizmo ever
+cached, including contact names, emails and phone numbers, and until now nothing ever deleted them:
+
+```sh
+sizmo config cache-clear
+```
+
+
 ### Fixed — a failed page mid-scan shipped a truncated total as fact
 
 Every paginated report checked for blindness the same way: report a blocked source only when *nothing
