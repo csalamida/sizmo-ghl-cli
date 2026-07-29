@@ -93,3 +93,44 @@ test('two tokens on DIFFERENT locations remain independent (unchanged behaviour)
     assert.equal(n, 2, 'different locations were already distinct keys and must stay so');
   });
 });
+
+test('the cache KEY itself carries a fingerprint, never the raw PIT', async () => {
+  // Distinct from the on-disk test above, and the on-disk test cannot substitute for it: cache.mjs
+  // hashes whatever key it is given into the filename, so a raw PIT in the KEY never reaches disk
+  // either way. Mutation proved exactly that — swapping pitPrint(pit) for the bare `pit` left the
+  // on-disk assertion green.
+  //
+  // The key is still worth guarding. It is passed across a module boundary into a pluggable cache;
+  // a future implementation that indexes, logs or exports keys would then be handling a live
+  // credential. Defence in depth, asserted at the boundary where the value actually crosses.
+  const PIT = 'pit-SECRET-abcdefghijklmnop';
+  const seen = [];
+  const spyCache = { get: (k) => { seen.push(k); return null; }, set: (k) => { seen.push(k); } };
+
+  const http = makeHttp({ pit: PIT, cache: spyCache,
+    fetch: async () => ({ status: 200, headers: { get: () => null }, text: async () => '{"contacts":[]}' }) });
+  await http.get('/contacts/', QUERY);
+
+  assert.ok(seen.length > 0, 'sanity: the cache was consulted');
+  for (const k of seen) {
+    assert.ok(!k.includes(PIT), `the raw PIT was passed to the cache as part of a key: ${k}`);
+    assert.ok(!k.includes('SECRET'), `a recognisable token fragment reached the cache key: ${k}`);
+    assert.match(k, /^[0-9a-f]{16}\|https?:\/\//,
+      `expected "<16-hex fingerprint>|<url>", got: ${k}`);
+  }
+});
+
+test('two DIFFERENT tokens produce two DIFFERENT fingerprints', async () => {
+  // Guards the fingerprint against collapsing to a constant, which would silently restore the leak
+  // while every other assertion here still passed.
+  const keys = [];
+  const spy = { get: (k) => { keys.push(k); return null; }, set: () => {} };
+  for (const pit of ['pit-AAA', 'pit-BBB']) {
+    const http = makeHttp({ pit, cache: spy,
+      fetch: async () => ({ status: 200, headers: { get: () => null }, text: async () => '{}' }) });
+    await http.get('/contacts/', QUERY);
+  }
+  assert.equal(keys.length, 2);
+  assert.notEqual(keys[0].split('|')[0], keys[1].split('|')[0],
+    'distinct tokens must yield distinct fingerprints, or the cache is shared again');
+});
