@@ -5,6 +5,7 @@
 // v0.5.0: calendar list from CRM model; location currency from model.
 // v0.6.0 (C2): modelMeta emitted in JSON envelope; TTY staleness note.
 import { paginate } from '../lib/paginate.mjs';
+import { notePartialScan } from '../lib/blind.mjs';
 import { mapLimit } from '../lib/pool.mjs';
 import { ENTITY_SPECS, timezoneFromModel, tzLabel } from '../lib/model.mjs';
 import { fmtMoney as money } from '../lib/money.mjs';
@@ -18,8 +19,14 @@ export const meta = {
 
 const fmtDate = (ms, tz) =>
   new Date(ms).toLocaleString('en-US', { timeZone: tz, month: 'short', day: 'numeric' });
-const metric = (label, value, { note = '', blocked = false, blocker = '' } = {}) =>
-  ({ label, value, note, blocked, blocker });
+// `truncated` and `partialScanError` are part of the shape on purpose. An earlier attempt spread
+// `truncated: true` into this options object and it was silently discarded, because the destructure
+// below only names the keys it knows — so the metric rendered its warning text while the machine
+// payload still claimed a complete figure.
+const metric = (label, value, { note = '', blocked = false, blocker = '',
+                                truncated = false, partialScanError = null } = {}) =>
+  ({ label, value, note, blocked, blocker,
+     ...(truncated ? { truncated: true, partialScanError } : {}) });
 
 export async function collect(args, ctx) {
   const DAYS = args.days != null ? args.days : (Number(args._?.[0]) || 7);
@@ -63,6 +70,7 @@ export async function collect(args, ctx) {
 
   // ── LEADS: paginate contacts newest→older, stop past window ──
   async function leads() {
+    let leadsErr = null;
     let count = 0, pages = 0, oldest = null;
     let startAfter, startAfterId, done = false;
     for await (const c of paginate({
@@ -74,7 +82,10 @@ export async function collect(args, ctx) {
         return r.j;
       },
       getItems: (resp) => {
-        if (resp._err) return [];
+        // The code used to be thrown away here, so a failure on page 2+ left NO trace at all: not a
+        // warning, not a blocked flag, not even a captured number. `pages === 0` below only catches
+        // a first-page failure, so a partial contact scan reported its lead count as final.
+        if (resp._err) { leadsErr ??= resp._err; return []; }
         const arr = resp.contacts || resp.data || [];
         if (!arr.length) done = true;
         for (const c of arr) {
@@ -99,7 +110,10 @@ export async function collect(args, ctx) {
       if (Number.isFinite(t) && t >= START && t <= NOW) count++;
     }
     if (pages === 0) return metric('Leads', null, { blocked: true, blocker: 'contacts read failed' });
-    return metric('Leads', count, { note: `new contacts · ${pages} page(s) scanned` });
+    const partial = notePartialScan({ err: leadsErr, count: pages, source: 'contacts', ctx });
+    return metric('Leads', count, {
+      note: `new contacts · ${pages} page(s) scanned` + (partial ? ` · ⚠ INCOMPLETE (HTTP ${leadsErr}) — at least` : ''),
+      truncated: partial, partialScanError: partial ? leadsErr : null });
   }
 
   // ── BOOKINGS + SHOW RATE ──
@@ -208,18 +222,21 @@ export async function collect(args, ctx) {
     // A LATER page failed. The payments read are real, so this is not blocked — but the sum is a
     // FLOOR and must say so. Previously the captured code was dropped once page 1 had succeeded,
     // and a partially-read ledger rendered as a settled figure.
-    const partialNote = firstErr ? ` · ⚠ INCOMPLETE (page failed, HTTP ${firstErr}) — at least` : '';
+    // notePartialScan, not a bare note: the note alone left the envelope degraded:false, so a
+    // machine consumer still read the figure as complete.
+    const partial = notePartialScan({ err: firstErr, count: totalScanned, source: 'transactions', ctx });
+    const partialNote = partial ? ` · ⚠ INCOMPLETE (page failed, HTTP ${firstErr}) — at least` : '';
     // If only one currency, match original format; multi-currency → list all
     const entries = Object.entries(byCur);
     if (entries.length === 0)
-      return metric('Collected', money(0, locationCurrency), { note: `0 payment(s) · ${totalScanned} txns scanned${partialNote}`, ...(firstErr ? { truncated: true } : {}) });
+      return metric('Collected', money(0, locationCurrency), { note: `0 payment(s) · ${totalScanned} txns scanned${partialNote}`, truncated: partial, partialScanError: partial ? firstErr : null });
     if (entries.length === 1) {
       const [cur, { sum, n }] = entries[0];
-      return metric('Collected', money(sum, cur), { note: `${n} payment(s) · ${totalScanned} txns scanned${partialNote}`, ...(firstErr ? { truncated: true } : {}) });
+      return metric('Collected', money(sum, cur), { note: `${n} payment(s) · ${totalScanned} txns scanned${partialNote}`, truncated: partial, partialScanError: partial ? firstErr : null });
     }
     const summary = entries.map(([c, { sum, n }]) => `${money(sum, c)} (${n})`).join(' + ');
     const totalN = entries.reduce((s, [, { n }]) => s + n, 0);
-    return metric('Collected', summary, { note: `${totalN} payment(s) · ${totalScanned} txns scanned · multi-currency${partialNote}`, ...(firstErr ? { truncated: true } : {}) });
+    return metric('Collected', summary, { note: `${totalN} payment(s) · ${totalScanned} txns scanned · multi-currency${partialNote}`, truncated: partial, partialScanError: partial ? firstErr : null });
   }
 
   // ── PIPELINE VALUE ──
@@ -267,8 +284,13 @@ export async function collect(args, ctx) {
       return metric('Pipeline value', null, { blocked: true, blocker: `opportunities HTTP ${firstErr}` });
     // Same 20-page cap as commands/pipeline.mjs on the same endpoint. If it stopped the scan, say
     // so in the note rather than presenting a floor as the total.
+    const pvPartial = notePartialScan({ err: firstErr, count: n, source: 'opportunities', ctx });
+    // The page cap was already surfaced here; a mid-scan error makes the sum a floor for exactly the
+    // same reason and now feeds the same flag.
+    const pvTrunc = pvPages.truncated || pvPartial;
     return metric('Pipeline value', money(sum, locationCurrency), {
-      note: pvPages.truncated ? `${n}+ open deal(s) — truncated, more exist` : `${n} open deal(s)`,
+      note: pvTrunc ? `${n}+ open deal(s) — truncated, more exist` : `${n} open deal(s)`,
+      truncated: pvTrunc, partialScanError: pvPartial ? firstErr : null,
     });
   }
 
