@@ -73,6 +73,20 @@ test('every currency symbol money.mjs can emit is parseable', () => {
   }
 });
 
+test('only the shapes fmtMoney actually emits are accepted', () => {
+  // The parser's contract is narrow on purpose: it accepts what money.mjs renders, not everything
+  // JavaScript's Number() will swallow. Relaxing the final check from a full-string match to a
+  // leading-digit test (`/^-?\d/`) survived every other test in this file — Number() rejects the
+  // multi-currency string on its own — so these are the cases that pin the difference.
+  //
+  // Number('0x10') is 16 and Number('1e5') is 100000. A metric string that looks like either is
+  // not something this tool produced, so guessing at it is exactly the behaviour being fixed.
+  for (const value of ['0x10', '1e5', '12.', '.5.', '1,2,3.4.5', '1 000']) {
+    assert.strictEqual(parseMetricNumber(value), null,
+      `${JSON.stringify(value)} was accepted — the parser must take only the shapes fmtMoney emits`);
+  }
+});
+
 test('a blocked money metric reports no movement, not a loss', () => {
   // The end-to-end consequence. Before the fix this printed change: -5000.
   const prev = { recordedAt: 1, snapshot: { collected: 5000 }, actions: [] };
