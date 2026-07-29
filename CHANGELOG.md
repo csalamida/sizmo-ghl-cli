@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `sizmo focus` said "all clear ✅" while it could not read your account
+
+With every source denied, `focus` printed **"Nothing to action — all clear. ✅"** and exited `0` —
+while its own `--json` envelope in the *same run* carried `degraded: true` and five warnings. One
+run, two contradictory answers, and the reassuring one is what a human reads.
+
+`brief` already enforced this rule; `focus` had diverged from it. It was also missed by the earlier
+blind-exit sweep for a structural reason: `focus` owns no fetches of its own, so its lane failures
+arrive as degraded warnings rather than the `blocked` marker that sweep keyed on. The consequence
+was the same — `sizmo focus && echo "nothing urgent"` ran its second half while sizmo was blind.
+
+Denied everywhere now exits `AUTH`, a total outage exits `API`, and a healthy-but-quiet account
+still says all clear and exits `0`. A degraded run that still surfaced real actions also exits `0` —
+partial sight is not blindness, and failing there would make `focus` useless on any account with a
+single bad scope.
+
 ### Fixed — a capped page scan reported a floor as if it were the total
 
 `paginate()` had one way to finish, so callers couldn't tell "the server ran out of data" from
