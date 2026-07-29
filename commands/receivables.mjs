@@ -74,7 +74,11 @@ export async function collect(args, ctx) {
         due, total,
         cur: (i.currency || 'PHP').toUpperCase(),
         status: i.status,
+        // `age` is DAYS SINCE THE DUE DATE, so it is NEGATIVE for an invoice that is not yet due.
+        // That is honest as data but was rendered as "aged -30d", which reads as a bug. `overdue`
+        // is emitted alongside it so a caller does not have to infer the distinction from the sign.
         age: ageDays(dt),
+        overdue: ageDays(dt) != null ? ageDays(dt) > 0 : null,
         id: i._id || i.id,
         contactId: i.contactDetails?.id || i.contactDetails?._id || i.contactId || null,
       };
@@ -126,8 +130,16 @@ export async function run(args, ctx) {
       return;
     }
     data.list.forEach((x, i) => {
-      const aged = x.age == null ? '—' : (x.age >= 30 ? `${x.age}d ⚠` : `${x.age}d`);
-      ctx.out.line(`  ${String(i + 1).padStart(2)}. ${(x.name || '?').slice(0, 24).padEnd(24)} ${money(x.due, x.cur).padStart(11)}  ${String(x.status).padEnd(14)} aged ${aged}`);
+      // An unpaid invoice that is not yet due belongs in an outstanding total — that part was
+      // right — but it is not AGED. It used to render "aged -30d" for an invoice due in 30 days,
+      // which reads as a broken number and, worse, filed a current invoice under the same heading
+      // as a genuinely overdue one. Reproduced 2026-07-30.
+      const aged = x.age == null ? 'age unknown'
+                 : x.age < 0     ? `due in ${-x.age}d`
+                 : x.age === 0   ? 'due today'
+                 : x.age >= 30   ? `aged ${x.age}d ⚠`
+                 :                 `aged ${x.age}d`;
+      ctx.out.line(`  ${String(i + 1).padStart(2)}. ${(x.name || '?').slice(0, 24).padEnd(24)} ${money(x.due, x.cur).padStart(11)}  ${String(x.status).padEnd(14)} ${aged}`);
       ctx.out.line(`      invoice ${x.num} · id ${x.id}`);
       if (x.contactId) ctx.out.line(`      → sizmo send ${x.contactId} --channel email --message "..."   ·   sizmo open ${x.contactId}`);
     });
