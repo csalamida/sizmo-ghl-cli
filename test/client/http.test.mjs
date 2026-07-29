@@ -139,3 +139,83 @@ test('429 with a non-numeric (HTTP-date) Retry-After falls back to backoff, boun
   assert.equal(r.code, 429);
   assert.equal(state.calls, 5);
 });
+
+// ── non-idempotent writes must never be silently repeated ────────────────────
+//
+// A client-side abort at timeoutMs does NOT mean the server ignored the request — it means we
+// stopped listening. Nor does a 502/504: gateways routinely fail AFTER the upstream has acted.
+// Retrying a POST in either case re-delivers the side effect.
+//
+// Found 2026-07-28. Reproduced with an injected fetch where the server ALWAYS succeeds but the
+// response is lost:
+//     POST + client timeout    server processed 2x, client saw code=201
+//     POST + 502 from gateway  server processed 2x, client saw code=201
+// The affected POSTs are /conversations/messages, /invoices/{id}/send and /invoices/ — a contact
+// messaged twice, an invoice delivered twice, a duplicate draft. And the client reported 201, so
+// nothing surfaced it. sizmo's safety model is that one --confirm performs one write.
+
+function lossyServer({ failMode, status = 201 } = {}) {
+  const seen = [];
+  const http = makeHttp({
+    pit: 'pit-TEST',
+    sleep: async () => {},
+    fetch: async (_url, opts) => {
+      seen.push(JSON.parse(opts.body || '{}'));       // the server received and ACTED on it
+      if (seen.length === 1) {
+        if (failMode === 'timeout') { const e = new Error('aborted'); e.name = 'AbortError'; throw e; }
+        if (failMode === '5xx') return { status: 502, headers: { get: () => null }, text: async () => 'bad gateway' };
+      }
+      return { status, headers: { get: () => null }, text: async () => '{"ok":true}' };
+    },
+  });
+  return { http, seen };
+}
+
+test('POST is NOT retried after a client timeout — the message is delivered once', async () => {
+  const { http, seen } = lossyServer({ failMode: 'timeout' });
+  const r = await http.post('/conversations/messages', { contactId: 'c1', message: 'hi' });
+  assert.equal(seen.length, 1, 'a timed-out POST must not be re-sent — the first one may have landed');
+  assert.equal(r.ok, false, 'and the caller must be told it failed rather than shown a fake 201');
+  assert.match(r.txt, /may or may not have been delivered/,
+    'the wording must warn against a blind retry, which is what causes the double-send');
+});
+
+test('POST is NOT retried after a 5xx — a gateway can fail after the upstream acted', async () => {
+  const { http, seen } = lossyServer({ failMode: '5xx' });
+  const r = await http.post('/invoices/inv-1/send', { altId: 'L' });
+  assert.equal(seen.length, 1, 'a 502 must not trigger a re-send of an invoice');
+  assert.equal(r.code, 502, 'the real status is surfaced, not masked by a retry that "succeeded"');
+});
+
+test('PUT IS still retried — idempotent, so repeating converges on the same state', async () => {
+  // The fix must not overcorrect. PUT and DELETE are safe to repeat by HTTP semantics.
+  const { http, seen } = lossyServer({ failMode: 'timeout', status: 200 });
+  const r = await http.put('/contacts/c1', { name: 'Ana' });
+  assert.equal(seen.length, 2, 'PUT should retry through a transient timeout');
+  assert.equal(r.ok, true);
+});
+
+test('DELETE IS still retried — same reasoning as PUT', async () => {
+  const { http, seen } = lossyServer({ failMode: '5xx', status: 200 });
+  const r = await http.delete('/contacts/c1');
+  assert.equal(seen.length, 2);
+  assert.equal(r.ok, true);
+});
+
+test('a POST IS still retried on 429 — refused is not processed', async () => {
+  // 429 means the request was rejected before any side effect, so repeating it cannot duplicate.
+  // This is the one retry that stays safe for POST, and it must not be lost to the fix above.
+  let n = 0;
+  const http = makeHttp({
+    pit: 'pit-TEST', sleep: async () => {},
+    fetch: async () => {
+      n++;
+      return n === 1
+        ? { status: 429, headers: { get: () => null }, text: async () => '{}' }
+        : { status: 201, headers: { get: () => null }, text: async () => '{"ok":true}' };
+    },
+  });
+  const r = await http.post('/contacts/c1/tags', { tags: ['vip'] });
+  assert.equal(n, 2, 'a 429 must still be retried for POST');
+  assert.equal(r.ok, true);
+});
