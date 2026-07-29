@@ -4,10 +4,22 @@
 
 ## Requirements
 
-- Node.js 20 or later (`node --version` to check)
-- A GoHighLevel Private Integration Token (PIT) with at minimum `contacts.read`, `conversations.read`, `opportunities.read`, `calendars.read`, `invoices.read`, and `payments.read` scopes
+- **Node.js 22+** (`node --version` to check). This is what `package.json` enforces via
+  `engines.node`; an older Node fails the install rather than misbehaving at runtime.
+- A GoHighLevel Private Integration Token (PIT). The exact scopes are listed in Step 2 — and
+  `sizmo doctor` will name any that are actually missing rather than making you guess.
 
-## Step 1 — clone and link
+## Step 1 — install
+
+**From npm (what most people want):**
+
+```sh
+npm install -g sizmo
+# or run it without installing:
+npx sizmo brief
+```
+
+**From source** (if you want to read or modify it — it is zero-dependency and auditable):
 
 ```sh
 git clone https://github.com/csalamida/sizmo-ghl-cli
@@ -15,7 +27,7 @@ cd sizmo-ghl-cli
 bash install.sh
 ```
 
-`install.sh` does exactly three things (verified against the actual script):
+`install.sh` does four things:
 
 1. Creates `~/.local/bin` if it does not exist
 2. Symlinks `<repo>/bin/sizmo.mjs` → `~/.local/bin/sizmo`
@@ -42,7 +54,15 @@ sizmo --version
 
 1. Open GoHighLevel → Settings → Integrations → Private Integrations
 2. Create a new integration — give it a name like "sizmo-read"
-3. Grant read-only scopes: `contacts.read`, `conversations.read`, `opportunities.read`, `calendars.read`, `invoices.read`, `payments.read`, `transactions.read`
+3. Grant the read-only scopes. **The names matter** — GoHighLevel uses `.readonly`, not `.read`, and
+   this list previously named scopes that do not exist, so a PIT built from it could not work:
+
+   ```
+   contacts.readonly · conversations.readonly · opportunities.readonly · calendars.readonly · invoices.readonly · payments/transactions.readonly · forms.readonly · surveys.readonly · products.readonly · links.readonly · businesses.readonly · objects.readonly
+   ```
+
+   Or skip the copying: `sizmo init` prints this exact block plus the GoHighLevel path to paste it
+   into, then tells you the one command to run next.
 4. Copy the token (starts with `pit-`)
 
 Never store the PIT in a shell command or history. Always pass via stdin.
