@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `sizmo doctor` reported an expired token as "12 scope(s) missing"
+
+Every `401` was classified as "this scope is missing" — correct when *some* lanes fail, wrong when
+**all** of them do, because an invalid, expired or revoked PIT is denied on every lane:
+
+```
+PIT expired, every lane 401      12 lanes reported missing → "12 scope(s) missing"
+token valid, 2 scopes missing     2 lanes reported missing → correct
+```
+
+Same kind of output, only the count differed. So a dead token sent you to add twelve scopes — a
+remedy that cannot work on a token that no longer exists. `doctor` also printed *"add it in GHL"*
+twelve times, contradicting its own verdict.
+
+Now diagnosed as a token problem with a remediation that resolves it (re-create the integration),
+and the contradictory per-scope advice is suppressed. A genuine single missing scope still gets its
+exact fix line, and a total network failure is reported as unreachable rather than as a credential
+problem.
+
+Two judgements recorded in the source: it keys on **all-vs-some**, not `401`-vs-`403`, because
+GoHighLevel's use of that split is unverified — and since "every lane denied" is genuinely
+ambiguous (a live PIT created with *no* scopes looks identical to a dead one), the message names
+both possibilities rather than guessing.
+
 ### Fixed — `sizmo focus` said "all clear ✅" while it could not read your account
 
 With every source denied, `focus` printed **"Nothing to action — all clear. ✅"** and exited `0` —
