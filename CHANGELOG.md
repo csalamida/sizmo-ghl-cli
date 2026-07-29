@@ -13,6 +13,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — `reconcile` asks the server for its window instead of downloading all history
+
+`reconcile --days 30` queried `/payments/transactions` with no date filter and paginated to
+completion — up to 50,000 rows — then discarded everything outside the window locally. On an account
+with five years of payments, it downloaded five years of payments.
+
+`startAt`/`endAt` were documented on that endpoint the whole time. Measured against a simulated
+5-year account:
+
+```
+before   19 transaction pages
+after     1 transaction page
+```
+
+The window is padded a day on each side on purpose: the docs give the format but not whether the
+bounds are inclusive or which timezone applies, so rather than guess, the server-side filter is
+widened and the exact millisecond filter stays the authority for what counts. **If GoHighLevel
+ignores the params, behaviour and numbers are exactly as before** — only the speed-up is contingent.
+
+### Changed — `booked-not-paid` fetches calendar events concurrently
+
+One calendar at a time, while `noshow` made the identical request with a concurrency of 5. A
+12-calendar account spent 12 serial round-trips (~1.8s at a real ~150ms) on work that fits in 3.
+
+`receivables` was checked for the same problem and **does not have it** — it takes no `--days` flag,
+so fetching every outstanding invoice is correct rather than wasteful.
+
 ### Changed — `triage` fetches thread snippets concurrently
 
 The per-thread snippet fetch was a sequential `await` in a loop, so it scaled linearly with `--top`.
