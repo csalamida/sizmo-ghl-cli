@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — `triage` fetches thread snippets concurrently
+
+The per-thread snippet fetch was a sequential `await` in a loop, so it scaled linearly with `--top`.
+Measured at 10ms simulated latency:
+
+```
+                before                    after
+--top 10     10 fetches, 1 at a time    10 fetches, 5 at a time
+--top 100   100 fetches, 1118ms        100 fetches, 224ms
+```
+
+A real GoHighLevel round-trip is ~150ms, so `--top 100` spent roughly 15 seconds waiting one request
+at a time — and `brief` and `focus` both call `triage`, so they paid it too.
+
+Now uses the same `mapLimit(…, 5)` fan-out `noshow` and `doctor`'s scope probe already use. **Request
+count is unchanged** — this buys latency, not extra API calls, which matters on an account near its
+rate limit.
+
 ### Fixed — the cold-start setup advice was a double dead end
 
 A remediation must resolve the error it's attached to. This one sent you to a second error whose
