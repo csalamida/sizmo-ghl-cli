@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the cold-start setup advice was a double dead end
+
+A remediation must resolve the error it's attached to. This one sent you to a second error whose
+advice couldn't help either:
+
+```
+1. sizmo brief   → "no PIT available"
+                   fix: sizmo config set --profile <name> --pit-stdin
+2. follow it      → "saved default — loc — · pit-…c123"      ← no location
+3. sizmo brief   → "no location resolved"
+                   fix: pass --profile <name>, or set GHL_LOCATION_ID
+```
+
+Step 1 omitted `--loc`, producing a profile that can't be used. Step 3 then suggested `--profile
+<name>`, which can't give a profile a location it doesn't have. Two documented fixes, still broken —
+and `--loc` existed on `config set` the whole time. Following the corrected advice now reaches the
+API.
+
+### Fixed — README claimed bare `sizmo init` completes setup in one run
+
+It doesn't; it exits 2. The **code is right and deliberate** — stdin is reserved for the token, so
+`init` can't both prompt and read the secret from the same place. The README described something
+else. It now leads with the piped form and explains the two-step flow as intentional.
+
 ### Security — the read cache leaked data between tokens on the same location
 
 The 60-second read cache was keyed on the resolved URL alone. A comment asserted that was safe
