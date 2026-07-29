@@ -241,6 +241,16 @@ function listPipelines(ents, ctx) {
   return EXIT.OK;
 }
 
+// WHY every `truncated` below is literally false
+// `items` here carries the COMPLETE set; `shown` exists only to cut the terminal listing. These
+// used to emit `truncated: shown.length < items.length`, i.e. "the TTY was cut" — which is the
+// opposite of what `truncated` means everywhere else in this codebase (paginate, pipeline,
+// snapshot, noshow all use it for "the DATA is incomplete, treat this as a floor"). A JSON caller
+// therefore saw items.length === total alongside truncated:true, a self-contradiction, and would
+// either re-request data it already had or distrust a complete answer. crm had the mirror-image
+// bug: it sent the 20-item subset under the same flag. Both now mean one thing tool-wide, and the
+// terminal still prints its "… N more — --all to show all" hint. Unified 2026-07-30.
+
 // ── tags ─────────────────────────────────────────────────────────────────────
 
 function listTags(ents, showAll, ctx) {
@@ -248,7 +258,7 @@ function listTags(ents, showAll, ctx) {
   const items = ents.tags?.items ?? [];
   const shown = showAll ? items : items.slice(0, 40);
 
-  ctx.out.data({ entity: 'tags', items, total: items.length, truncated: shown.length < items.length });
+  ctx.out.data({ entity: 'tags', items, total: items.length, truncated: false });
 
   ctx.out.line('');
   ctx.out.line(`  TAGS (${items.length})`);
@@ -275,7 +285,7 @@ function listFields(ents, showAll, ctx) {
   const nw = Math.min(30, maxNameLen(items, 14) + 2);
   const idW = 26;
 
-  ctx.out.data({ entity: 'customFields', items, total: items.length, truncated: shown.length < items.length });
+  ctx.out.data({ entity: 'customFields', items, total: items.length, truncated: false });
 
   ctx.out.line('');
   ctx.out.line(`  CUSTOM FIELDS (${items.length})`);
@@ -366,7 +376,7 @@ function listForms(ents, showAll, ctx) {
   const nw = Math.min(36, maxNameLen(items, 14) + 2);
   const idW = 26;
 
-  ctx.out.data({ entity: 'forms', items, total: items.length, truncated: shown.length < items.length });
+  ctx.out.data({ entity: 'forms', items, total: items.length, truncated: false });
 
   ctx.out.line('');
   ctx.out.line(`  FORMS (${items.length})`);
@@ -395,7 +405,7 @@ function listSurveys(ents, showAll, ctx) {
   const nw = Math.min(36, maxNameLen(items, 14) + 2);
   const idW = 26;
 
-  ctx.out.data({ entity: 'surveys', items, total: items.length, truncated: shown.length < items.length });
+  ctx.out.data({ entity: 'surveys', items, total: items.length, truncated: false });
 
   ctx.out.line('');
   ctx.out.line(`  SURVEYS (${items.length})`);
@@ -424,7 +434,7 @@ function listProducts(ents, showAll, ctx) {
   const nw = Math.min(34, maxNameLen(items, 14) + 2);
   const idW = 26;
 
-  ctx.out.data({ entity: 'products', items, total: items.length, truncated: shown.length < items.length });
+  ctx.out.data({ entity: 'products', items, total: items.length, truncated: false });
 
   ctx.out.line('');
   ctx.out.line(`  PRODUCTS (${items.length})`);
@@ -454,7 +464,7 @@ function listLinks(ents, showAll, ctx) {
   const nw = Math.min(34, maxNameLen(items, 14) + 2);
   const idW = 26;
 
-  ctx.out.data({ entity: 'links', items, total: items.length, truncated: shown.length < items.length });
+  ctx.out.data({ entity: 'links', items, total: items.length, truncated: false });
 
   ctx.out.line('');
   ctx.out.line(`  TRIGGER LINKS (${items.length})`);
@@ -483,7 +493,7 @@ function listBusinesses(ents, showAll, ctx) {
   const nw = Math.min(30, maxNameLen(items, 14) + 2);
   const idW = 26;
 
-  ctx.out.data({ entity: 'businesses', items, total: items.length, truncated: shown.length < items.length });
+  ctx.out.data({ entity: 'businesses', items, total: items.length, truncated: false });
 
   ctx.out.line('');
   ctx.out.line(`  BUSINESSES (${items.length})`);

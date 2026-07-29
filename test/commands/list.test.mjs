@@ -71,7 +71,14 @@ test('list forms: present but empty → EXIT.OK, zero items (distinct from not-s
 
 // ── truncation + --all ────────────────────────────────────────────────────────
 
-test('list tags: truncates at 40 and flags truncated:true, items still complete', async () => {
+test('list tags: display truncates at 40, JSON carries all 55 and truncated stays false', async () => {
+  // CONTRACT CHANGE 2026-07-30. This used to assert truncated:true when the TTY listing was cut,
+  // while items still held everything — so a JSON caller saw items.length === total alongside
+  // truncated:true, which contradicts itself. Everywhere else in this codebase (paginate, pipeline,
+  // snapshot, noshow) truncated:true means "the DATA is incomplete, treat this as a floor", and
+  // `crm` used the same field for the opposite fact again: it shipped only the 20-item subset.
+  // Both commands now mean one thing. The items behaviour this test's old name defended is
+  // unchanged and still asserted below; only the flag's meaning moved.
   const items = Array.from({ length: 55 }, (_, i) => ({ name: `tag-${i}` }));
   const { ctx, getPrinted } = makeFakeCtx({ model: { entities: { tags: { items } } } });
   const code = await run({ _: ['tags'] }, ctx);
@@ -79,11 +86,27 @@ test('list tags: truncates at 40 and flags truncated:true, items still complete'
   assert.equal(code, EXIT.OK);
   const d = JSON.parse(getPrinted()).data;
   assert.equal(d.total, 55);
-  assert.equal(d.truncated, true);
   assert.equal(d.items.length, 55, 'JSON payload must carry ALL items — truncation is display-only');
+  assert.equal(d.truncated, false,
+    'items is complete, so truncated must be false — it describes the DATA, not the terminal');
 });
 
-test('list tags --all: truncated:false', async () => {
+test('list tags: the TTY listing is still cut at 40 with a hint — the inverse guard', async () => {
+  // The display truncation must survive the flag change; dropping it would dump 55 lines into a
+  // terminal, and the "… N more" hint is how a human learns --all exists.
+  const items = Array.from({ length: 55 }, (_, i) => ({ name: `tag-${i}` }));
+  // json:false is what makes out.line write — makeFakeCtx defaults json to TRUE, so a first draft
+  // of this test asserted against the JSON envelope and "found" all 55 rows.
+  const { ctx, getPrinted } = makeFakeCtx({ json: false, model: { entities: { tags: { items } } } });
+  await run({ _: ['tags'] }, ctx);
+  ctx.out.flush();
+  const printed = getPrinted();
+  assert.match(printed, /15 more/, 'the TTY must still say how many rows it hid');
+  assert.ok(!printed.includes('tag-54'), 'row 55 must not be printed');
+  assert.ok(printed.includes('tag-39'), 'the first 40 rows must be printed');
+});
+
+test('list tags --all: truncated:false and every row printed', async () => {
   const items = Array.from({ length: 55 }, (_, i) => ({ name: `tag-${i}` }));
   const { ctx, getPrinted } = makeFakeCtx({ model: { entities: { tags: { items } } } });
   const code = await run({ _: ['tags'], all: true }, ctx);
