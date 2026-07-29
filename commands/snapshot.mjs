@@ -221,6 +221,18 @@ export async function collect(args, ctx) {
   // ── PIPELINE VALUE ──
   async function pipelineValue() {
     let sum = 0, n = 0;
+    // firstErr is READ below. It used to be captured into `_err` and then discarded, which made
+    // this the only one of the five metrics in this file that reported a fabricated number instead
+    // of blocking. Verified 2026-07-28 with every read returning 401:
+    //     Leads          BLOCKED (contacts read failed)
+    //     Bookings       BLOCKED (calendars list HTTP 401)
+    //     Collected      BLOCKED (transactions HTTP 401)
+    //     Reply rate     BLOCKED (conversations HTTP 401)
+    //     Pipeline value ₱0 · 0 open deal(s)      ← read as real data
+    // Someone glancing at a snapshot during a scope failure concluded they had no pipeline. Same
+    // class as the blocked-is-not-zero rule this codebase enforces everywhere else: a source that
+    // could not be read is UNKNOWN, never zero.
+    let firstErr = null;
     for await (const o of paginate({
       fetchPage: async (page = 1) => {
         const r = await ctx.http.get('/opportunities/search', {
@@ -229,7 +241,10 @@ export async function collect(args, ctx) {
         if (!r.ok) return { _err: r.code, opportunities: [] };
         return r.j;
       },
-      getItems: (resp) => resp._err ? [] : (resp.opportunities || resp.data || []),
+      getItems: (resp) => {
+        if (resp._err) { firstErr ??= resp._err; return []; }
+        return resp.opportunities || resp.data || [];
+      },
       nextCursor: (resp, items, page = 1) => {
         if (resp._err || items.length < 100) return null;
         return page + 1;
@@ -240,6 +255,10 @@ export async function collect(args, ctx) {
       sum += Number(o.monetaryValue || o.monetary_value || 0) || 0;
       n++;
     }
+    // Matches revenue()'s guard exactly — blocked only when NOTHING was read, so a genuinely
+    // empty pipeline still reports a real ₱0 rather than a false blockage.
+    if (firstErr && n === 0)
+      return metric('Pipeline value', null, { blocked: true, blocker: `opportunities HTTP ${firstErr}` });
     return metric('Pipeline value', money(sum, locationCurrency), { note: `${n} open deal(s)` });
   }
 

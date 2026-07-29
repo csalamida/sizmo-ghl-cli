@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { run } from '../../commands/snapshot.mjs';
+import { run, collect } from '../../commands/snapshot.mjs';
 import { makeFakeCtx } from '../_helpers.mjs';
 
 const GOLDEN_PATH = new URL('../golden/snapshot.json', import.meta.url);
@@ -230,4 +230,58 @@ test('snapshot: calendar with 100 events → truncation warning + degraded', asy
   const warnings = envelope.warnings || [];
   assert.ok(warnings.some(w => /truncat|may be truncated/i.test(w)), 'truncation warning must be present');
   assert.ok(warnings.some(w => /Busy Cal/i.test(w)), 'warning must name the calendar');
+});
+
+// ── Pipeline value must block, not fabricate ─────────────────────────────────
+//
+// Of the five metrics snapshot computes, four returned {blocked:true} when their source failed and
+// one did not: pipelineValue captured the HTTP error into `_err` and then never read it, so a 401
+// rendered as a real "₱0 · 0 open deal(s)". Verified 2026-07-28 with every read returning 401:
+//     Leads / Bookings / Collected / Reply rate  → BLOCKED
+//     Pipeline value                             → ₱0 · 0 open deal(s)
+// Someone glancing at a snapshot during a scope failure concluded they had no pipeline. Same class
+// as the blocked-is-not-zero rule enforced everywhere else in this codebase.
+
+test('snapshot: a denied opportunities read BLOCKS Pipeline value — never reports ₱0', async () => {
+  const { ctx } = makeFakeCtx({ json: true });
+  ctx.http.get = async () => ({ code: 401, ok: false, j: {}, txt: '' });
+  ctx.ensureModel = async () => ({ entities: {} });
+
+  const out = await collect({ days: 30 }, ctx);
+  const metrics = out?.metrics ?? out?.data?.metrics ?? [];
+  const pv = metrics.find(m => m.label === 'Pipeline value');
+  assert.ok(pv, 'Pipeline value metric missing');
+  assert.equal(pv.blocked, true,
+    'an unreadable opportunities endpoint must report UNKNOWN, not a fabricated zero');
+  assert.equal(pv.value, null, 'a blocked metric carries no value');
+  assert.match(pv.blocker, /401/, 'and names the HTTP status so the cause is actionable');
+});
+
+test('snapshot: EVERY metric blocks when every source is denied — no outliers', async () => {
+  // Stated as a set property rather than per-metric, so a NEW metric that forgets to handle its
+  // error is caught here instead of shipping the same bug a sixth time.
+  const { ctx } = makeFakeCtx({ json: true });
+  ctx.http.get = async () => ({ code: 401, ok: false, j: {}, txt: '' });
+  ctx.ensureModel = async () => ({ entities: {} });
+
+  const out = await collect({ days: 30 }, ctx);
+  const metrics = out?.metrics ?? out?.data?.metrics ?? [];
+  assert.ok(metrics.length >= 5, 'expected snapshot to still compute its metric set');
+  const fabricating = metrics.filter(m => !m.blocked).map(m => `${m.label}=${JSON.stringify(m.value)}`);
+  assert.deepEqual(fabricating, [],
+    `these metrics reported a value while their source was denied: ${fabricating.join(', ')}. ` +
+    `A source that could not be read is UNKNOWN, never zero.`);
+});
+
+test('snapshot: a genuinely EMPTY pipeline still reports a real ₱0 — not a false block', async () => {
+  // The inverse guard. Blocking must key on "the read failed", never on "the number is zero",
+  // or every quiet account looks broken.
+  const { ctx } = makeFakeCtx({ json: true });
+  ctx.http.get = async () => ({ code: 200, ok: true, j: { opportunities: [], contacts: [], data: [], conversations: [] }, txt: '{}' });
+  ctx.ensureModel = async () => ({ entities: {} });
+
+  const out = await collect({ days: 30 }, ctx);
+  const pv = (out?.metrics ?? out?.data?.metrics ?? []).find(m => m.label === 'Pipeline value');
+  assert.equal(pv.blocked, false, 'reads succeeded — an empty pipeline is a real answer');
+  assert.match(String(pv.value), /0/);
 });
