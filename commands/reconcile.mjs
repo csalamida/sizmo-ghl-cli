@@ -28,7 +28,10 @@ export async function collect(args, ctx) {
   const DAYS = args.days ?? 30;
   const LOC = ctx.cfg.loc;
   const NOW = ctx.now;
-  const START = NOW - DAYS * 24 * 60 * 60 * 1000;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const START = NOW - DAYS * DAY_MS;
+  // YYYY-MM-DD, the format list-transactions documents for startAt/endAt.
+  const ymd = (ms) => new Date(ms).toISOString().slice(0, 10);
   // Mirror snapshot's inWindow normalization: numeric seconds (< 1e12) → ms.
   // GHL currently returns ISO strings, but numeric-epoch fields are defensively handled.
   const inWin = (v) => {
@@ -70,7 +73,21 @@ export async function collect(args, ctx) {
   for await (const t of paginate({
     fetchPage: async (offset = 0) => {
       const r = await ctx.http.get('/payments/transactions', {
-        query: { altId: LOC, altType: 'location', limit: 100, offset },
+        // startAt/endAt narrow the fetch SERVER-SIDE. Without them this paginated the account's
+        // entire transaction history (maxPages 500 x 100 = up to 50,000 rows) and then threw away
+        // everything outside the window locally — so `reconcile --days 30` on an account with five
+        // years of payments downloaded five years of payments. The parameters were there all along:
+        // list-transactions documents startAt and endAt (format 2024-02-01), verified via
+        // describe_operation 2026-07-28.
+        //
+        // PADDED BY A DAY ON EACH SIDE, deliberately. The docs give the format but not whether the
+        // bounds are inclusive, nor which timezone they are interpreted in. Rather than guess at an
+        // API's semantics, the server-side filter is widened so it cannot possibly exclude a
+        // transaction inside the true window, and the exact millisecond filter below (`inWin`)
+        // stays the authority for what actually counts. Worst case the pad costs one extra day of
+        // rows; it can never cost correctness.
+        query: { altId: LOC, altType: 'location', limit: 100, offset,
+                 startAt: ymd(START - DAY_MS), endAt: ymd(NOW + DAY_MS) },
       });
       if (!r.ok) return { _err: r.code, data: [] };
       return r.j;

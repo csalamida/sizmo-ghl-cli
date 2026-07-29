@@ -12,7 +12,18 @@ import { makeFakeCtx } from '../_helpers.mjs';
 
 const GOLDEN_PATH = new URL('../golden/reconcile.json', import.meta.url);
 
-const TXN_KEY  = 'GET /payments/transactions?altId=L-TEST&altType=location&limit=100&offset=0';
+// reconcile now narrows the transactions fetch SERVER-SIDE with startAt/endAt instead of paginating
+// the account's entire history and filtering locally, so the fixture key carries those params.
+// Derived from the same pinned NOW the tests inject — hardcoding a date here would make the suite
+// pass or fail depending on the day it runs.
+const DAY = 86_400_000;
+const ymd = (ms) => new Date(ms).toISOString().slice(0, 10);
+// The window is padded a day either side because the API documents the FORMAT of startAt/endAt but
+// not their inclusivity or timezone; the exact ms filter in reconcile stays the authority.
+const txnKeyFor = (now, days = 30, offset = 0) =>
+  `GET /payments/transactions?altId=L-TEST&altType=location&limit=100&offset=${offset}` +
+  `&startAt=${ymd(now - days * DAY - DAY)}&endAt=${ymd(now + DAY)}`;
+const TXN_KEY = txnKeyFor(1_700_000_000_000);
 const SUBS_KEY = 'GET /payments/subscriptions?altId=L-TEST&altType=location&limit=100&offset=0';
 
 test('reconcile: run returns 0 and envelope has expected keys + value assertions', async () => {
