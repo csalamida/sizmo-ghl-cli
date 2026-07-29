@@ -3,7 +3,7 @@
 // Trust-fix #2: conversations paginate to completion — --top N caps final sorted list only.
 // READ-ONLY. Never sends. Agent drafts, human approves.
 import { paginate } from '../lib/paginate.mjs';
-import { exitForBlockedSource } from '../lib/blind.mjs';
+import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
 import { mapLimit } from '../lib/pool.mjs';
 
 export const meta = {
@@ -70,6 +70,10 @@ export async function collect(args, ctx) {
     return { location: LOC, blocked: convErr, scanned: null, waiting: null, shown: null, threads: [] };
   }
 
+  // A later page failed: the threads we have are real, the count is a FLOOR. Previously discarded,
+  // so "3 waiting" could mean 3 of an unknown larger number with degraded:false.
+  const partial = notePartialScan({ err: convErr, count: convos.length, source: 'conversations', ctx });
+
   const waiting = convos
     .filter(c => (c.unreadCount || 0) > 0 && (c.lastMessageDate || 0) >= START)
     .sort((a, b) => (a.lastMessageDate || 0) - (b.lastMessageDate || 0));
@@ -106,6 +110,7 @@ export async function collect(args, ctx) {
     scanned: convos.length,
     waiting: waiting.length,
     shown: top.length,
+    ...(partial ? { truncated: true, partialScanError: convErr } : {}),
     threads: top.map(c => ({
       rank: 0,
       name: c.contactName || c.fullName,

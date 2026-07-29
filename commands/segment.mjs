@@ -3,7 +3,7 @@
 // Trust-fix #2: contacts paginate to completion.
 // READ-ONLY. Never writes a tag, never messages.
 import { paginate } from '../lib/paginate.mjs';
-import { exitForBlockedSource } from '../lib/blind.mjs';
+import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
 
 export const meta = {
   name: 'segment',
@@ -119,6 +119,10 @@ export async function collect(args, ctx) {
     criteria: crit,
     scanned,
     matched: hits.length,
+    // A later page failed, so `matched` is a floor: more contacts may fit this segment than were
+    // ever read. Targeting on a number nobody finished measuring is the failure being prevented.
+    ...(notePartialScan({ err: firstErr, count: scanned, source: 'contacts', ctx })
+        ? { truncated: true, partialScanError: firstErr } : {}),
     contactIds: hits.map(c => c.id),
     sample,
   };

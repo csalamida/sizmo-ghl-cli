@@ -8,7 +8,7 @@
 import { paginate } from '../lib/paginate.mjs';
 import { ENTITY_SPECS } from '../lib/model.mjs';
 import { fmtMoney } from '../lib/money.mjs';
-import { exitForBlockedSource } from '../lib/blind.mjs';
+import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
 
 export const meta = {
   name: 'pipeline',
@@ -157,6 +157,10 @@ export async function collect(args, ctx) {
     return { location: LOC, blocked: firstOppErr, totalValue: null, openCount: null, pipelines: [], stuck: [] };
   }
 
+  // A LATER page failed. `truncated` already covers the maxPages cap; a mid-scan error makes the
+  // result a floor for exactly the same reason, so it feeds the same flag rather than a second one.
+  const partialOpp = notePartialScan({ err: firstOppErr, count: opps.length, source: 'opportunities', ctx });
+
   // group by pipeline→stage
   const byPipe = {};
   let total = 0;
@@ -182,7 +186,8 @@ export async function collect(args, ctx) {
     openCount: opps.length,
     // true = the page cap stopped the scan, so totalValue/openCount are a FLOOR. A machine
     // consumer summing totalValue across locations must not treat this as the real total.
-    truncated: oppPages.truncated,
+    truncated: oppPages.truncated || partialOpp,
+    ...(partialOpp ? { partialScanError: firstOppErr } : {}),
     pipelines: Object.entries(byPipe).map(([pid, stages]) => ({
       pipeline: resolvePipeName(pid),
       // I1 fix: carry sid onto mapped object; sort by model stagePosition (never undefined)

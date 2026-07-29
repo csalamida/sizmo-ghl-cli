@@ -5,7 +5,7 @@
 // READ-ONLY. Invoices and payments are read-only — no charges, no voids, no sends from this command.
 import { paginate } from '../lib/paginate.mjs';
 import { fmtMoney as money } from '../lib/money.mjs';
-import { exitForBlockedSource } from '../lib/blind.mjs';
+import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
 
 export const meta = {
   name: 'receivables',
@@ -96,6 +96,11 @@ export async function collect(args, ctx) {
   const totalOwed = currencies.length === 1 ? byCur[currencies[0]] : Object.values(byCur).reduce((s, v) => s + v, 0);
   const currency = currencies.length === 1 ? currencies[0] : (owed[0]?.cur || 'PHP');
 
+  // Page 1 succeeded but a LATER page failed: the invoices we have are real, the total is a FLOOR.
+  // This used to be discarded entirely — the guard above only fires when NOTHING came back — so a
+  // 500 on page 2 shipped a truncated A/R total with degraded:false and exit 0.
+  const truncated = notePartialScan({ err: firstErr, count: inv.length, source: 'invoices', ctx });
+
   return {
     location: LOC,
     scanned: inv.length,
@@ -103,6 +108,7 @@ export async function collect(args, ctx) {
     totalOwed,
     currency,
     ...(currencies.length > 1 ? { byCurrency: byCur } : {}),
+    ...(truncated ? { truncated: true, partialScanError: firstErr } : {}),
     list: owed.slice(0, TOP),
   };
 }
@@ -123,7 +129,10 @@ export async function run(args, ctx) {
       ctx.out.line('  then rerun. `sizmo doctor` shows every blocked scope.\n');
       return;
     }
-    ctx.out.line(`\n  RECEIVABLES — ${money(data.totalOwed, data.currency)} outstanding across ${data.outstanding} invoice(s)  ·  ${data.scanned} scanned  ·  loc ${data.location}`);
+    // "at least" is the whole point when a page failed: the figure below is a floor.
+    const floor = data.truncated ? 'at least ' : '';
+    ctx.out.line(`\n  RECEIVABLES — ${floor}${money(data.totalOwed, data.currency)} outstanding across ${floor}${data.outstanding} invoice(s)  ·  ${data.scanned} scanned  ·  loc ${data.location}`);
+    if (data.truncated) ctx.out.line(`  ⚠ INCOMPLETE — a page failed (HTTP ${data.partialScanError}); more may be owed than shown`);
     ctx.out.line('  ' + '─'.repeat(72));
     if (!data.list.length) {
       ctx.out.line('  Nothing outstanding. All settled. ✅\n');

@@ -8,7 +8,7 @@
 import { paginate } from '../lib/paginate.mjs';
 import { ENTITY_SPECS } from '../lib/model.mjs';
 import { fmtMoney as m } from '../lib/money.mjs';
-import { exitForBlockedSource } from '../lib/blind.mjs';
+import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
 
 export const meta = {
   name: 'reconcile',
@@ -204,11 +204,16 @@ export async function collect(args, ctx) {
     };
   }
 
+  // A later page failed: `collected` is a FLOOR, and the flag counts (refunds/failed/orphans) are
+  // floors too — "0 refunds" on a partially-read ledger is an all-clear nobody verified.
+  const partial = notePartialScan({ err: txnErr, count: txns.length, source: 'transactions', ctx });
+
   return {
     location: LOC,
     days: DAYS,
     scanned: txns.length,
     inWindow: win.length,
+    ...(partial ? { truncated: true, partialScanError: txnErr } : {}),
     // single-currency: flat `collected` + `currency`; multi-currency: `byCurrency` map (no cross-sum)
     ...(isSingle
       ? { collected, currency }

@@ -205,17 +205,21 @@ export async function collect(args, ctx) {
     }
     if (firstErr && totalScanned === 0)
       return metric('Collected', null, { blocked: true, blocker: `transactions HTTP ${firstErr}` });
+    // A LATER page failed. The payments read are real, so this is not blocked — but the sum is a
+    // FLOOR and must say so. Previously the captured code was dropped once page 1 had succeeded,
+    // and a partially-read ledger rendered as a settled figure.
+    const partialNote = firstErr ? ` · ⚠ INCOMPLETE (page failed, HTTP ${firstErr}) — at least` : '';
     // If only one currency, match original format; multi-currency → list all
     const entries = Object.entries(byCur);
     if (entries.length === 0)
-      return metric('Collected', money(0, locationCurrency), { note: `0 payment(s) · ${totalScanned} txns scanned` });
+      return metric('Collected', money(0, locationCurrency), { note: `0 payment(s) · ${totalScanned} txns scanned${partialNote}`, ...(firstErr ? { truncated: true } : {}) });
     if (entries.length === 1) {
       const [cur, { sum, n }] = entries[0];
-      return metric('Collected', money(sum, cur), { note: `${n} payment(s) · ${totalScanned} txns scanned` });
+      return metric('Collected', money(sum, cur), { note: `${n} payment(s) · ${totalScanned} txns scanned${partialNote}`, ...(firstErr ? { truncated: true } : {}) });
     }
     const summary = entries.map(([c, { sum, n }]) => `${money(sum, c)} (${n})`).join(' + ');
     const totalN = entries.reduce((s, [, { n }]) => s + n, 0);
-    return metric('Collected', summary, { note: `${totalN} payment(s) · ${totalScanned} txns scanned · multi-currency` });
+    return metric('Collected', summary, { note: `${totalN} payment(s) · ${totalScanned} txns scanned · multi-currency${partialNote}`, ...(firstErr ? { truncated: true } : {}) });
   }
 
   // ── PIPELINE VALUE ──
