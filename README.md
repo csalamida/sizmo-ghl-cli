@@ -73,16 +73,23 @@ git clone https://github.com/csalamida/sizmo-ghl-cli && cd sizmo-ghl-cli
 node bin/sizmo.mjs brief
 ```
 
-Then set up a profile. **Easiest — guided:**
-
-```sh
-sizmo init
-```
-
-`sizmo init` walks you through it: it prints the exact GoHighLevel path + the scope copy-block, takes your token from stdin (never argv), writes the profile, and runs `sizmo doctor` to confirm you're green — all in one run. Agent-drivable too: pipe the token in non-interactively.
+Then set up a profile:
 
 ```sh
 echo "pit-yourtoken..." | sizmo init --profile myclient --loc YOUR_LOCATION_ID
+```
+
+That writes the profile and runs `sizmo doctor` to confirm you're green, in one run. The token comes
+from **stdin only, never argv**, so it never lands in your shell history, `ps`, or a process list.
+
+Don't have the token yet? Run `sizmo init` on its own first — it prints the exact GoHighLevel path
+and a copy-pasteable scope block, then tells you the command above to run. It deliberately does
+**not** prompt for the token interactively: stdin is reserved for the PIT, so it cannot both ask a
+question and read the secret from the same place. Bare `sizmo init` therefore exits non-zero with
+that instruction rather than completing setup — that is the intended two-step flow, not a failure.
+
+```sh
+sizmo init          # prints the GHL path + scopes, then the exact piped command to run
 ```
 
 **Manual alternative:**
