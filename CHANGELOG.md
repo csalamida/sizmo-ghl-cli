@@ -13,6 +13,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the read cache never worked on Linux, and never deleted anything anywhere
+
+The 60-second read cache wrote its temp file to `/tmp` and then renamed it into
+`~/.config/sizmo/cache`. `rename()` cannot cross a filesystem boundary, and those two paths are on
+different filesystems on any setup where `/tmp` is a tmpfs and `$HOME` is not — the common Linux and
+container default. Verified against a real second filesystem:
+
+```
+rename threw: EXDEV: cross-device link not permitted
+cache.get() right after set():   null        ->  after fix: the value, ageMs 2
+files in the cache dir:          0           ->  after fix: 1
+orphaned .tmp files left in /tmp: 1 per write ->  after fix: 0
+```
+
+Cache write failures are swallowed on purpose, so this never surfaced as an error. It was a cache
+that silently never worked at all — every command paying full API latency on data it believed it had
+cached — plus one abandoned temp file per write, each holding a complete API response body with
+contact names, emails and phone numbers, that nothing ever cleaned up. macOS was unaffected by luck:
+its temp directory happens to sit on the same volume as `$HOME`.
+
+Separately, nothing was ever deleted from the cache on any platform. Entries past the TTL were
+ignored by reads but left on disk: 50 entries written and read back ten years later were correctly
+reported as expired, and all 50 files were still present with their contact data readable. There was
+no way to clear it either.
+
+Now an expired entry is removed when it is read, a once-per-process sweep removes expired entries
+nothing reads again (paginated URLs are never requested twice), corrupt entries are dropped rather
+than kept forever, and there is a command for it:
+
+```
+sizmo config cache-clear          # deletes every cached response
+sizmo config cache-clear --json   # { removed: N, cacheDir: "…" }
+```
+
+**If you have been running sizmo for a while, that directory holds every response it ever cached.**
+Clearing it once is worth doing:
+
+```
+sizmo config cache-clear
+```
+
 ### Fixed — concurrent `sizmo ack` runs silently discarded each other's acks
 
 Every state change in local memory is a read-modify-write: load the whole file, change one key,

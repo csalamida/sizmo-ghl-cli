@@ -126,6 +126,25 @@ test('expiry uses the entry timestamp, not file mtime', () => {
     'the stale entry survived because expiry was judged by mtime rather than by its own ts');
 });
 
+test('a corrupt entry is swept, not kept forever', () => {
+  // `get` already returns null for an unparseable file, but returning null does not remove it. If
+  // the sweep only deleted entries whose `ts` it could read, a truncated file — the shape a crash
+  // mid-write leaves behind — would sit on disk permanently. That is the original accumulation bug
+  // in miniature, and relaxing the sweep's condition to require a readable ts survived every other
+  // test in this file.
+  const dir = tmp();
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'a'.repeat(64) + '.json'), '{"ts":170000000');      // truncated
+  writeFileSync(join(dir, 'b'.repeat(64) + '.json'), '{"value":{"x":1}}');    // no ts at all
+  const c = makeCache({ dir, ttlMs: 60_000, now: () => 1_700_000_000_000 });
+  c.set('https://api/fresh', { v: 1 });
+  const left = readdirSync(dir);
+  assert.equal(left.length, 1,
+    `corrupt entries survived the sweep: ${left.join(', ')} — an entry whose age cannot be read ` +
+    `is unusable, so keeping it only accumulates unreadable files with response bodies in them`);
+  assert.ok(c.get('https://api/fresh'), 'the sweep took the valid entry instead');
+});
+
 test('clear() removes everything and reports how much', () => {
   const dir = tmp();
   const c = makeCache({ dir, ttlMs: 60_000 });
