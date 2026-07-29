@@ -623,24 +623,25 @@ export async function run(parsed, ctx) {
       return runWithReport(pending, ctx);
     }
     if (!intent) {
-      ctx.out.line('nothing to confirm — run `sizmo ask "..."` first (without --confirm) to preview.');
-      ctx.out.flush();
-      return EXIT.USAGE;
+      // THROWS, not line+return. ctx.out.line is suppressed under --json and a RETURNED code
+      // never reaches cli.mjs's error handler, so `--json` emitted a success-shaped envelope
+      // (data:null, degraded:false, warnings:[]) with a bare non-zero exit and no explanation
+      // anywhere — not even on stderr. Verified 2026-07-30. Same fix list.mjs and business.mjs got.
+      throw new GhlError('nothing to confirm — no pending plan for this location', EXIT.USAGE,
+        'run `sizmo ask "..."` first (without --confirm) to preview, then `sizmo ask --confirm`');
     }
     // Fresh sentence + --confirm, no prior preview: resolve and fire in this SAME call (safe —
     // one resolution, no drift risk since nothing was shown beforehand). Falls through below.
   }
 
   if (!intent) {
-    ctx.out.line('usage: sizmo ask "what you want to do"');
-    ctx.out.line('');
-    ctx.out.line('examples:');
-    ctx.out.line('  sizmo ask "who has been waiting longest for a reply"');
-    ctx.out.line('  sizmo ask "tag Ana Cruz as follow-up"');
-    ctx.out.line('  sizmo ask "tag Ana as follow-up and book her Friday at 2pm" --confirm');
-    ctx.out.line('  sizmo ask "move Website Package to Proposal Sent"');
-    ctx.out.flush();
-    return EXIT.USAGE;
+    throw new GhlError(
+      'usage: sizmo ask "what you want to do"\n' +
+      '  sizmo ask "who has been waiting longest for a reply"\n' +
+      '  sizmo ask "tag Ana Cruz as follow-up"\n' +
+      '  sizmo ask "tag Ana as follow-up and book her Friday at 2pm" --confirm\n' +
+      '  sizmo ask "move Website Package to Proposal Sent"',
+      EXIT.USAGE, 'sizmo schema  # every command ask can resolve to');
   }
 
   // ── local fast path: bare command names never touch the LLM ───────────────────────────────
@@ -653,13 +654,11 @@ export async function run(parsed, ctx) {
     const aiKey = ctx.cfg.aiKey;
     const aiProvider = ctx.cfg.aiProvider || 'anthropic';
     if (!aiKey) {
-      ctx.out.line('sizmo ask requires an AI key in your profile (or type an exact command name — see `sizmo schema`).');
-      ctx.out.line('');
-      ctx.out.line('Setup (pick your provider):');
-      ctx.out.line('  sizmo config set --profile <name> --ai-key "sk-ant-..." --ai-provider anthropic');
-      ctx.out.line('  sizmo config set --profile <name> --ai-key "sk-..." --ai-provider openai');
-      ctx.out.flush();
-      return EXIT.AUTH;
+      throw new GhlError(
+        'sizmo ask requires an AI key in your profile (or type an exact command name — see `sizmo schema`)',
+        EXIT.AUTH,
+        'sizmo config set --profile <name> --ai-key "sk-ant-..." --ai-provider anthropic' +
+        '   (or --ai-key "sk-..." --ai-provider openai)');
     }
 
     const model = await ctx.ensureModel();
@@ -673,16 +672,15 @@ export async function run(parsed, ctx) {
     try {
       resolved = await callLlm({ apiKey: aiKey, provider: aiProvider, systemPrompt: buildSystemPrompt(crmExcerpt, !!recentContact), userMessage: intent });
     } catch (e) {
-      ctx.out.line(`AI error: ${e.message}`);
-      if (e.message?.includes('401') || e.message?.includes('403')) ctx.out.line('Check your AI key: sizmo config set --profile <name> --ai-key <key>');
-      ctx.out.flush();
-      return EXIT.API;
+      const badKey = e.message?.includes('401') || e.message?.includes('403');
+      throw new GhlError(`AI error: ${e.message}`, badKey ? EXIT.AUTH : EXIT.API,
+        badKey ? 'check your AI key: sizmo config set --profile <name> --ai-key <key>'
+               : 'this is the AI provider failing, not GoHighLevel — retry, or use an exact command name');
     }
 
     if (!resolved?.steps?.length) {
-      ctx.out.line('Could not resolve — LLM returned no steps. Try rephrasing.');
-      ctx.out.flush();
-      return EXIT.USAGE;
+      throw new GhlError('could not resolve — the AI returned no steps', EXIT.USAGE,
+        'try rephrasing, or run an exact command name — see `sizmo schema`');
     }
     steps = resolved.steps;
     confidence = resolved.confidence ?? 1;
@@ -690,18 +688,18 @@ export async function run(parsed, ctx) {
   }
 
   if (confidence < 0.7) {
-    ctx.out.line(`Low confidence (${Math.round(confidence * 100)}%): ${explanation ?? 'unclear request'}`);
-    ctx.out.line('Try rephrasing, or browse commands: sizmo schema');
-    ctx.out.flush();
-    return EXIT.USAGE;
+    throw new GhlError(
+      `low confidence (${Math.round(confidence * 100)}%): ${explanation ?? 'unclear request'}`,
+      EXIT.USAGE, 'try rephrasing, or browse commands: sizmo schema');
   }
 
   const result = await concretize(steps, ctx, now);
   if (!result.ok) {
-    ctx.out.line(`Couldn't resolve: ${result.error}`);
-    if (result.candidates) for (const c of result.candidates) ctx.out.line(`  ${c}`);
-    ctx.out.flush();
-    return EXIT.NOTFOUND;
+    const cands = Array.isArray(result.candidates) ? result.candidates : null;
+    throw new GhlError(
+      `couldn't resolve: ${result.error}` + (cands ? `\n  candidates: ${cands.join(', ')}` : ''),
+      EXIT.NOTFOUND,
+      cands ? 'name one of the candidates exactly' : 'check the name against `sizmo list` / `sizmo crm`');
   }
 
   if (result.resolvedContact) saveLastContact(ctx.cfg.loc, result.resolvedContact, now, ctx);
@@ -718,11 +716,10 @@ export async function run(parsed, ctx) {
 
   const anyNonExecutable = result.concrete.some(s => s.isWrite && s.executable === false);
   if (anyNonExecutable && result.concrete.length > 1) {
-    ctx.out.line('');
-    ctx.out.line("This request mixes something sizmo ask can't fire automatically (invoicing, appointments, or opp update) with other steps.");
-    ctx.out.line('Ask for one thing at a time when it involves those.');
-    ctx.out.flush();
-    return EXIT.USAGE;
+    throw new GhlError(
+      "this request mixes something sizmo ask can't fire automatically (invoicing, appointments, " +
+      'or opp update) with other steps', EXIT.USAGE,
+      'ask for one thing at a time when it involves those');
   }
 
   if (anyNonExecutable) {
@@ -734,6 +731,16 @@ export async function run(parsed, ctx) {
       else cmdParts.push(`--${k}`, String(v).includes(' ') ? `"${v}"` : String(v));
     }
     const cmdStr = cmdParts.join(' ');
+    // A preview is NOT an error, so it gets a data payload rather than a thrown envelope. Without
+    // this, `--json` returned data:null with exit 5 and the agent could not see WHAT it was being
+    // asked to confirm — which defeats the point of the confirm gate for a non-human caller.
+    ctx.out.data({
+      pending: true, executable: false, confirmed: false, stepCount: 1,
+      steps: [{ command: step.command, subcommand: step.subcommand ?? null,
+                intent: step.intent ?? null, fields: step.fields ?? {}, isWrite: true, executable: false }],
+      runCommand: `${cmdStr} --confirm`,
+      note: 'sizmo ask cannot fire this one automatically — run the printed command directly',
+    });
     ctx.out.line('');
     ctx.out.line(`  ${step.intent ?? 'resolved command'}`);
     ctx.out.line(`  → ${cmdStr}`);
@@ -753,6 +760,19 @@ export async function run(parsed, ctx) {
 
   // Preview + cache the concretized plan for a bare `--confirm` replay.
   savePendingPlan(ctx.cfg.loc, result.concrete, now, ctx);
+  // The plan an agent is being asked to approve, as data. Mirrors the human preview lines exactly:
+  // both are rendered from result.concrete / result.previewLines, so they cannot describe different
+  // plans. `previewLines` is included verbatim so a caller can show a human the same text.
+  ctx.out.data({
+    pending: true, executable: true, confirmed: false,
+    stepCount: result.concrete.length,
+    steps: result.concrete.map(s2 => ({
+      command: s2.command, subcommand: s2.subcommand ?? null, intent: s2.intent ?? null,
+      fields: s2.fields ?? {}, isWrite: !!s2.isWrite, executable: s2.executable !== false,
+    })),
+    previewLines: result.previewLines,
+    runCommand: 'sizmo ask --confirm',
+  });
   ctx.out.line('');
   for (const line of result.previewLines) ctx.out.line(line);
   ctx.out.line('');

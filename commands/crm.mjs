@@ -201,12 +201,24 @@ function entityList(entityName, model, modelMeta, nowMs, specMap, showAll, ctx) 
   const stale = spec ? isStale(ent, nowMs, spec.ttlMs) : false;
   const entMeta = { ...modelMeta, entityFetchedAt: ent.fetchedAt, entityAgeMs: entAge, entityStale: stale };
 
-  // High-cardinality truncation (tags, customFields)
+  // High-cardinality truncation (tags, customFields) — a DISPLAY concern only.
   const highCard = entityName === 'tags' || entityName === 'customFields';
   const shown = (highCard && !showAll) ? items.slice(0, TRUNCATE_ABOVE) : items;
-  const truncated = shown.length < items.length;
 
-  ctx.out.data({ entity: entityName, items: shown, total: items.length, truncated, _meta: entMeta });
+  // `items` carries the COMPLETE set, and `truncated` is therefore always false here.
+  //
+  // It used to emit `items: shown` — the 20-item display subset — with `truncated: true`. That is
+  // the opposite of what `truncated` means everywhere else in this codebase: paginate, pipeline,
+  // snapshot and noshow all use it for "the DATA is incomplete, treat this as a floor". So the
+  // same two field names meant opposite things in `crm <entity> --json` and `list <entity> --json`
+  // (which has always sent complete items — see its own test, "items still complete"), and an
+  // agent reading `crm tags --json` silently received 20 of N tags.
+  //
+  // Contract change, deliberately: JSON consumers now always get everything, on both commands,
+  // and `truncated` has exactly one meaning tool-wide. The terminal still truncates at
+  // TRUNCATE_ABOVE with the "… N more — --all to show all" hint.
+  ctx.out.data({ entity: entityName, items, total: items.length, truncated: false, _meta: entMeta });
+  const truncated = shown.length < items.length;   // display-only, drives the TTY hint below
 
   ctx.out.card(() => {
     const ageNote = entAge !== null ? `synced ${fmtAge(entAge)} ago` : '';

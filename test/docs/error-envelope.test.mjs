@@ -40,13 +40,23 @@ const WRITE_COMMANDS = ['contact', 'opp', 'tag', 'note', 'field', 'value', 'cale
 // forms, surveys, transactions and list were converted 2026-07-27 — they now throw GhlError, so a
 // 401 produces {error, code, remediation} instead of a success-shaped envelope.
 //
-// The two that REMAIN are deliberate, not leftovers:
+// The one that REMAINS is deliberate, not a leftover:
 //   doctor — its single return is a SUMMARY verdict printed after the full diagnostic report.
 //            Throwing would suppress the report the user ran the command to read. A blocked scope
 //            is doctor's OUTPUT, not doctor's failure.
-//   ask    — an orchestrator that dispatches other commands; its own error paths are covered by
-//            the pending-plan/confirm mechanism rather than a direct envelope.
-const KNOWN_RETURN_STYLE_READS = new Set(['doctor', 'ask']);
+//
+// `ask` was exempted here until 2026-07-30 on the stated grounds that "its own error paths are
+// covered by the pending-plan/confirm mechanism rather than a direct envelope." That reasoning was
+// checked and is wrong — the mechanism covers the CONFIRM previews, not the error paths. Measured
+// on `sizmo ask "tag Ana as follow-up" --json` with no AI key configured:
+//     stdout: {"schemaVersion":1,"command":"ask","location":"…","data":null,
+//              "degraded":false,"warnings":[]}
+//     exit:   3
+//     stderr: (empty)
+// A success-shaped envelope, a non-zero exit, and no explanation on either stream. Eight of ask's
+// error paths were like that. They now throw GhlError; its two CONFIRM previews are not errors and
+// emit a `pending: true` plan payload instead, so an agent can see what it is approving.
+const KNOWN_RETURN_STYLE_READS = new Set(['doctor']);
 
 function returnsAuthOrApi(src) {
   return /return\s+EXIT\.(AUTH|API)\b/.test(stripComments(src));
@@ -133,9 +143,14 @@ test('no NEW command adopts return-style error handling', () => {
     `real error envelope instead of a success-shaped one.`);
 });
 
-// `ask` returns EXIT.USAGE by design: it is an orchestrator whose usage errors are part of the
-// pending-plan/confirm conversation, not a terminal failure. Every other command must throw.
-const KNOWN_RETURN_STYLE_USAGE = new Set(['ask']);
+// Now empty, and it should stay that way. `ask` was the sole entry, on the grounds that it is "an
+// orchestrator whose usage errors are part of the pending-plan/confirm conversation, not a terminal
+// failure." Measured 2026-07-30, that was not what happened: a usage error emitted
+// {data:null, degraded:false, warnings:[]} on stdout with a bare non-zero exit and NOTHING on
+// stderr, because out.line is suppressed under --json. The conversation the exemption described
+// only existed in TTY mode. All eight of ask's error paths now throw; its two CONFIRM previews are
+// not errors and carry a `pending: true` plan payload instead.
+const KNOWN_RETURN_STYLE_USAGE = new Set([]);
 
 test('no command RETURNS EXIT.USAGE instead of throwing', () => {
   const all = readdirSync(CMD_DIR).filter(f => f.endsWith('.mjs')).map(f => f.replace('.mjs', ''));

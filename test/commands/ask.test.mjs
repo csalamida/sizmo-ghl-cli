@@ -18,6 +18,15 @@ const tmpDir = () => { const d = mkdtempSync(join(tmpdir(), 'sizmo-ask-mem-')); 
 after(() => { for (const d of TMP_DIRS) { try { rmSync(d, { recursive: true, force: true }); } catch {} } });
 
 const NOW = 1_800_000_000_000;
+// `ask` used to signal "nothing pending" by PRINTING a line and RETURNING EXIT.USAGE. Under --json
+// out.line is suppressed and a returned code never reaches the CLI's error handler, so the caller
+// got a success-shaped envelope with a bare exit 2 and no explanation anywhere. It now throws a
+// GhlError with the SAME code, which is what these assertions were really about.
+async function codeOf(fn) {
+  try { return await fn(); }
+  catch (e) { if (e?.name === 'GhlError') return e.code; throw e; }
+}
+
 const LOC = 'L-ASK';
 
 const FAKE_MODEL = {
@@ -513,7 +522,7 @@ test('--confirm path 1: the plan is cleared BEFORE it runs, so a stray second --
   assert.equal(await run({ _: [] }, ctx), EXIT.OK);
   assert.equal(posts, 1, 'first --confirm fires the plan once');
 
-  const second = await run({ _: [] }, ctx);
+  const second = await codeOf(() => run({ _: [] }, ctx));
   assert.equal(posts, 1, 'a second bare --confirm must NOT re-fire the already-applied plan');
   assert.equal(second, EXIT.USAGE, 'with nothing pending it should say there is nothing to confirm');
 });
@@ -537,7 +546,7 @@ test('--confirm path 1: an expired plan is not replayed', async () => {
   const futureCtx = makeCtx({ confirmed: true, askMemoryDir: dir,
     httpOverrides: { post: async () => { posts++; return { code: 200, ok: true, j: {} }; } } }).ctx;
   futureCtx.now = () => NOW + 60 * 60 * 1000; // +1 hour
-  const code = await run({ _: [] }, futureCtx);
+  const code = await codeOf(() => run({ _: [] }, futureCtx));
   assert.equal(posts, 0, 'an expired plan must never fire');
   assert.equal(code, EXIT.USAGE);
 });
@@ -585,7 +594,7 @@ test('--confirm path 1: a plan that FAILS halfway is still consumed — no doubl
   assert.equal(afterFirst, 2, 'step 1 applied, step 2 attempted and refused');
 
   // The reflexive re-run.
-  const second = await run({ _: [] }, ctx);
+  const second = await codeOf(() => run({ _: [] }, ctx));
   assert.equal(fired.length, afterFirst,
     'a half-failed plan must NOT still be pending — re-confirming would re-apply the step that ' +
     'already succeeded. The plan must be consumed before it runs, not after.');

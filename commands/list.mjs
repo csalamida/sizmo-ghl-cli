@@ -101,39 +101,70 @@ function notSyncedExit(entity, ctx) {
 
 // ── overview (bare list, no `sizmo list`) ─────────────────────────────────────
 
-function listOverview(ents, ctx) {
-  const cnt = (key) => {
-    if (ents[key]?.blocked) return null;
-    return (ents[key]?.items ?? []).length;
-  };
-  const row = (label, count, cmd) => {
-    // ✖ means "blocked, missing scope" everywhere else in this CLI — never reuse it for
-    // "not cached, fetched live on demand." That's a different, non-error state (below).
-    const display = count === 'live' ? '   ·' : (count != null ? String(count).padStart(4) : '  ✖');
-    ctx.out.line(`  ${pad(label, 16)}${display}    sizmo list ${cmd}`);
-  };
+// The entity index, declared once. Both the TTY table and the --json payload are rendered from
+// this, because they used to be two different things: the human got all twelve rows with counts
+// and the exact command for each, and `sizmo list --json` emitted
+//     { data: null, degraded: false, warnings: [] }  exit 0
+// which is a success-shaped envelope carrying nothing. Both SKILL.md and AGENTS.md tell an agent to
+// run `sizmo list` first, so the one command written to orient an agent was the one that told it
+// nothing at all. Verified 2026-07-30.
+const OVERVIEW = [
+  { group: 'CRM ENTITIES',        label: 'Pipelines',      key: 'pipelines',    cmd: 'pipelines' },
+  { group: 'CRM ENTITIES',        label: 'Calendars',      key: 'calendars',    cmd: 'calendars' },
+  { group: 'CRM ENTITIES',        label: 'Tags',           key: 'tags',         cmd: 'tags' },
+  { group: 'CRM ENTITIES',        label: 'Custom Fields',  key: 'customFields', cmd: 'fields' },
+  { group: 'CRM ENTITIES',        label: 'Custom Values',  key: null,           cmd: 'values',     live: true },
+  { group: 'CRM ENTITIES',        label: 'Users',          key: 'users',        cmd: 'users' },
+  { group: 'CONTENT & COMMERCE',  label: 'Forms',          key: 'forms',        cmd: 'forms' },
+  { group: 'CONTENT & COMMERCE',  label: 'Surveys',        key: 'surveys',      cmd: 'surveys' },
+  { group: 'CONTENT & COMMERCE',  label: 'Products',       key: 'products',     cmd: 'products' },
+  { group: 'CONTENT & COMMERCE',  label: 'Trigger Links',  key: 'links',        cmd: 'links' },
+  { group: 'B2B & STRUCTURE',     label: 'Businesses',     key: 'businesses',   cmd: 'businesses' },
+  { group: 'B2B & STRUCTURE',     label: 'Custom Objects', key: 'objects',      cmd: 'objects' },
+];
 
-  ctx.out.line('');
-  ctx.out.line('  CRM ENTITIES');
-  ctx.out.line('  ' + '─'.repeat(58));
-  row('Pipelines',     cnt('pipelines'),    'pipelines');
-  row('Calendars',     cnt('calendars'),    'calendars');
-  row('Tags',          cnt('tags'),         'tags');
-  row('Custom Fields', cnt('customFields'), 'fields');
-  row('Custom Values', 'live',               'values  (live)');
-  row('Users',         cnt('users'),        'users');
-  ctx.out.line('');
-  ctx.out.line('  CONTENT & COMMERCE');
-  ctx.out.line('  ' + '─'.repeat(58));
-  row('Forms',         cnt('forms'),        'forms');
-  row('Surveys',       cnt('surveys'),      'surveys');
-  row('Products',      cnt('products'),     'products');
-  row('Trigger Links', cnt('links'),        'links');
-  ctx.out.line('');
-  ctx.out.line('  B2B & STRUCTURE');
-  ctx.out.line('  ' + '─'.repeat(58));
-  row('Businesses',    cnt('businesses'),   'businesses');
-  row('Custom Objects',cnt('objects'),      'objects');
+function listOverview(ents, ctx) {
+  // One pass over the table produces the machine rows; the TTY table is printed from the same ones.
+  const rows = OVERVIEW.map(({ group, label, key, cmd, live }) => {
+    const ent = key ? ents[key] : null;
+    const blocked = !!ent?.blocked;
+    return {
+      entity: cmd,
+      label,
+      group,
+      // `null` count means UNKNOWN (blocked, or fetched live) — never 0. A blocked entity with
+      // count 0 would read as "this account has no tags" when the truth is "cannot see tags".
+      count: live || blocked || !ent ? null : (ent.items ?? []).length,
+      live: !!live,
+      blocked,
+      ...(blocked && { scope: ent?.scope ?? null, httpCode: ent?.httpCode ?? null }),
+      command: `sizmo list ${cmd}`,
+    };
+  });
+  ctx.out.data({ entities: rows, syncCommand: 'sizmo sync' });
+  // degraded, because the index itself is incomplete: an entity marked blocked has an UNKNOWN
+  // count, not a count of zero. The exit code stays 0 — rendering the index succeeded, and naming
+  // what cannot be seen is the useful answer, not a failure.
+  for (const r of rows) {
+    if (r.blocked) ctx.out.warn(`${r.label} blocked — ${r.scope ? `PIT lacks ${r.scope}` : 'check scope'}`, { degraded: true });
+  }
+
+  const row = (r) => {
+    // ✖ means "blocked, missing scope" everywhere else in this CLI — never reuse it for
+    // "not cached, fetched live on demand." That's a different, non-error state.
+    const display = r.live ? '   ·' : (r.count != null ? String(r.count).padStart(4) : '  ✖');
+    ctx.out.line(`  ${pad(r.label, 16)}${display}    ${r.command}${r.live ? '  (live)' : ''}`);
+  };
+  let lastGroup = null;
+  for (const r of rows) {
+    if (r.group !== lastGroup) {
+      ctx.out.line('');
+      ctx.out.line(`  ${r.group}`);
+      ctx.out.line('  ' + '─'.repeat(58));
+      lastGroup = r.group;
+    }
+    row(r);
+  }
   ctx.out.line('  ' + '─'.repeat(58));
   ctx.out.line('  Run sizmo sync to refresh all entities.\n');
   return EXIT.OK;
