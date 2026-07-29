@@ -113,6 +113,7 @@ export async function collect(args, ctx) {
   // all open opps paginated to completion (trust-fix #2)
   const opps = [];
   let firstOppErr = null;
+  const oppPages = { pages: 0, truncated: false };
   for await (const o of paginate({
     fetchPage: async (page = 1) => {
       const r = await ctx.http.get('/opportunities/search', {
@@ -131,8 +132,21 @@ export async function collect(args, ctx) {
     },
     maxPages: 20,
     startCursor: 1,
+    stats: oppPages,
   })) {
     opps.push(o);
+  }
+
+  // TRUNCATION IS NOT COMPLETION. maxPages 20 x 100/page caps this at 2,000 opportunities; an
+  // account with more reported the value of the first 2,000 as if it were the whole pipeline —
+  // a silent understatement of a money figure. Verified 2026-07-28: 2,000 items yielded, caller
+  // told nothing. Now surfaced as degraded + a warning, and `truncated` rides in the payload so a
+  // machine consumer can see it too. Not `blocked` — the data returned is real, it is just a floor.
+  if (oppPages.truncated) {
+    ctx.out.warn(
+      `opportunities truncated at ${oppPages.pages} pages (${opps.length} deals) — more exist; ` +
+      `totalValue is a FLOOR, not the true total`,
+      { degraded: true });
   }
 
   if (firstOppErr && opps.length === 0) {
@@ -166,6 +180,9 @@ export async function collect(args, ctx) {
     location: LOC,
     totalValue: total,
     openCount: opps.length,
+    // true = the page cap stopped the scan, so totalValue/openCount are a FLOOR. A machine
+    // consumer summing totalValue across locations must not treat this as the real total.
+    truncated: oppPages.truncated,
     pipelines: Object.entries(byPipe).map(([pid, stages]) => ({
       pipeline: resolvePipeName(pid),
       // I1 fix: carry sid onto mapped object; sort by model stagePosition (never undefined)

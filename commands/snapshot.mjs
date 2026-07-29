@@ -233,6 +233,7 @@ export async function collect(args, ctx) {
     // class as the blocked-is-not-zero rule this codebase enforces everywhere else: a source that
     // could not be read is UNKNOWN, never zero.
     let firstErr = null;
+    const pvPages = { pages: 0, truncated: false };
     for await (const o of paginate({
       fetchPage: async (page = 1) => {
         const r = await ctx.http.get('/opportunities/search', {
@@ -251,6 +252,7 @@ export async function collect(args, ctx) {
       },
       maxPages: 20,
       startCursor: 1,
+      stats: pvPages,
     })) {
       sum += Number(o.monetaryValue || o.monetary_value || 0) || 0;
       n++;
@@ -259,7 +261,11 @@ export async function collect(args, ctx) {
     // empty pipeline still reports a real ₱0 rather than a false blockage.
     if (firstErr && n === 0)
       return metric('Pipeline value', null, { blocked: true, blocker: `opportunities HTTP ${firstErr}` });
-    return metric('Pipeline value', money(sum, locationCurrency), { note: `${n} open deal(s)` });
+    // Same 20-page cap as commands/pipeline.mjs on the same endpoint. If it stopped the scan, say
+    // so in the note rather than presenting a floor as the total.
+    return metric('Pipeline value', money(sum, locationCurrency), {
+      note: pvPages.truncated ? `${n}+ open deal(s) — truncated, more exist` : `${n} open deal(s)`,
+    });
   }
 
   // ── REPLY RATE ──
