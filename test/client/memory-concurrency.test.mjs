@@ -150,9 +150,11 @@ test('a FRESH lock held by someone else is respected, not stolen', async () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(lockPath(dir), '999999');                   // mtime = now
     const { addSnooze } = await import('../../lib/memory.mjs');
+    const { EXIT } = await import('../../lib/errors.mjs');
     assert.throws(() => addSnooze(LOC, 'cFresh', {}, Date.now(), dir),
-      (e) => e.code === 'ELOCKTIMEOUT',
-      'a held lock must make the write fail loudly, never silently proceed unlocked');
+      (e) => e.lockTimeout === true && e.code === EXIT.API && e.name === 'GhlError',
+      'a held lock must fail loudly as a typed error (so ack renders a real envelope and exit ' +
+      'code), never silently proceed unlocked');
     assert.deepEqual(snoozeKeys(dir), [],
       'the write went through despite a held lock — the lock is not actually gating anything');
   } finally { rmSync(dir, { recursive: true, force: true }); }
