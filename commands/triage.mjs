@@ -4,6 +4,7 @@
 // READ-ONLY. Never sends. Agent drafts, human approves.
 import { paginate } from '../lib/paginate.mjs';
 import { exitForBlockedSource } from '../lib/blind.mjs';
+import { mapLimit } from '../lib/pool.mjs';
 
 export const meta = {
   name: 'triage',
@@ -87,7 +88,18 @@ export async function collect(args, ctx) {
     return b.slice(0, 90);
   }
 
-  for (const c of top) { c._snippet = await lastInbound(c.id); }
+  // Fan out at the SAME concurrency commands/noshow.mjs and lib/diagnose.mjs already use (5).
+  // This was `for (const c of top) { c._snippet = await lastInbound(c.id); }` — a strictly
+  // sequential await-in-loop. Measured 2026-07-28 with 10ms simulated latency:
+  //     default (--top 10)   10 fetches, maxConcurrent=1,  114ms
+  //     --top 50             50 fetches, maxConcurrent=1,  554ms
+  //     --top 100           100 fetches, maxConcurrent=1, 1118ms
+  // A real GoHighLevel round-trip is ~150ms, so --top 100 spent ~15s waiting one request at a
+  // time. brief and focus both call triage, so they paid it too.
+  //
+  // mapLimit is order-preserving, and the snippet is assigned onto the conversation object by
+  // reference, so thread ordering in the output is unaffected either way.
+  await mapLimit(top, 5, async (c) => { c._snippet = await lastInbound(c.id); });
 
   return {
     location: LOC,
