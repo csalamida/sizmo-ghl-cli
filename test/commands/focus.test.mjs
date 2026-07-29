@@ -198,3 +198,34 @@ test('focus: a healthy but genuinely quiet account still says all clear and exit
   assert.match(getPrinted(), CLAIMS_ALL_CLEAR,
     'reads succeeded and there is genuinely nothing to act on — that IS all clear');
 });
+
+test('focus: degraded but STILL surfaced actions → exits 0, because partial sight is not blindness', async () => {
+  // The guard against overcorrecting. Mutation showed that failing on ANY degraded run kept every
+  // other test green — nothing covered the case where one lane dies and the rest produce real,
+  // actionable output. Failing there would make focus useless on any account with one bad scope:
+  // the operator sees genuine work to do AND a non-zero exit telling them it did not work.
+  const { ctx, getPrinted } = makeFakeCtx({ json: false });
+  ctx.ensureModel = async () => ({
+    entities: { pipelines: { items: [{ id: 'p1', name: 'Sales', stages: [{ id: 's1', name: 'New', position: 0 }] }] },
+                calendars: { items: [] } },
+  });
+  // Opportunities readable (produces ranked actions); everything else denied.
+  ctx.http.get = async (path) => {
+    if (String(path).includes('/opportunities/search')) {
+      return { code: 200, ok: true, txt: '{}', j: { opportunities: [
+        { id: 'o1', pipelineId: 'p1', pipelineStageId: 's1', monetaryValue: 50000, status: 'open',
+          updatedAt: new Date(0).toISOString(), contactId: 'c1' },
+      ] } };
+    }
+    return { code: 403, ok: false, j: {}, txt: '' };
+  };
+
+  const code = await run({}, ctx);
+  ctx.out.flush();
+
+  assert.equal(ctx.out.degraded, true, 'sanity: some lanes really did fail');
+  assert.equal(code, EXIT.OK,
+    'focus produced real ranked output — a partial answer that is still useful must not exit non-zero');
+  assert.ok(!CLAIMS_ALL_CLEAR.test(getPrinted()),
+    'and it must not claim all-clear either, since there is both work to do and a blind lane');
+});
