@@ -249,3 +249,62 @@ test('the internal-error branch is marked internal and blames sizmo, not the acc
   assert.ok(/JSON\.stringify\([\s\S]{0,400}internal/.test(tail),
     'the internal branch must emit JSON under --json, not a bare line');
 });
+
+// ── 5. `ask --confirm` left no record of what it fired ───────────────────────
+// runWithReport printed each step before executing it, but out.line is suppressed under --json, so
+// an agent that fired a batch of writes received data:null and had no way to learn what had been
+// executed on its behalf. On the write path that is the audit trail.
+
+test('ask --confirm records what it executed, per step', async () => {
+  const { run } = await import('../../commands/ask.mjs');
+  const { savePendingPlan } = await import('../../lib/ask-memory.mjs');
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'ask-record-'));
+  const { ctx, getPrinted } = makeFakeCtx({ json: true, confirmed: true });
+  ctx._askMemoryDir = dir;
+  ctx.http.post = async () => ({ code: 200, ok: true, txt: '{}', j: {} });
+  savePendingPlan(ctx.cfg.loc, [
+    { command: 'tag',  parsed: { _: ['c1'], add: 'VIP' }, isWrite: true, executable: true, describe: 'Tag c1: +VIP' },
+    { command: 'note', parsed: { _: ['c1'], text: 'hi' }, isWrite: true, executable: true, describe: 'Note on c1' },
+  ], Date.now(), dir);
+  await run({ _: [] }, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.ok(d, 'a batch of writes fired and the envelope carried no record of it');
+  assert.equal(d.executed, true);
+  assert.equal(d.stepCount, 2);
+  assert.deepEqual(d.steps.map(s => s.command), ['tag', 'note'],
+    'the record must name every step in the order it ran');
+  assert.ok(d.steps.every(s => s.ok && s.attempted), 'both steps succeeded and should say so');
+});
+
+test('ask --confirm distinguishes NOT ATTEMPTED from failed', async () => {
+  // Hard-stop-on-failure means a later step is never tried. Reporting it as failed would misstate
+  // what happened to the account — the difference between "this write was rejected" and "this write
+  // never reached GoHighLevel at all".
+  const { run } = await import('../../commands/ask.mjs');
+  const { savePendingPlan } = await import('../../lib/ask-memory.mjs');
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'ask-record-fail-'));
+  const { ctx, getPrinted } = makeFakeCtx({ json: true, confirmed: true });
+  ctx._askMemoryDir = dir;
+  let posts = 0;
+  ctx.http.post = async () => (++posts === 1
+    ? { code: 200, ok: true, txt: '{}', j: {} }
+    : { code: 403, ok: false, txt: 'forbidden', j: {} });
+  savePendingPlan(ctx.cfg.loc, [
+    { command: 'tag',  parsed: { _: ['c1'], add: 'VIP' }, isWrite: true, executable: true, describe: 'Tag c1: +VIP' },
+    { command: 'note', parsed: { _: ['c1'], text: 'hi' }, isWrite: true, executable: true, describe: 'Note on c1' },
+    { command: 'tag',  parsed: { _: ['c2'], add: 'VIP' }, isWrite: true, executable: true, describe: 'Tag c2: +VIP' },
+  ], Date.now(), dir);
+  await run({ _: [] }, ctx);
+  ctx.out.flush();
+  const d = JSON.parse(getPrinted()).data;
+  assert.equal(d.steps[0].ok, true, 'the step that landed must be recorded as landed');
+  assert.equal(d.steps[1].ok, false, 'the rejected step must be recorded as failed');
+  assert.equal(d.steps[2].attempted, false,
+    'a step after a hard stop was never sent and must not be reported as attempted');
+  assert.equal(d.notAttempted, 1);
+});

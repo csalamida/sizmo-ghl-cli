@@ -594,6 +594,29 @@ async function runWithReport(concrete, ctx) {
   for (const step of concrete) ctx.out.line(`  ${step.describe ?? step.command}`);
   ctx.out.line('');
   const results = await executeSteps(concrete, ctx);
+  // The RECORD of what actually fired, as data. These lines above are the only account of a
+  // one-shot `sizmo ask "..." --confirm`, and out.line is suppressed under --json — so an agent
+  // that fired a batch of writes received data:null and had no way to know what had been executed
+  // on its behalf. Emitted after the run so each step carries its real outcome.
+  ctx.out.data({
+    executed: true,
+    stepCount: concrete.length,
+    steps: concrete.map((step, i) => {
+      const r = results[i];
+      return {
+        command: step.command, subcommand: step.subcommand ?? null,
+        describe: step.describe ?? null,
+        // `attempted:false` is not the same as a failure: hard-stop-on-failure means later steps
+        // are never tried, and reporting them as failed would misstate what happened.
+        attempted: i < results.length,
+        skipped: !!r?.skipped,
+        ok: !!r && !r.skipped && (!r.code || r.code === EXIT.OK),
+        code: r?.code ?? null,
+        ...(r?.error ? { error: r.error } : {}),
+      };
+    }),
+    notAttempted: Math.max(0, concrete.length - results.length),
+  });
   ctx.out.line('');
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
