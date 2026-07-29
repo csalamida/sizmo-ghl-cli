@@ -11,7 +11,7 @@ import { collect as arCollect } from './receivables.mjs';
 import { rankActions, hasMixedCurrencies } from '../lib/prioritize.mjs';
 import { EXIT } from '../lib/errors.mjs';
 import { exitForBlockedSource, exitForAllLanesBlocked } from '../lib/blind.mjs';
-import { SYM } from '../lib/money.mjs';
+import { SYM, fmtMoney as fmtAmount } from '../lib/money.mjs';
 import { timezoneFromModel } from '../lib/model.mjs';
 import {
   loadLast, recordRun, diff, filterSnoozed,
@@ -71,7 +71,12 @@ function computeLeaks(actions) {
 // Format a money amount with a resolved currency. If currency is unknown, label neutrally
 // (the raw number + a "(currency unknown)" note) — never assume ₱.
 function fmtMoney(n, currency) {
-  const num = Number(n || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 });
+  // The NUMBER comes from lib/money.mjs so brief rounds like every other money surface. This used
+  // to call toLocaleString with maximumFractionDigits: 0 directly, which rounded the headline total
+  // and each itemized leak row independently — the same defect receivables had, where four ₱100.50
+  // rows rendered ₱101 each under a correct ₱402 header. Only the unknown-currency LABEL is
+  // brief-specific; passing null asks for the grouped number with no symbol.
+  const num = fmtAmount(Number(n || 0), null);
   if (currency.symbol) return currency.symbol + num;
   return num + ' (currency unknown)';
 }
@@ -339,7 +344,9 @@ function buildRenderModel(data, sources, ctx) {
   const moneyLeakLines = leaks.items.map(a => {
     const who = a.name || a.contact || a.kind;
     const cur = { code: a.cur || currency.code, symbol: SYM[(a.cur || currency.code || '').toUpperCase()] || currency.symbol };
-    const amt = cur.symbol ? cur.symbol + Number(a.money).toLocaleString('en-PH', { maximumFractionDigits: 0 }) : String(a.money);
+    // Was a third inline copy of the money formatting, with its own rounding. Reuses the helper
+    // above so a row and the headline it sums into can never round differently.
+    const amt = fmtMoney(a.money, cur);
     const kindLabel = a.kind === 'never-billed' ? 'never billed' : 'overdue';
     return `${amt} · ${who} · ${kindLabel}${a.age != null ? ` · ${a.age}d` : ''}`;
   });

@@ -5,6 +5,9 @@
 // customer acts on. Every op is confirm-gated; nothing fires without --confirm.
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
+// The single money formatter. invoice draft used to format its own totals two different ways and
+// neither went through here — see the note at the preview line below.
+import { fmtMoney } from '../lib/money.mjs';
 
 const SCOPE_FIX = 'GoHighLevel → Settings → Private Integrations → edit your PIT → add invoices.write scope';
 
@@ -123,7 +126,14 @@ async function draftInvoice(args, ctx) {
 
   const changes = [
     `Create DRAFT invoice "${name}" for ${contactName} (contact ${contactId})`,
-    `  ${items.length} item(s) · ${currency} ${total.toLocaleString('en-PH', { maximumFractionDigits: 0 })} · due ${dueDate}`,
+    // The CONFIRM PREVIEW and the created-invoice line below used to format the same total two
+    // different ways, both bypassing lib/money.mjs: this one passed maximumFractionDigits: 0 and the
+    // other passed no options at all (so a default of 3). For a total of 201.005 the preview said
+    // "201" and the success line said "201.005" — one invoice, two numbers, in one command run.
+    // On a confirm gate that is the difference between the amount approved and the amount created.
+    // Both now go through fmtMoney, so they cannot disagree, and the symbol matches every other
+    // money surface in the tool instead of printing a bare currency code.
+    `  ${items.length} item(s) · ${fmtMoney(total, currency)} · due ${dueDate}`,
     '  draft only — NOT sent, no charge. Send later with: sizmo invoice send <id>',
   ];
   // --due MUST round-trip. It was omitted here while the preview above printed the resolved due
@@ -143,7 +153,7 @@ async function draftInvoice(args, ctx) {
   const inv = r.j?.invoice ?? r.j ?? {};
   const id = inv._id || inv.id || null;
   ctx.out.data({ status: 'ok', command: 'invoice draft', invoiceId: id, currency, total });
-  ctx.out.line(`  draft invoice created · id ${id ?? '(see response)'} · ${currency} ${total.toLocaleString('en-PH')} · NOT sent`);
+  ctx.out.line(`  draft invoice created · id ${id ?? '(see response)'} · ${fmtMoney(total, currency)} · NOT sent`);
   return EXIT.OK;
 }
 
