@@ -317,3 +317,89 @@ test('booked-not-paid: blocked render never implies no money is leaking', async 
   ctx.out.flush();
   assert.ok(/NOT "no money leaking"/.test(getPrinted()));
 });
+
+// ── per-calendar event fetches must run concurrently ─────────────────────────
+//
+// This was `for (const cal of cals) { await ctx.http.get('/calendars/events', …) }` — one calendar
+// at a time — while commands/noshow.mjs made the IDENTICAL request with mapLimit(cals, 5, …).
+// A 12-calendar account spent 12 serial round-trips (~1.8s at a real ~150ms) on work that fits in 3.
+//
+// Measured 2026-07-28 at 10ms simulated latency: 12 fetches, maxConcurrent 1 → 5, wall 34ms.
+// Output-only assertions cannot see this, so it is asserted on the requests.
+
+function calHarness({ calendars = 12, expectConcurrency = 5 } = {}) {
+  const { ctx, getPrinted } = makeFakeCtx({ json: true });
+  const state = { ev: 0, inFlight: 0, maxInFlight: 0 };
+  let release = null;
+  const gate = new Promise((r) => { release = r; });
+  const fallback = setTimeout(() => release?.(), 250);   // a sequential regression fails, never hangs
+
+  ctx.ensureModel = async () => ({ entities: {} });
+  ctx.http.get = async (path) => {
+    const p = String(path);
+    if (p.includes('/calendars/events')) {
+      state.ev++; state.inFlight++;
+      state.maxInFlight = Math.max(state.maxInFlight, state.inFlight);
+      if (state.inFlight >= expectConcurrency) release?.();
+      await gate;
+      state.inFlight--;
+      return { code: 200, ok: true, txt: '{}', j: { events: [] } };
+    }
+    if (p.includes('/calendars')) {
+      return { code: 200, ok: true, txt: '{}',
+               j: { calendars: Array.from({ length: calendars }, (_, i) => ({ id: `cal${i}`, name: `Cal ${i}` })) } };
+    }
+    return { code: 200, ok: true, txt: '{}', j: { invoices: [] } };
+  };
+  return { ctx, getPrinted, state, done: () => clearTimeout(fallback) };
+}
+
+test('booked-not-paid fetches calendar events concurrently, not one calendar at a time', async () => {
+  const h = calHarness({ calendars: 12 });
+  await run({ days: 30 }, h.ctx);
+  h.ctx.out.flush();
+  h.done();
+  assert.equal(h.state.ev, 12, 'one event fetch per calendar');
+  assert.ok(h.state.maxInFlight > 1,
+    `calendar event fetches ran serially (maxConcurrent=${h.state.maxInFlight}). noshow makes the ` +
+    `identical request with mapLimit(cals, 5) — this should too.`);
+});
+
+test('booked-not-paid stays within the shared cap of 5', async () => {
+  // Inverse guard: unbounded fan-out across many calendars would risk a 429.
+  const h = calHarness({ calendars: 30 });
+  await run({ days: 30 }, h.ctx);
+  h.ctx.out.flush();
+  h.done();
+  assert.ok(h.state.maxInFlight <= 5,
+    `fan-out reached ${h.state.maxInFlight}, above the cap noshow and diagnose use`);
+});
+
+test('booked-not-paid still reports one unreadable calendar without losing the others', async () => {
+  // Parallelising must not change how a partial failure is handled: the bad calendar warns, the
+  // rest still count.
+  const { ctx, getPrinted } = makeFakeCtx({ json: true });
+  ctx.ensureModel = async () => ({ entities: {} });
+  ctx.http.get = async (path, opts) => {
+    const p = String(path);
+    if (p.includes('/calendars/events')) {
+      // calendarId travels in opts.query, NOT in the path — a first draft matched on the path and
+      // never triggered the 403 at all, so the test failed for the wrong reason.
+      return opts?.query?.calendarId === 'cal3'
+        ? { code: 403, ok: false, txt: '', j: {} }
+        : { code: 200, ok: true, txt: '{}', j: { events: [] } };
+    }
+    if (p.includes('/calendars')) {
+      return { code: 200, ok: true, txt: '{}',
+               j: { calendars: Array.from({ length: 6 }, (_, i) => ({ id: `cal${i}`, name: `Cal ${i}` })) } };
+    }
+    return { code: 200, ok: true, txt: '{}', j: { invoices: [] } };
+  };
+  await run({ days: 30 }, ctx);
+  ctx.out.flush();
+  const env = JSON.parse(getPrinted());
+  assert.equal(env.degraded, true, 'an unreadable calendar must degrade the report');
+  assert.ok(env.warnings.some(w => /cal3|Cal 3/.test(String(w))),
+    `the failing calendar must be named; warnings were ${JSON.stringify(env.warnings)}`);
+  assert.equal(env.data.calendars, 6, 'and the other five must still be counted');
+});

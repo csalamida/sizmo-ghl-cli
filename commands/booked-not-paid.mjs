@@ -4,6 +4,7 @@
 //   where single-page limit:100 missed paid contacts → now exhausts all pages.
 // READ-ONLY. Never messages, invoices, or charges.
 import { paginate } from '../lib/paginate.mjs';
+import { mapLimit } from '../lib/pool.mjs';
 import { fmtMoney as money } from '../lib/money.mjs';
 import { timezoneFromModel } from '../lib/model.mjs';
 import { exitForBlockedSource } from '../lib/blind.mjs';
@@ -48,11 +49,22 @@ export async function collect(args, ctx) {
   const cals = cr.j.calendars || [];
   const byContact = new Map();
   let skippedCalendars = 0;
-  for (const cal of cals) {
-    const ev = await ctx.http.get('/calendars/events', {
+  // Fetch every calendar's events CONCURRENTLY, at the same cap commands/noshow.mjs uses for this
+  // exact call. This was `for (const cal of cals) { await ctx.http.get(...) }` — one calendar at a
+  // time, while noshow made the identical request with mapLimit(cals, 5, ...). A 12-calendar account
+  // spent 12 round-trips serially (~1.8s at a real ~150ms) for work that fits in 3.
+  //
+  // The fetches run in parallel; the AGGREGATION below stays sequential over the results, so
+  // byContact is still mutated from one place and the warning order stays deterministic.
+  const evResults = await mapLimit(cals, 5, async (cal) => ({
+    cal,
+    ev: await ctx.http.get('/calendars/events', {
       query: { locationId: LOC, calendarId: cal.id, startTime: String(START), endTime: String(NOW) },
       version: '2021-04-15',
-    });
+    }),
+  }));
+
+  for (const { cal, ev } of evResults) {
     if (!ev.ok) {
       skippedCalendars++;
       ctx.out.warn(`calendar "${cal.name || cal.id}" events unreadable (HTTP ${ev.code})`, { degraded: true });
