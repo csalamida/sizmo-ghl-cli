@@ -13,6 +13,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — five ways `--json` told an agent nothing
+
+Everything below was measured on 2026-07-30. Three of the five share one root cause: human output is
+suppressed under `--json`, and a command that signals failure by *returning* an exit code (rather
+than throwing) never reaches the handler that builds the error envelope. So the failure printed
+nothing and the envelope looked like success.
+
+**`sizmo list --json` returned an empty payload.** It emitted `data: null, degraded: false`, exit 0,
+while the terminal printed all twelve entities with their counts and the exact command for each. Both
+agent docs tell an agent to run `sizmo list` first, so the one command written to orient an agent was
+the one that told it nothing. The index is now declared once and both renderers read from it. Blocked
+entities report `count: null` — UNKNOWN, never 0 — with a warning naming the missing scope.
+
+**`sizmo ask` failed silently in eight places.** With no AI key configured,
+`sizmo ask "tag Ana as follow-up" --json` gave `degraded: false`, `warnings: []`, exit 3, and nothing
+on stderr either. All eight now carry a real error and a remediation.
+
+Its two `--confirm` previews are not errors, so they now emit a payload instead: `pending: true` with
+the resolved steps and the command to run. Previously an agent got `data: null` with exit 5 and
+**could not see what it was being asked to approve**, which defeats the point of the confirm gate for
+anything that is not a human reading a terminal.
+
+**An internal error broke the JSON contract outright.** Induced on `sizmo crm tags --json`: exit 1,
+stdout empty, stderr one unstructured line — while a normal error produces
+`{error, code, remediation}`. Internal errors now use that same shape, flagged `internal: true` and
+saying plainly that it is a sizmo bug rather than a problem with your account or token.
+
+**`items` and `truncated` meant opposite things in two commands.** `crm <entity> --json` sent only the
+20-item display subset with `truncated: true`; `list <entity> --json` sent everything, also with
+`truncated: true`. Everywhere else in sizmo — pagination, pipeline, snapshot, no-shows — `truncated`
+means *the data is incomplete, treat this figure as a floor*.
+
+Both now mean that one thing. `--json` always returns the complete set on both commands, so a caller
+that did not pass `--all` no longer silently receives 20 of 50 tags. **This is a breaking change if
+you read `truncated` from `list` or `crm`:** it now reports whether the DATA is complete, not whether
+the terminal listing was cut. The terminal still truncates, with its "… 15 more — --all to show all"
+hint intact.
+
+**`sizmo schema` hid 46 subcommands.** The documented authoritative machine contract listed 33
+top-level commands and no subcommands at all, so `contact upsert`, `opp move`, `invoice draft` and 43
+others were invisible to anything reading it. Eleven commands now declare them. A test derives the
+list from each command's own dispatch code and fails if the two disagree in either direction, because
+a hand-typed contract is one that rots.
+
 ### Fixed — the read cache never worked on Linux, and never deleted anything anywhere
 
 The 60-second read cache wrote its temp file to `/tmp` and then renamed it into
