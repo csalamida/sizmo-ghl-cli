@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a confirmed write could be delivered twice
+
+`write()` retried on client timeout and on 5xx for **every** method, including `POST`. A
+client-side abort doesn't mean the server ignored the request — it means sizmo stopped listening.
+A `502` doesn't either: gateways fail after the upstream has already acted.
+
+Reproduced with an injected `fetch` where the server always succeeds but the response is lost:
+
+```
+POST + client timeout     server processed 2x, client saw code=201
+POST + 502 from gateway   server processed 2x, client saw code=201
+```
+
+The affected POSTs are the ones that reach real people — `/conversations/messages`,
+`/invoices/{id}/send`, `/invoices/`. A contact messaged twice, an invoice delivered twice, a
+duplicate draft. **And the client reported `201`,** so nothing surfaced it.
+
+sizmo's safety model is that one `--confirm` performs one write. Retries are now gated on whether
+a request is safe to repeat: `POST` no, `PUT`/`DELETE` yes (idempotent), and `429` stays retryable
+for everything because a refused request was never processed. A timed-out `POST` now says *"may or
+may not have been delivered; check before retrying"* — the honest answer, and one that doesn't
+invite the blind retry that causes the duplicate.
+
 ### Fixed — a `429 Retry-After` retried forever instead of giving up
 
 The retry counter only advanced on the fallback path:
