@@ -66,18 +66,51 @@ test('ndjson suppresses the human card (machine mode)', () => {
   assert.ok(!printed.includes('HUMAN CARD'), 'card is a no-op under ndjson');
 });
 
-test('LIST_KEYS covers every list-bearing recipe key (guard: --fields must not silently no-op)', () => {
-  // The primary list key each list-bearing recipe emits. A new recipe with a new list key
-  // MUST be added here AND to LIST_KEYS — this test fails loudly if they drift apart, which
-  // is how the 1.0.x brief/pipeline gap (--fields silently doing nothing) is prevented.
-  const recipeListKeys = {
-    receivables: 'list', segment: 'sample', triage: 'threads', noshow: 'list',
-    focus: 'ranked', crm: 'items', brief: 'actions', pipeline: 'stuck',
+test('--fields projects EVERY array of objects, not a hand-written subset', () => {
+  // REPLACES a guard that could not fail. The old version compared LIST_KEYS against a SECOND
+  // hand-written table of recipe list keys — two lists checked against each other, neither derived
+  // from the code — and both were missing the same four recipes. Measured 2026-07-30 against the real
+  // payloads: booked-not-paid (neverBilled, billedUnpaid), snapshot (metrics), pipeline (pipelines,
+  // where only `stuck` was covered) and ack (snoozes) all had --fields silently no-op.
+  //
+  // projectPayload no longer consults a whitelist, so this asserts the PROPERTY instead of a list:
+  // any array of objects, whatever it is called, gets projected.
+  let printed = '';
+  const out = makeOut({ json: true, tty: false, command: 'x', location: 'L1', fields: ['id'],
+                        write: s2 => printed += s2, writeErr: () => {} });
+  // Keys deliberately absent from LIST_KEYS — the four real ones that were broken, plus an invented
+  // key no whitelist could ever anticipate. Distinct ids so a mix-up would be visible.
+  const EXPECT = {
+    neverBilled: 'a', billedUnpaid: 'b', metrics: 'c',
+    pipelines: 'd', snoozes: 'e', somethingNobodyHasWrittenYet: 'f',
   };
-  for (const [recipe, key] of Object.entries(recipeListKeys)) {
-    assert.ok(LIST_KEYS.includes(key),
-      `--fields will silently no-op on '${recipe}': key '${key}' missing from LIST_KEYS`);
+  out.data({
+    ...Object.fromEntries(Object.entries(EXPECT).map(([k, id]) => [k, [{ id, drop: 'SHOULD BE GONE' }]])),
+    scalar: 42,
+    tagNames: ['vip', 'lead'],
+  });
+  out.flush();
+  const d = JSON.parse(printed).data;
+  for (const [k, id] of Object.entries(EXPECT)) {
+    assert.deepEqual(d[k], [{ id }],
+      `--fields silently no-opped on '${k}': got ${JSON.stringify(d[k])}, expected [{"id":"${id}"}]`);
   }
+  assert.equal(d.scalar, 42, 'a non-array field must pass through untouched');
+  assert.deepEqual(d.tagNames, ['vip', 'lead'],
+    'an array of PRIMITIVES must pass through untouched — projecting it would blank every value');
+});
+
+test('LIST_KEYS still selects the ndjson primary row key', () => {
+  // LIST_KEYS is no longer the projection list, but ndjson still needs to choose ONE array to stream
+  // as rows. This pins that it kept that job when projection stopped using it.
+  let printed = '';
+  const out = makeOut({ ndjson: true, tty: false, command: 'receivables', location: 'L1',
+                        write: s2 => printed += s2, writeErr: () => {} });
+  out.data({ outstanding: 1, list: [{ id: 'c1' }], metrics: [{ id: 'm1' }] });
+  out.flush();
+  const lines = printed.split('\n').filter(Boolean).map(l => JSON.parse(l));
+  assert.equal(lines[0].listKey, 'list', 'ndjson must still choose the LIST_KEYS-preferred array');
+  assert.equal(lines[1].id, 'c1');
 });
 
 test('--fields projects brief.actions + pipeline.stuck (the 1.0.x gap, now closed)', () => {
