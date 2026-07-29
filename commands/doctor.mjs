@@ -10,7 +10,7 @@
 // READ-ONLY. No writes to GoHighLevel.
 import { readFileSync } from 'node:fs';
 import { mask, pitAgeDays } from '../lib/config.mjs';
-import { probeLanes } from '../lib/diagnose.mjs';
+import { probeLanes, diagnoseLanes } from '../lib/diagnose.mjs';
 import { loadModel, isStale, ENTITY_SPECS, DEFAULT_MODEL_DIR } from '../lib/model.mjs';
 import { readCachedLatest, isNewer } from '../lib/update-notify.mjs';
 import { EXIT } from '../lib/errors.mjs';
@@ -106,6 +106,10 @@ export async function run(args, ctx) {
   const unreachable = locUnreachable || allLanesTransportError;
   const missingScopes = lanes.filter(l => !l.ok);
   const scopesOk = missingScopes.length === 0 && lanes.length > 0;
+  // When EVERY lane is denied, the problem is the token, not N separately-missing scopes.
+  // Telling someone to add twelve scopes to an expired PIT sends them to fix the wrong thing.
+  // See diagnoseLanes for why this keys on all-vs-some rather than 401-vs-403.
+  const laneVerdict = diagnoseLanes(lanes);
   // The contacts lane is the usability FLOOR (same rule as `auth check`): if it's blocked,
   // the tool can't do its core job → that's an auth failure, not a mere degrade.
   const contactsLane = lanes.find(l => l.name === 'contacts');
@@ -193,7 +197,13 @@ export async function run(args, ctx) {
           // Trace every blocked lane to a named consequence + exact fix.
           const affected = (l.affects || []).join(', ');
           ctx.out.line(`  ✖ ${l.scope} → ${affected} shows ⚠`);
-          ctx.out.line(`     → add it in GHL > Settings > Integrations > Private Integrations`);
+          // Suppress the per-lane "add this scope" remedy when the verdict is that the TOKEN is
+          // dead. Printing it twelve times directly contradicted the verdict below ("adding
+          // individual scopes cannot fix a token that no longer works") — one screen giving two
+          // different instructions, and the wrong one repeated twelve times.
+          if (laneVerdict.kind !== 'token') {
+            ctx.out.line(`     → add it in GHL > Settings > Integrations > Private Integrations`);
+          }
         }
       }
     }
@@ -240,10 +250,14 @@ export async function run(args, ctx) {
       ctx.out.line('  ✖ OFFLINE — cannot reach GoHighLevel. Fix connectivity, then rerun.');
     } else {
       const reasons = [];
-      if (missingScopes.length) reasons.push(`${missingScopes.length} scope(s) missing`);
+      if (laneVerdict.kind === 'token') reasons.push(laneVerdict.headline);
+      else if (missingScopes.length) reasons.push(`${missingScopes.length} scope(s) missing`);
       if (!modelMeta.present) reasons.push('no CRM model');
       else if (modelMeta.stale || modelMeta.offline) reasons.push('CRM model stale');
       ctx.out.line(`  ⚠ DEGRADED — ${reasons.join(' · ')}. See fixes above.`);
+      if (laneVerdict.kind === 'token') {
+        ctx.out.line(`  → ${laneVerdict.remediation}`);
+      }
     }
     ctx.out.line('');
   });
