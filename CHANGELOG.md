@@ -13,6 +13,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — money reports disagreed with the sum of their own rows
+
+Amounts were rounded to whole units, and every row of a table was rounded on its own while the header
+total was computed from the true sum. Four receivables rows of ₱100.50:
+
+```
+rows rendered    ₱101  ₱101  ₱101  ₱101   -> a reader adds 404
+header rendered  ₱402                     -> correct, and ₱2 away from its own rows
+```
+
+Worst case found, 40 rows of ₱0.50: every row shows ₱1, summing to 40, under a ₱20 header. A 100%
+discrepancy on an accounts-receivable report — and the header, the one figure that was right, looked
+like the error.
+
+Whole amounts still show no decimals, so `A$30,000` is unchanged. Fractional amounts now show exactly
+two, so the rows add up. Amounts finer than a cent still round, which is below the precision
+GoHighLevel's API carries.
+
+Three surfaces were not using the shared money formatter at all:
+
+- **`invoice draft`, twice, and inconsistently.** The confirm preview rounded to whole units while the
+  created-invoice line used a different default of three decimals, so a total of 201.005 previewed as
+  "201" and reported "201.005" — one invoice, two figures, in a single command run. On a confirm gate
+  that is the difference between the amount you approved and the amount that got created. Both now
+  render identically, and show the currency symbol rather than a bare code.
+- **`brief`, twice.** It carried a private copy of the formatter plus a third inline one for its
+  itemized rows, so its headline total could disagree with the lines beneath it in exactly the way
+  receivables did.
+
+A test now fails the build if any command formats a number itself instead of going through the one
+formatter, since every copy rounds on its own.
+
 ### Fixed — five ways `--json` told an agent nothing
 
 Everything below was measured on 2026-07-30. Three of the five share one root cause: human output is
