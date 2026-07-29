@@ -13,6 +13,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a failed page mid-scan shipped a truncated total as fact
+
+Every paginated report checked for blindness the same way: report a blocked source only when *nothing
+at all* came back. So when page 1 succeeded and a later page failed, the error was thrown away and the
+partial result was presented as complete. Measured on receivables, page 1 returning 100 invoices of
+₱1,000 and page 2 returning a 500:
+
+```
+before   exit 0 · degraded false · warnings []
+         RECEIVABLES — ₱100,000 outstanding across 100 invoice(s)
+
+after    exit 0 · degraded true · warning naming HTTP 500 and the 100 records seen
+         RECEIVABLES — at least ₱100,000 outstanding across at least 100 invoice(s)
+         ⚠ INCOMPLETE — a page failed (HTTP 500); more may be owed than shown
+```
+
+The true figure was unknown and at least ₱100,000, and it was reported as exactly ₱100,000. This is
+the same rule the pagination-cap work restored, in the error dimension: an incomplete answer must
+never render as a complete one, and on a money surface it under-reports what you are owed.
+
+It is deliberately not treated as *blocked* — the records that came back are real. The total is a
+floor, and now says so. Eight surfaces across six commands were affected:
+
+- **receivables** — the outstanding total and invoice count are floors
+- **reconcile** — collected is a floor, and so are the refund / failed / orphan counts, because "0
+  refunds" on a partially-read ledger is an all-clear nobody verified
+- **snapshot** — all three of its paginated metrics: Leads, Collected and Pipeline value. Leads was
+  the worst: it discarded the failure code outright, so a failure on page 2 left no trace at all
+- **pipeline** — feeds the flag it already had for the page cap, since a mid-scan error makes the
+  value a floor for the same reason
+- **triage** — the count of people waiting on a reply is a floor
+- **segment** — the matched count is a floor, so a targeting decision is not made on a number nobody
+  finished measuring
+
+`booked-not-paid` was checked for the same problem and **does not have it**: it reports any page
+failure immediately and suppresses its never-billed list entirely rather than showing a partial one,
+which is the stricter choice — a partial invoice list would accuse a client who had in fact been
+billed.
+
+This one was not on the fix list. It surfaced from re-reading the original audit to check for
+findings the list had dropped, which turned up six.
+
 ### Fixed — money reports disagreed with the sum of their own rows
 
 Amounts were rounded to whole units, and every row of a table was rounded on its own while the header
