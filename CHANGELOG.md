@@ -13,6 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `sizmo snapshot` reported a real `₱0` pipeline when it couldn't read opportunities
+
+Of the five metrics `snapshot` computes, four correctly reported UNKNOWN when their source failed.
+`Pipeline value` captured the HTTP error and then never read it, so a denied read fell through to
+`₱0 · 0 open deal(s)` — indistinguishable from a genuinely empty pipeline.
+
+```
+Leads            BLOCKED (contacts read failed)
+Bookings         BLOCKED (calendars list HTTP 401)
+Collected        BLOCKED (transactions HTTP 401)
+Reply rate       BLOCKED (conversations HTTP 401)
+Pipeline value   ₱0 · 0 open deal(s)            ← read as real data
+```
+
+Glancing at a snapshot during a scope failure told you that you had no pipeline. Same class as the
+invoice command naming a vendor "Business", and it contradicted the blocked-is-not-zero rule used
+everywhere else. A genuinely empty pipeline still reports a real `₱0` — blocking keys on "the read
+failed", never on "the number is zero".
+
 ### Fixed — a confirmed write could be delivered twice
 
 `write()` retried on client timeout and on 5xx for **every** method, including `POST`. A
