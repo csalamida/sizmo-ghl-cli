@@ -3,6 +3,7 @@
 // Ranks via lib/prioritize.mjs (single source of truth shared with brief).
 // READ-ONLY. Never sends, charges, or writes.
 // Memory: ack/snooze filtering — handled items stay hidden until snooze expires.
+import { EXIT } from '../lib/errors.mjs';
 import { collect as pipeCollect }   from './pipeline.mjs';
 import { collect as arCollect }     from './receivables.mjs';
 import { collect as triageCollect } from './triage.mjs';
@@ -142,7 +143,20 @@ export async function run(args, ctx) {
     ctx.out.line('  ' + bar());
 
     if (!data.ranked.length && !data.unknownValue.length) {
-      ctx.out.line('  Nothing to action — all clear. ✅\n');
+      // "All clear" is a CLAIM ABOUT THE ACCOUNT. It may only be made when the account was
+      // actually readable. Verified 2026-07-28: with every source returning 401, focus printed
+      // "Nothing to action — all clear. ✅" and exited 0, while its own --json envelope in the
+      // same run carried degraded:true and five warnings. One run, two contradictory answers, and
+      // the reassuring one is the one a human reads.
+      //
+      // commands/brief.mjs already enforces exactly this ("human render never says 'All clear'
+      // while degraded"). focus had simply diverged from it.
+      if (ctx.out.degraded) {
+        ctx.out.line('  Nothing shown — sizmo could not read your account, so this is NOT "all clear".');
+        ctx.out.line('  See the warnings above; fix those and re-run.\n');
+      } else {
+        ctx.out.line('  Nothing to action — all clear. ✅\n');
+      }
       return;
     }
 
@@ -185,5 +199,18 @@ export async function run(args, ctx) {
     ctx.out.line('  Read-only: I surface + point to the recipe. You act.\n');
   });
 
-  return 0;
+  // Exit code must distinguish "looked, found nothing" from "could not look".
+  //
+  // focus was not part of the earlier blind-exit sweep because it owns no fetches of its own — it
+  // composes other collects, and their failures arrive as degraded warnings rather than a
+  // `blocked` marker. The consequence was the same one that sweep fixed elsewhere:
+  // `sizmo focus && echo "nothing urgent"` ran its second half while sizmo was blind.
+  //
+  // Only fires when BOTH lists are empty. A degraded run that still surfaced real actions produced
+  // usable output and exits 0 — partial sight is not blindness.
+  if (ctx.out.degraded && !data.ranked.length && !data.unknownValue.length) {
+    const sawAuth = (ctx.out.warnings ?? []).some(w => /\b401\b|\b403\b|scope|unauthor/i.test(String(w)));
+    return sawAuth ? EXIT.AUTH : EXIT.API;
+  }
+  return EXIT.OK;
 }
