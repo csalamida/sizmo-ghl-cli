@@ -13,6 +13,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — the read cache leaked data between tokens on the same location
+
+The 60-second read cache was keyed on the resolved URL alone. A comment asserted that was safe
+("includes locationId param → no cross-profile bleed"), but that reasoning only holds if each PIT
+maps to a distinct location — and it doesn't. An agency PIT and a client-supplied PIT can both point
+at one location, and a rotated token with fewer scopes points at the same location as the token it
+replaced. The cache directory is one shared `~/.config/sizmo/cache` for every profile.
+
+Verified with two tokens on one location:
+
+```
+profile A (full scopes)        code=200 contacts=1
+profile B (NO contacts scope)  code=200 contacts=1  serverAsked=0
+```
+
+**Profile B read profile A's contact data — including an email address — holding a token that cannot
+read contacts, and B's own server was never contacted.** For the full TTL, what a token could see
+was decided by whoever ran a command first.
+
+`SECURITY.md`'s central claim is *"The PIT scope is the gate."* A shared cache key bypassed it. Not
+theoretical: an agency running sizmo against a client location with a restricted client-supplied
+token is exactly the configuration that triggers it.
+
+The key now includes a truncated SHA-256 fingerprint of the PIT — deliberately a fingerprint and
+never the token, since keys are hashed into filenames. Same-token caching is unaffected.
+
+**If you use more than one profile against one location, run `rm -rf ~/.config/sizmo/cache` once
+after upgrading** to drop entries written under the old shared key.
+
 ### Fixed — `sizmo doctor` reported an expired token as "12 scope(s) missing"
 
 Every `401` was classified as "this scope is missing" — correct when *some* lanes fail, wrong when
