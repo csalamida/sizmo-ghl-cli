@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [3.0.0] — 2026-07-30
+
+### Changed — `sizmo ask` will not delete something you have not seen
+
+`sizmo ask "delete Marco's stalled deal" --confirm` used to resolve the sentence through the AI and
+fire immediately. You approved the words; you never saw which record it picked. The docs meanwhile
+stated that the `--confirm` gate "is the human in the loop", which on that path it was not.
+
+Destructive plans now always preview and require a second, bare `sizmo ask --confirm`:
+
+```
+sizmo ask "tag Ana as follow-up" --confirm          fires, as before
+sizmo ask "delete Marco's stalled deal" --confirm   previews the exact deal, exits 5
+sizmo ask --confirm                                 then deletes it
+```
+
+Non-destructive one-liners are unchanged. Approving "tag Ana as follow-up" without seeing the
+resolved id is a fair trade; approving a deletion is not.
+
+**Breaking if you script a destructive one-liner** — it now exits 5 instead of firing. That is the
+behaviour being removed, not a side effect. A delete you previewed still fires on a bare `--confirm`,
+because by then you have seen the target.
+
+Machine callers get `blockedOneShot: true`, `reason: "destructive_requires_preview"` and
+`destructiveSteps` in the payload, so an agent can tell a refusal from a stale plan rather than
+guessing at an exit code.
+
 ## [2.6.0] — 2026-07-30
 
 ### Added — three ways to find the id you need
