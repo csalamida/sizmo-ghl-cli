@@ -97,3 +97,116 @@ test('canonicalJSON: keys are recursively sorted', () => {
   const s = canonicalJSON({ b: 1, a: { d: 2, c: 3 } });
   assert.equal(s, '{\n  "a": {\n    "c": 3,\n    "d": 2\n  },\n  "b": 1\n}');
 });
+
+// ── entityGroup branches not yet covered ──────────────────────────────────────
+
+test('export HONESTY: entity absent from model → { unavailable: "not synced" } + degraded', async () => {
+  // An entity that was never synced doesn't appear in E at all. entityGroup receives undefined.
+  // Must produce a { unavailable } marker, not an empty list — an empty list reads as "empty source".
+  const m = fullModel();
+  delete m.entities.tags;
+  const { ctx } = makeFakeCtx({ model: m, fixture: cvFixture });
+  const { doc, degraded, warnings } = await buildExportDoc(ctx);
+  assert.deepEqual(doc.tags, { unavailable: 'not synced' });
+  assert.equal(degraded, true);
+  assert.ok(warnings.some(w => /not synced/.test(w)));
+});
+
+test('export HONESTY: entity has networkError → { unavailable: "network" } + degraded', async () => {
+  // sync records networkError when GoHighLevel was unreachable for that entity during the sync run.
+  const m = fullModel();
+  m.entities.calendars = { networkError: true };
+  const { ctx } = makeFakeCtx({ model: m, fixture: cvFixture });
+  const { doc, degraded, warnings } = await buildExportDoc(ctx);
+  assert.deepEqual(doc.calendars, { unavailable: 'network' });
+  assert.equal(degraded, true);
+  assert.ok(warnings.some(w => /could not reach GoHighLevel/.test(w)));
+});
+
+test('export HONESTY: entity blocked WITH httpCode → { blocked, httpCode } + "not a scope issue" warning', async () => {
+  // httpCode present means a real API error (not a 401/403 scope gap) — the message must say so
+  // to prevent users from wasting time adding a scope they already have.
+  const m = fullModel();
+  m.entities.pipelines = { blocked: true, httpCode: 500, scope: 'opportunities.readonly' };
+  const { ctx } = makeFakeCtx({ model: m, fixture: cvFixture });
+  const { doc, degraded, warnings } = await buildExportDoc(ctx);
+  assert.equal(doc.pipelines.blocked, 'opportunities.readonly');
+  assert.equal(doc.pipelines.httpCode, 500);
+  assert.equal(degraded, true);
+  assert.ok(warnings.some(w => /not a scope issue/.test(w)));
+});
+
+// ── customValues live-fetch branches not yet covered ─────────────────────────
+
+test('export HONESTY: customValues network error (code 0) → { unavailable: "network" } + degraded', async () => {
+  // code 0 is the sentinel the http layer uses for transport failures (DNS, timeout, socket).
+  const { ctx } = makeFakeCtx({
+    model: fullModel(),
+    fixture: { 'GET /locations/L-TEST/customValues': { status: 0, j: {} } },
+  });
+  const { doc, degraded, warnings } = await buildExportDoc(ctx);
+  assert.deepEqual(doc.customValues, { unavailable: 'network' });
+  assert.equal(degraded, true);
+  assert.ok(warnings.some(w => /could not reach GoHighLevel/.test(w)));
+});
+
+test('export HONESTY: customValues server error (500) → { unavailable: "http 500" } + degraded', async () => {
+  // A non-auth, non-network failure: the values endpoint returned 500.
+  // Must be { unavailable }, not blocked — the user can't fix this by adding a scope.
+  const { ctx } = makeFakeCtx({
+    model: fullModel(),
+    fixture: { 'GET /locations/L-TEST/customValues': { status: 500, j: { message: 'boom' } } },
+  });
+  const { doc, degraded } = await buildExportDoc(ctx);
+  assert.deepEqual(doc.customValues, { unavailable: 'http 500' });
+  assert.equal(degraded, true);
+});
+
+// ── location.blocked branches ────────────────────────────────────────────────
+
+test('export HONESTY: location blocked without httpCode → missing-scope warning + degraded', async () => {
+  // When E.location.blocked is set but no httpCode, it's a scope gap.
+  // The command still builds a location stub from empty fallbacks — doc.location must be present.
+  const m = fullModel();
+  m.entities.location = { blocked: true };
+  const { ctx } = makeFakeCtx({ model: m, fixture: cvFixture });
+  const { doc, degraded, warnings } = await buildExportDoc(ctx);
+  assert.equal(degraded, true);
+  assert.ok(warnings.some(w => w.includes('blocked (missing scope)')));
+  assert.ok('id' in doc.location, 'location stub must still be present');
+});
+
+test('export HONESTY: location blocked with httpCode → API-error warning + degraded', async () => {
+  // httpCode present = real error, not a scope issue — the warning text must say so.
+  const m = fullModel();
+  m.entities.location = { blocked: true, httpCode: 403 };
+  const { ctx } = makeFakeCtx({ model: m, fixture: cvFixture });
+  const { doc, degraded, warnings } = await buildExportDoc(ctx);
+  assert.equal(degraded, true);
+  assert.ok(warnings.some(w => /API error 403.*not a scope issue/.test(w)));
+});
+
+// ── run() output paths ────────────────────────────────────────────────────────
+
+test('run without --out: canonical JSON printed to stdout, exits OK', async () => {
+  // The human / pipe path: no file arg, so the command prints the document to stdout directly.
+  // json:false required so out.card() isn't suppressed by machine mode.
+  const { ctx, getPrinted } = makeFakeCtx({ model: fullModel(), fixture: cvFixture, json: false });
+  const code = await run({ _: [] }, ctx);
+  ctx.out.flush();
+  assert.equal(code, EXIT.OK);
+  const printed = getPrinted();
+  assert.ok(printed.includes('"specVersion": 1'), 'canonical doc must reach stdout when --out is absent');
+  assert.ok(printed.includes('"pipelines"'), 'all resource groups must appear');
+});
+
+test('run --out write failure → throws GhlError EXIT.API', async () => {
+  // writeFileSync throws when the parent directory doesn't exist.
+  // The command must re-wrap it as GhlError(EXIT.API) — raw Node errors have no .code field and
+  // break the CLI's error-envelope contract.
+  const { ctx } = makeFakeCtx({ model: fullModel(), fixture: cvFixture });
+  await assert.rejects(
+    () => run({ _: [], out: '/no/such/dir/loc.json' }, ctx),
+    (e) => e.code === EXIT.API && /could not write/.test(e.message),
+  );
+});

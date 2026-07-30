@@ -1,154 +1,105 @@
-# findings — 2026-07-26 — claim-verification
+# findings.md — 2026-07-31 — test-coverage run
 
-## What was done
+## Enumeration: commands vs test files
 
-Verified 5 specific, falsifiable claims from README.md, SECURITY.md, and SKILL.md against actual
-source code. Claims chosen for trust-impact on a stranger handing this tool a live CRM token.
-Found one real bug (business writes not supporting `--dry-run`) and one misleading audit recipe.
+All 34 commands in `commands/*.mjs` have at least one test file. The 2026-07-16 backlog
+(`surveys`, `transactions`, `business`) was addressed in a prior run — all three have full,
+substantive test files that pass.
 
----
+| command | test file(s) |
+|---------|-------------|
+| ack | ack.test.mjs |
+| appointment | appointment.test.mjs, appointment-list.test.mjs |
+| ask | ask.test.mjs, ask-destructive-gate.test.mjs |
+| booked-not-paid | booked-not-paid.test.mjs |
+| brief | brief.test.mjs, brief-format.test.mjs, brief-memory.test.mjs |
+| business | business.test.mjs |
+| calendar | calendar.test.mjs |
+| contact | contact.test.mjs, contact-find.test.mjs |
+| crm | crm.test.mjs, crm-blocked.test.mjs |
+| diff | diff.test.mjs |
+| doctor | doctor.test.mjs |
+| export | export.test.mjs |
+| field | field.test.mjs |
+| focus | focus.test.mjs, focus-memory.test.mjs |
+| forms | forms.test.mjs |
+| init | init.test.mjs |
+| invoice | invoice.test.mjs, invoice-list.test.mjs |
+| link | link.test.mjs |
+| list | list.test.mjs, list-blocked.test.mjs |
+| noshow | noshow.test.mjs |
+| note | note.test.mjs |
+| opp | opp.test.mjs |
+| pipeline | pipeline.test.mjs |
+| receivables | receivables.test.mjs |
+| reconcile | reconcile.test.mjs |
+| segment | segment.test.mjs |
+| send | send.test.mjs |
+| snapshot | snapshot.test.mjs |
+| surveys | surveys.test.mjs |
+| sync | sync.test.mjs, sync-blocked.test.mjs |
+| tag | tag.test.mjs |
+| transactions | transactions.test.mjs |
+| triage | triage.test.mjs, triage-concurrency.test.mjs |
+| value | value.test.mjs |
 
-## Claims verified + evidence
+**Coverage gap: none.** Proceeding to deepen the weakest test file per task instructions.
 
-### Claim 1 — PIT never in argv
+## Weakest file identification
 
-**Source:** SECURITY.md — "There is no `--pit` flag, so your token never lands in shell history,
-`ps`, or process args."
-
-**Command run:**
-```
-grep -rn "\-\-pit" lib/ commands/
-```
-
-**Output (abbreviated):**
-```
-lib//cli.mjs:354:      if (rest.includes('--pit-stdin')) {
-lib//cli.mjs:364:      } else if (flag('--pit-env')) {
-commands//init.mjs:26:  // local flag parse — NOTE: no --pit flag exists by design.
-```
-
-**Result: VERIFIED.** Only `--pit-stdin` and `--pit-env` exist. `init.mjs:26` has an explicit
-code comment confirming this is intentional.
-
----
-
-### Claim 2 — Zero runtime dependencies (audit recipe)
-
-**Source:** SECURITY.md — "Zero runtime dependencies. Verify: `cat package.json` → `"dependencies": {}`."
-
-**Finding: RECIPE MISLEADS (low severity).** The zero-dep claim is true. But `package.json` has
-NO `"dependencies"` key at all — the field is omitted entirely rather than set to `{}`. Running
-`cat package.json` will NOT show `"dependencies": {}`. A user following the self-audit recipe
-would look for that key, find nothing, and be confused.
-
-Evidence — full `package.json` keys: `name`, `version`, `description`, `type`, `bin`, `engines`,
-`scripts`, `author`, `license`, `keywords`, `repository`, `bugs`, `homepage`, `files`, `publishConfig`.
-No `dependencies`. No `devDependencies`.
-
-**No code fix applied.** The underlying claim (zero runtime deps) is correct. The SECURITY.md
-recipe should say: "`cat package.json` — you will NOT see a `dependencies` key; npm omits it
-when the map would be empty. Zero entries = zero deps."
-
----
-
-### Claim 3 — Update check skipped under `--json` and when piped
-
-**Source:** README.md — "It never runs under `--json` or when output is piped."
-
-**Verification:** `bin/sizmo.mjs:19`
-```js
-if (!noUpdateFlag && !argv.includes('--json') && !argv.includes('--ndjson') && process.stderr.isTTY) {
-```
-
-**Result: VERIFIED.** All four skip conditions enforced: `--json`, `--ndjson`, non-TTY stderr
-(piped), and `--no-update-check` / `NO_UPDATE_NOTIFIER` env (handled inside `checkForUpdate`).
-
----
-
-### Claim 4 — `--dry-run` available on ALL writes
-
-**Source:** README.md — "`--dry-run` available on all writes. Shows the change description without
-executing. Exits 0."
-
-**Verification method:** `lib/confirm.mjs` implements the `dryRun` path in `requireConfirm()`.
-Commands that call `requireConfirm()` get `--dry-run` automatically. Grepped for `requireConfirm`
-across all write commands:
+Test counts per file (bottom of distribution):
 
 ```
-grep -rn "requireConfirm" commands/ (count mode)
-→ field.mjs:3, contact.mjs:4, value.mjs:3, send.mjs:3, tag.mjs:2,
-  calendar.mjs:3, opp.mjs:5, invoice.mjs:3, link.mjs:3,
-  appointment.mjs:4, note.mjs:2
-  (11 files, 35 total hits)
+export.test.mjs:8    (99 lines)
+diff.test.mjs:9     (118 lines)
+link.test.mjs:10    (87 lines)
+note.test.mjs:11    (130 lines)
 ```
 
-**Finding: BUG — `business create` and `business delete` missing `--dry-run` support.**
+`export.mjs` had the most uncovered branches relative to its test count — 9 reachable branches
+vs 8 tests. Chosen for deepening.
 
-`commands/business.mjs` was NOT in the list. It checked `ctx.confirmed` manually:
+## Action: deepened `test/commands/export.test.mjs`
 
-```js
-// BEFORE (broken) — commands/business.mjs:100
-if (!ctx.confirmed) {
-  ctx.out.line(`  rerun with --confirm to create`);
-  return EXIT.CONFIRM;   // exits 5 whether --dry-run was passed or not
-}
+9 tests added covering branches that were untested:
+
+| Test added | Branch covered in export.mjs |
+|------------|------------------------------|
+| entity absent from model → `{ unavailable: 'not synced' }` | `entityGroup`: `!ent` path (line 44) |
+| entity `networkError` → `{ unavailable: 'network' }` | `entityGroup`: `ent.networkError` path (line 45) |
+| entity `blocked` with `httpCode` → `{ blocked, httpCode }` + "not a scope issue" | `entityGroup`: `ent.httpCode` sub-branch (lines 48-49) |
+| customValues `code === 0` → `{ unavailable: 'network' }` | transport-failure branch (line 101) |
+| customValues HTTP 500 → `{ unavailable: 'http 500' }` | non-ok non-auth branch (line 102) |
+| `E.location.blocked` without `httpCode` → "blocked (missing scope)" warning | location-blocked branch (lines 73-74) |
+| `E.location.blocked` with `httpCode` → "API error N (not a scope issue)" warning | location-blocked-httpCode branch (lines 72-73) |
+| `run` without `--out` → canonical JSON printed to stdout | `out.card` stdout path (line 143) |
+| `run` with unwritable `--out` path → `GhlError(EXIT.API)` | `writeFileSync` failure wrapper (line 127) |
+
+## Before / after
+
+```
+Before:  node --test  →  1142 tests, 0 fail
+After:   node --test  →  1151 tests, 0 fail
 ```
 
-`ctx.dryRun` was never consulted. `sizmo business create --name "X" --dry-run` exited 5 instead
-of 0, showed plain prose instead of the structured JSON confirm envelope, and was incapable of
-emitting the `{status:'dry_run', changes, confirmCommand}` shape `--json` consumers expect.
+Evidence (actual `node --test` output after edit):
 
-**Fix applied in this run** (`commands/business.mjs`):
-- Added `import { requireConfirm } from '../lib/confirm.mjs';`
-- Replaced manual `if (!ctx.confirmed)` blocks in `createBusiness` and `deleteBusiness` with
-  `requireConfirm({command, changes, rerunCommand}, ctx)` calls — same pattern as all other
-  write commands
-- Removed spurious `--confirm` entry from command `meta.flags` (global router strips `--confirm`
-  before any command's `parseArgs` sees it; declaring it at command level only polluted help output)
-
-**Test suite after fix:** `node --test --test-concurrency=1` → `606/606 pass`.
-
----
-
-### Claim 5 — No `invoice void` command
-
-**Source:** SKILL.md — "# Invoices — draft/send only, there is no void/charge command"
-(Previous failure class: SKILL.md once documented `invoice void` which never existed in source.)
-
-**Verification:** Read `commands/invoice.mjs` in full.
-
-```js
-export async function run(args, ctx) {
-  const sub = args._?.[0];
-  if (sub === 'draft') return draftInvoice(args, ctx);
-  if (sub === 'send') return sendInvoice(args, ctx);
-  throw new GhlError('usage: sizmo invoice draft ... | sizmo invoice send ...', EXIT.USAGE, ...);
-}
 ```
-
-**Result: VERIFIED.** Only `draft` and `send` exist. Any other subcommand throws `EXIT.USAGE`.
-The ghost `invoice void` has been fully removed; SKILL.md's explicit disclaimer is accurate.
-
----
-
-## Summary table
-
-| Claim | Status | Evidence location |
-|-------|--------|-------------------|
-| PIT never in argv | ✅ VERIFIED | `commands/init.mjs:26`, `lib/cli.mjs:354,364` |
-| Zero deps audit recipe | ⚠ RECIPE MISLEADS | `package.json` has no `dependencies` key; SECURITY.md says `"dependencies": {}` |
-| Update check skipped under `--json`/pipe | ✅ VERIFIED | `bin/sizmo.mjs:19` |
-| `--dry-run` on all writes | 🐛 BUG FIXED | `commands/business.mjs` — now uses `requireConfirm`; 606/606 tests pass |
-| No `invoice void` command | ✅ VERIFIED | `commands/invoice.mjs:41-44` |
+1..1151
+# tests 1151
+# suites 0
+# pass 1151
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 8125.209292
+```
 
 ## Files changed
 
-- `commands/business.mjs` — import `requireConfirm`; replace manual `ctx.confirmed` checks with
-  `requireConfirm()` in `createBusiness` and `deleteBusiness`; remove spurious `--confirm` from
-  meta flags. All 606 tests pass after the change.
+- `test/commands/export.test.mjs` — 9 tests appended (lines 100-199 of the new file)
 
 ## Files NOT changed
 
-- `SECURITY.md` — recipe inaccuracy (Claim 2) is low-severity and doc-only; left for supervised
-  review rather than touching a security doc unattended
-- All other source files — verified read-only
+- All command source files — no bugs found; read-only this run
