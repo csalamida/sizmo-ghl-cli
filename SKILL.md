@@ -228,7 +228,8 @@ sizmo ask "who hasn't replied in 3 days"            # runs triage, shows real ou
 sizmo ask "tag Ana Cruz as follow-up"                # preview → exit 5
 sizmo ask --confirm                                  # fires the previewed plan (no re-asking the AI)
 sizmo ask "tag Ana as follow-up and book her Friday at 2pm" --confirm  # two steps, one confirm
-sizmo ask "delete Marco's stalled deal" --confirm    # opp delete — resolves by contact name
+sizmo ask "delete Marco's stalled deal"            # previews the exact deal, then:
+sizmo ask --confirm                                 # ...fires it. Deletes NEVER go in one step.
 sizmo ask "create a trigger link for the black friday promo pointing to https://…" --confirm
 ```
 
@@ -253,7 +254,7 @@ deliberate manual step): `opp update`, `appointment book/cancel/note`, `send can
 
 ## As an Agent Tool
 
-Call one command per question. Use `--json` for structured output. Check `degraded` flag before trusting numbers. Never fire a write without the human at the keyboard triggering the `--confirm` step — that gate is the human in the loop.
+Call one command per question. Use `--json` for structured output. Check `degraded` flag before trusting numbers. Never fire a write without the human at the keyboard triggering the `--confirm` step — that gate is the human in the loop. A sentence typed WITH `--confirm` fires in one call for non-destructive writes (tag, note, book) — you are approving the sentence, not a preview. Anything DESTRUCTIVE (delete, cancel) refuses that shortcut: it previews the exact record and exits 5, so a second bare `sizmo ask --confirm` is required.
 
 ```bash
 sizmo brief --json --profile acme          # structured morning readout

@@ -314,6 +314,15 @@ function need(fields, keys) {
   return null;
 }
 
+// Verbs that destroy something. Keyed on the VERB rather than a list of command+verb pairs, so a
+// destructive subcommand added to any command later is caught by default instead of needing to be
+// remembered here. Getting this wrong in the safe direction only costs an extra keystroke; getting it
+// wrong the other way deletes a record nobody saw.
+const DESTRUCTIVE_SUBCOMMANDS = new Set(['delete', 'cancel', 'remove', 'void']);
+const isDestructive = (step) =>
+  DESTRUCTIVE_SUBCOMMANDS.has(String(step?.subcommand ?? '').toLowerCase()) ||
+  DESTRUCTIVE_SUBCOMMANDS.has(String(step?.parsed?._?.[0] ?? '').toLowerCase());
+
 const STEP_BUILDERS = {
   tag: (step, ids) => {
     const f = step.fields ?? {};
@@ -542,7 +551,8 @@ export async function concretize(steps, ctx, now) {
     if (!builder) return { ok: false, error: `sizmo ask doesn't know how to run "${step.command}" yet` };
     const built = builder(step, ids);
     if (built.error) return { ok: false, error: `${step.command}${step.subcommand ? ' ' + step.subcommand : ''}: ${built.error}` };
-    concrete.push({ command: step.command, parsed: built.parsed, isWrite: true, executable: true, describe: built.describe });
+    concrete.push({ command: step.command, subcommand: step.subcommand ?? null,
+                    parsed: built.parsed, isWrite: true, executable: true, describe: built.describe });
     previewLines.push(`  ${built.describe}`);
   }
 
@@ -777,7 +787,15 @@ export async function run(parsed, ctx) {
 
   // Executable write(s). If this call already carries --confirm (the "fresh sentence + --confirm,
   // no prior preview" case from the top of run()), fire now — same-call resolution, no drift risk.
-  if (ctx.confirmed) {
+  //
+  // EXCEPT when the plan destroys something. A one-shot `sizmo ask "delete X" --confirm` meant the
+  // human approved a SENTENCE and never saw which record the AI picked. For a tag that is a fair
+  // trade; for a delete it is not, and the docs simultaneously claimed the --confirm gate "is the
+  // human in the loop", which it was not on that path. Destructive plans now always preview and
+  // require a second, bare `sizmo ask --confirm` — by which point the exact target has been shown.
+  // Decision made 2026-07-30: preview deletes only, keep the one-shot for non-destructive writes.
+  const destructive = result.concrete.filter(isDestructive);
+  if (ctx.confirmed && !destructive.length) {
     return runWithReport(result.concrete, ctx);
   }
 
@@ -786,8 +804,13 @@ export async function run(parsed, ctx) {
   // The plan an agent is being asked to approve, as data. Mirrors the human preview lines exactly:
   // both are rendered from result.concrete / result.previewLines, so they cannot describe different
   // plans. `previewLines` is included verbatim so a caller can show a human the same text.
+  // `blockedOneShot` is the machine-readable form of "you passed --confirm and it did NOT fire".
+  // Without it an agent sees exit 5 after a --confirm and cannot tell a refusal from a stale plan.
+  const blockedOneShot = ctx.confirmed && destructive.length > 0;
   ctx.out.data({
     pending: true, executable: true, confirmed: false,
+    ...(blockedOneShot ? { blockedOneShot: true, reason: 'destructive_requires_preview' } : {}),
+    destructiveSteps: destructive.map(s2 => s2.describe ?? s2.command),
     stepCount: result.concrete.length,
     steps: result.concrete.map(s2 => ({
       command: s2.command, subcommand: s2.subcommand ?? null, intent: s2.intent ?? null,
@@ -797,8 +820,14 @@ export async function run(parsed, ctx) {
     runCommand: 'sizmo ask --confirm',
   });
   ctx.out.line('');
+  if (blockedOneShot) {
+    ctx.out.line(`  This resolved to ${destructive.length === 1 ? 'a DESTRUCTIVE action' : destructive.length + ' DESTRUCTIVE actions'}.`);
+    ctx.out.line('  sizmo never fires those straight from a sentence — you would be approving the');
+    ctx.out.line('  words, not the record the AI picked. Here is what it chose:');
+  }
   for (const line of result.previewLines) ctx.out.line(line);
   ctx.out.line('');
+  if (blockedOneShot) ctx.out.line('  This is permanent. Nothing has been changed yet.');
   ctx.out.line('  Rerun with --confirm to apply:');
   ctx.out.line('  sizmo ask --confirm');
   ctx.out.line('');

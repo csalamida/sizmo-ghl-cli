@@ -196,14 +196,18 @@ test('CLAIM: the ask confirm-leg description covers BOTH --confirm paths', () =>
   // --confirm run shows them something first. Path 2 does not, and it is the path a confident user
   // reaches for.
   //
-  // Path 2 is deliberate (the decision is recorded at the fire site in commands/ask.mjs) and its
-  // safety rests on concretize refusing rather than guessing on an ambiguous name. The behaviour is
-  // fine; the documentation was incomplete. This pins the docs to keep describing both.
+  // NARROWED 2026-07-30. Path 2 no longer applies to DESTRUCTIVE plans: a delete or cancel resolved
+  // from a sentence now always previews and demands a second bare --confirm, because approving the
+  // words is not approving the record. Path 2 survives for non-destructive writes, so the docs still
+  // have to describe both legs — this guard is unchanged in purpose, only its code anchor moved.
   const src = readFileSync(join(REPO, 'commands', 'ask.mjs'), 'utf8');
 
   // Sanity: the same-call fire path must still exist, or this test is guarding nothing.
-  assert.match(src, /if \(ctx\.confirmed\) \{\s*\n\s*return runWithReport\(result\.concrete, ctx\)/,
+  assert.match(src, /if \(ctx\.confirmed && !destructive\.length\) \{\s*\n\s*return runWithReport\(result\.concrete, ctx\)/,
     'the same-call --confirm fire path moved — re-check what the docs should say');
+  // And the destructive carve-out must be the reason it is conditional.
+  assert.match(src, /const destructive = result\.concrete\.filter\(isDestructive\)/,
+    'the destructive carve-out went missing — a sentence could fire a delete unseen again');
 
   for (const doc of ['SECURITY.md', 'README.md']) {
     const text = readFileSync(join(REPO, doc), 'utf8');
