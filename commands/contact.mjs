@@ -1,4 +1,4 @@
-// commands/contact.mjs — create, upsert, OR delete a contact.
+// commands/contact.mjs — find, create, upsert, update OR delete a contact.
 // Scope required: contacts.write
 // upsert de-dupes on email/phone: matches an existing contact in the location and updates it, or
 //   creates one if none matches — so a retrying agent can't spawn duplicate people.
@@ -10,11 +10,11 @@ import { GhlError, EXIT } from '../lib/errors.mjs';
 // The subcommand list, declared once so `sizmo schema` and the dispatch below cannot
 // disagree. test/client/schema-subcommands.test.mjs extracts the verbs this file actually
 // dispatches on and fails if they differ from this array.
-const SUBCOMMANDS = ['create', 'upsert', 'update', 'delete'];
+const SUBCOMMANDS = ['find', 'create', 'upsert', 'update', 'delete'];
 
 export const meta = {
   name: 'contact',
-  summary: 'create, upsert (de-dupe on email/phone), or delete a contact (delete is single-target, never bulk)',
+  summary: 'find a contact by name/email/phone, or create, upsert (de-dupe), update or delete one',
   subcommands: SUBCOMMANDS,
   flags: [
     { name: '--name',  type: 'string', desc: 'full name (create/upsert)' },
@@ -36,6 +36,7 @@ export const meta = {
     { name: '--state',         type: 'string', desc: 'state/region (update)' },
     { name: '--postal-code',   type: 'string', desc: 'postal code (update)' },
     { name: '--dob',           type: 'string', desc: 'date of birth YYYY-MM-DD (update)' },
+    { name: '--limit',         type: 'int',    desc: 'max matches to show (find only, default 10)' },
   ],
   readOnly: false,
 };
@@ -44,11 +45,92 @@ const SCOPE_FIX = 'GoHighLevel → Settings → Private Integrations → edit yo
 
 export async function run(args, ctx) {
   const sub = args._?.[0];
+  if (sub === 'find') return findContacts(args, ctx);
   if (sub === 'create') return createContact(args, ctx);
   if (sub === 'upsert') return upsertContact(args, ctx);
   if (sub === 'update') return updateContact(args, ctx);
   if (sub === 'delete') return deleteContact(args, ctx);
-  throw new GhlError('usage: sizmo contact create … | sizmo contact upsert --email|--phone … | sizmo contact update <contactId> … | sizmo contact delete <contactId>', EXIT.USAGE, 'sizmo contact --help');
+  throw new GhlError(
+    'usage: sizmo contact find "<name|email|phone>"\n' +
+    '       sizmo contact create … | sizmo contact upsert --email|--phone …\n' +
+    '       sizmo contact update <contactId> … | sizmo contact delete <contactId>',
+    EXIT.USAGE, 'sizmo contact --help');
+}
+
+// ── find ─────────────────────────────────────────────────────────────────────
+//
+// WHY THIS EXISTS
+// Every write in this tool takes an opaque <contactId>: `sizmo tag <contactId>`,
+// `sizmo note <contactId>`, `sizmo opp create --contact <id>`. Until now there was no first-class
+// way to turn a name into that id. The one working fuzzy search lived inside `sizmo ask`, which
+// needs a paid AI key, so the documented route for anyone without one was the raw `sizmo api`
+// escape hatch. That is a hole in the middle of the product, not a missing nicety.
+//
+// This is READ-ONLY: no confirm gate, no write scope. It reuses the exact request `ask` has been
+// making in production rather than a fresh guess at the API.
+const FIND_LIMIT_DEFAULT = 10;
+const FIND_SCOPE_FIX = 'GoHighLevel → Settings → Private Integrations → edit your PIT → add contacts.readonly scope';
+
+async function findContacts(args, ctx) {
+  const query = args._?.slice(1).join(' ').trim();
+  if (!query) {
+    throw new GhlError('usage: sizmo contact find "<name|email|phone>"', EXIT.USAGE,
+      'example: sizmo contact find "ana cruz"   ·   sizmo contact find ana@example.com');
+  }
+  const limit = args.limit ?? FIND_LIMIT_DEFAULT;
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new GhlError(`--limit must be a positive integer (got ${JSON.stringify(args.limit)})`, EXIT.USAGE,
+      'example: sizmo contact find "ana" --limit 25');
+  }
+
+  // `query` is the correct param name. `search` returns HTTP 422 — verified live and recorded in
+  // commands/ask.mjs, which has been using this exact call in production.
+  const r = await ctx.http.get('/contacts/', {
+    query: { locationId: ctx.cfg.loc, query, limit },
+  });
+  if (r.code === 401 || r.code === 403) {
+    throw new GhlError(`HTTP ${r.code} — your PIT lacks contacts.readonly`, EXIT.AUTH, FIND_SCOPE_FIX);
+  }
+  if (!r.ok) {
+    throw new GhlError(`contact search failed — HTTP ${r.code}: ${(r.txt || '').slice(0, 200).replace(/\s+/g, ' ')}`, EXIT.API);
+  }
+
+  const contacts = r.j?.contacts ?? [];
+  // meta.total is GoHighLevel's REAL match count, which can exceed what one page returns. Reporting
+  // contacts.length as the total would silently undercount — the same trap ask.mjs documents.
+  const total = r.j?.meta?.total ?? contacts.length;
+  const matches = contacts.map(c => ({
+    id: c.id,
+    name: [c.firstName, c.lastName].filter(Boolean).join(' ') || c.contactName || c.name || null,
+    email: c.email ?? null,
+    phone: c.phone ?? null,
+    tags: Array.isArray(c.tags) ? c.tags : [],
+    dateAdded: c.dateAdded ?? null,
+  }));
+  // `total` is the count GHL reports; `shown` is how many are in this payload. Naming both means a
+  // caller never has to guess whether it received everything.
+  const truncated = total > matches.length;
+  ctx.out.data({ query, total, shown: matches.length, truncated, matches });
+
+  ctx.out.card(() => {
+    if (!matches.length) {
+      ctx.out.line(`\n  No contact matches "${query}".`);
+      ctx.out.line('  Try a shorter fragment — the match is fuzzy but not phonetic.\n');
+      return;
+    }
+    ctx.out.line(`\n  CONTACTS matching "${query}" — ${total} match(es)${truncated ? `, showing ${matches.length}` : ''}`);
+    ctx.out.line('  ' + '─'.repeat(72));
+    const nameW = Math.min(24, Math.max(12, ...matches.map(m => (m.name || '').length)));
+    for (const m of matches) {
+      ctx.out.line(`  ${(m.name || '(no name)').slice(0, nameW).padEnd(nameW)}  ${String(m.id).padEnd(24)}  ${m.email || m.phone || ''}`);
+    }
+    ctx.out.line('  ' + '─'.repeat(72));
+    if (truncated) ctx.out.line(`  … ${total - matches.length} more — raise --limit to see them`);
+    // The whole point of the command: the id is the input to every write.
+    ctx.out.line(`  Copy an id → sizmo tag <id> --add VIP --confirm  ·  sizmo note <id> --text "..." --confirm`);
+    ctx.out.line(`                sizmo open <id>   # opens the contact in GoHighLevel\n`);
+  });
+  return EXIT.OK;
 }
 
 // Shared so create and upsert cannot drift apart. They built identical bodies by copy-paste, which
