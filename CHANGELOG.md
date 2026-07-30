@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.6.0] — 2026-07-30
+
 ### Added — three ways to find the id you need
 
 Every write command in sizmo takes an id: `sizmo tag <contactId>`, `sizmo invoice send <invoiceId>`,
