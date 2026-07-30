@@ -15,15 +15,16 @@
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
 import { fetchLiveEntity } from '../lib/model.mjs';
+import { mapLimit } from '../lib/pool.mjs';
 
 // The subcommand list, declared once so `sizmo schema` and the dispatch below cannot
 // disagree. test/client/schema-subcommands.test.mjs extracts the verbs this file actually
 // dispatches on and fails if they differ from this array.
-const SUBCOMMANDS = ['book', 'update', 'cancel', 'note'];
+const SUBCOMMANDS = ['list', 'book', 'update', 'cancel', 'note'];
 
 export const meta = {
   name: 'appointment',
-  summary: 'book, cancel, or note a calendar appointment',
+  summary: 'list upcoming appointments, or book, update, cancel or note one',
   subcommands: SUBCOMMANDS,
   flags: [
     { name: '--calendar', type: 'string', desc: 'calendar name (book)' },
@@ -36,6 +37,8 @@ export const meta = {
     { name: '--no-notify', type: 'bool',  desc: 'book WITHOUT firing the location\'s automations (default: they fire)' },
     { name: '--text',     type: 'string', desc: 'note body text (note)' },
     { name: '--status',   type: 'string', desc: 'update: confirmed | showed | noshow | cancelled | invalid' },
+    { name: '--days',     type: 'int',    desc: 'how far AHEAD to look (list, default 14)' },
+    { name: '--top',      type: 'int',    desc: 'max rows to show (list, default 20)' },
   ],
   readOnly: false,
 };
@@ -54,10 +57,12 @@ function calendarAgeNote(model, now) {
 }
 
 export async function run(args, ctx) {
-  const sub = args._?.[0]; // 'book' | 'update' | 'cancel' | 'note'
-  if (!sub || !['book', 'update', 'cancel', 'note'].includes(sub)) {
+  const sub = args._?.[0]; // 'list' | 'book' | 'update' | 'cancel' | 'note'
+  if (sub === 'list') return listAppointments(args, ctx);
+  if (!sub || !SUBCOMMANDS.includes(sub)) {
     throw new GhlError(
-      'usage: sizmo appointment book --calendar <name> --contact <id> --start <iso>\n' +
+      'usage: sizmo appointment list [--days 14]\n' +
+      '       sizmo appointment book --calendar <name> --contact <id> --start <iso>\n' +
       '       sizmo appointment update <apptId> [--start] [--end] [--status]\n' +
       '       sizmo appointment cancel <apptId>\n' +
       '       sizmo appointment note <apptId> --text "..."',
@@ -360,4 +365,152 @@ export async function run(args, ctx) {
     ctx.out.line(`  note added to appointment ${apptId}`);
     return EXIT.OK;
   }
+}
+
+// ── list ─────────────────────────────────────────────────────────────────────
+//
+// WHY THIS EXISTS
+// Every calendar read in this tool ended its window at NOW. `noshow` and `booked-not-paid` both ask
+// /calendars/events for `endTime: NOW`, because both are looking backwards at what already happened.
+// The consequence was that NO command could return an appointment in the future: you could book one
+// with `sizmo appointment book` and then have no way to see it. The tool was forward-blind.
+//
+// The endpoint supports a forward window fine — nothing was blocked, the query was just never asked.
+// This uses the identical request noshow makes, with the window pointed the other way.
+//
+// READ-ONLY.
+const LIST_DAYS_DEFAULT = 14;
+const LIST_TOP_DEFAULT = 20;
+// Same cap noshow documents: /calendars/events has no pagination cursor, so a calendar at the cap may
+// be truncated and there is no way to page past it. Say so rather than under-report silently.
+const LIST_EVENTS_CAP = 100;
+// Statuses that mean the appointment is no longer going to happen. Same vocabulary noshow filters on.
+const DEAD_STATUSES = new Set(['cancelled', 'canceled', 'invalid']);
+
+async function listAppointments(args, ctx) {
+  const LOC = ctx.cfg.loc;
+  const NOW = typeof ctx.now === 'function' ? ctx.now() : ctx.now;
+  const DAYS = args.days ?? LIST_DAYS_DEFAULT;
+  const TOP = args.top ?? LIST_TOP_DEFAULT;
+  if (!Number.isInteger(DAYS) || DAYS < 1) {
+    throw new GhlError(`--days must be a positive integer (got ${JSON.stringify(args.days)})`, EXIT.USAGE,
+      'example: sizmo appointment list --days 30');
+  }
+  if (!Number.isInteger(TOP) || TOP < 1) {
+    throw new GhlError(`--top must be a positive integer (got ${JSON.stringify(args.top)})`, EXIT.USAGE,
+      'example: sizmo appointment list --top 50');
+  }
+  const END = NOW + DAYS * 86400000;
+
+  // Calendars come from the synced model when available, exactly as noshow resolves them.
+  let cals = null;
+  if (ctx.ensureModel) {
+    try {
+      const model = await ctx.ensureModel();
+      const ent = model?.entities?.calendars;
+      if (ent && !ent.blocked && !ent.networkError) cals = ent.items ?? [];
+    } catch { /* fall through to a live fetch */ }
+  }
+  if (cals === null) {
+    const cr = await ctx.http.get('/calendars/', { query: { locationId: LOC }, version: '2021-04-15' });
+    if (cr.code === 401 || cr.code === 403) {
+      throw new GhlError(`HTTP ${cr.code} — your PIT lacks calendars.readonly`, EXIT.AUTH,
+        'GoHighLevel → Settings → Private Integrations → edit your PIT → add calendars.readonly scope');
+    }
+    if (!cr.ok) throw new GhlError(`could not read calendars — HTTP ${cr.code}`, EXIT.API);
+    cals = cr.j?.calendars ?? [];
+  }
+  if (!cals.length) {
+    ctx.out.data({ location: LOC, days: DAYS, calendars: 0, upcoming: 0, shown: 0, appointments: [] });
+    ctx.out.card(() => ctx.out.line('\n  No calendars in this location — nothing can be booked yet.\n'));
+    return EXIT.OK;
+  }
+
+  // Fan out at the shared cap of 5, the same policy noshow and booked-not-paid use.
+  const results = await mapLimit(cals, 5, async (cal) => ({
+    cal,
+    ev: await ctx.http.get('/calendars/events', {
+      query: { locationId: LOC, calendarId: cal.id, startTime: String(NOW), endTime: String(END) },
+      version: '2021-04-15',
+    }),
+  }));
+
+  const appts = [];
+  let unreadable = 0, cappedCalendars = 0;
+  for (const { cal, ev } of results) {
+    if (!ev.ok) {
+      unreadable++;
+      // A calendar we cannot read is UNKNOWN, not empty. Counting it as "no appointments" would tell
+      // someone their week is clear when it may not be.
+      ctx.out.warn(`calendar "${cal.name || cal.id}" events unreadable (HTTP ${ev.code}) — its appointments are NOT included`,
+        { degraded: true });
+      continue;
+    }
+    const evList = ev.j?.events || ev.j?.appointments || [];
+    if (evList.length >= LIST_EVENTS_CAP) {
+      cappedCalendars++;
+      ctx.out.warn(`calendar "${cal.name || cal.id}" returned ${evList.length} events — /calendars/events has no pagination cursor, so later appointments may be missing`,
+        { degraded: true });
+    }
+    for (const e of evList) {
+      const status = String(e.appointmentStatus || e.status || '').toLowerCase();
+      if (DEAD_STATUSES.has(status)) continue;      // cancelled is not upcoming
+      const start = Date.parse(e.startTime || e.startTimeISO || e.appointmentStartTime) || 0;
+      // The server window is trusted but not relied on: the local check is authoritative, the same
+      // way reconcile keeps its own millisecond filter over a server date range.
+      if (!start || start < NOW || start > END) continue;
+      appts.push({
+        id: e.id || e._id || null,
+        title: e.title || null,
+        calendar: cal.name || cal.id,
+        calendarId: cal.id,
+        contactId: e.contactId ?? null,
+        contactName: e.contactName ?? null,
+        status: status || null,
+        startTime: new Date(start).toISOString(),
+        endTime: e.endTime ? new Date(Date.parse(e.endTime)).toISOString() : null,
+        inDays: Math.floor((start - NOW) / 86400000),
+      });
+    }
+  }
+
+  // Soonest first — the only ordering that answers "what is next?"
+  appts.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+  const shown = appts.slice(0, TOP);
+  const incomplete = unreadable > 0 || cappedCalendars > 0;
+
+  ctx.out.data({
+    location: LOC,
+    days: DAYS,
+    windowEndISO: new Date(END).toISOString(),
+    calendars: cals.length,
+    ...(unreadable ? { unreadableCalendars: unreadable } : {}),
+    upcoming: appts.length,
+    shown: shown.length,
+    ...(incomplete ? { truncated: true } : {}),
+    appointments: shown,
+  });
+
+  ctx.out.card(() => {
+    const floor = incomplete ? 'at least ' : '';
+    ctx.out.line(`\n  UPCOMING — ${floor}${appts.length} appointment(s) in the next ${DAYS}d  ·  ${cals.length} calendar(s)  ·  loc ${LOC}`);
+    ctx.out.line('  ' + '─'.repeat(76));
+    if (!appts.length) {
+      ctx.out.line(incomplete
+        ? '  Nothing found, but at least one calendar could not be read — this is not a clear week.'
+        : `  Nothing booked in the next ${DAYS}d.`);
+      ctx.out.line('');
+      return;
+    }
+    for (const a of shown) {
+      const when = a.startTime.replace('T', ' ').slice(0, 16);
+      const rel = a.inDays === 0 ? 'today' : a.inDays === 1 ? 'tomorrow' : `in ${a.inDays}d`;
+      ctx.out.line(`  ${when}  ${String(rel).padEnd(9)} ${(a.contactName || a.title || '(untitled)').slice(0, 24).padEnd(24)} ${String(a.calendar).slice(0, 18)}`);
+      ctx.out.line(`      id ${a.id ?? '(none)'}${a.status ? ` · ${a.status}` : ''}`);
+    }
+    if (appts.length > shown.length) ctx.out.line(`  … +${appts.length - shown.length} more — raise --top`);
+    ctx.out.line('  ' + '─'.repeat(76));
+    ctx.out.line('  Copy an id → sizmo appointment cancel <id> --confirm  ·  sizmo appointment update <id> --start <iso> --confirm\n');
+  });
+  return EXIT.OK;
 }
