@@ -13,7 +13,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added — three ways to find the id you need
+
+Every write command in sizmo takes an id: `sizmo tag <contactId>`, `sizmo invoice send <invoiceId>`,
+`sizmo appointment cancel <apptId>`. Getting those ids was the gap. Three read-only commands close it.
+
+```sh
+sizmo contact find "ana cruz"        # name, email or phone -> contact id
+sizmo invoice list --status draft    # find a draft you created earlier
+sizmo appointment list               # what is booked in the next 14 days
+```
+
+**`sizmo contact find`** was the real hole. The one working fuzzy search lived inside `sizmo ask`,
+which needs a paid AI key, so without one the only route from a name to an id was the raw `sizmo api`
+escape hatch. It reports GoHighLevel's true match count even when it returns fewer, so "2 shown" never
+gets mistaken for "2 exist".
+
+**`sizmo invoice list`** makes a drafted invoice findable. `invoice draft` printed the new id once and
+`invoice send` needs it, but nothing could look it up: `receivables` keeps only unpaid-and-issued
+invoices, so a draft was filtered out by design. An unmatched `--status` now tells you which statuses
+do exist, so a wrong filter is distinguishable from an empty account.
+
+**`sizmo appointment list`** ends the calendar being forward-blind. Every calendar read in the tool
+stopped at *now*, because no-shows and unbilled sessions both look backwards. You could book an
+appointment and then have no way to see it. Nothing was blocked; the forward question was simply never
+asked. If a calendar can't be read it says so plainly rather than showing an empty week, because "0
+upcoming" is the worst possible way to be wrong about a schedule.
+
+All three are read-only, print the id on every row, and mark their answer incomplete when it is.
 
 ## [2.5.0] — 2026-07-30
 

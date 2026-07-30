@@ -16,6 +16,7 @@ A full terminal interface to one GoHighLevel location — **read it, build it, b
 |---|---|
 | **Ask** (natural language — your own AI agent, or sizmo's opt-in resolver) | `ask "who hasn't replied in 3 days"` · `ask "tag Ana as follow-up"` — resolves to the exact command |
 | **See** (read-only) | `brief` · `snapshot` · `triage` · `pipeline` · `receivables` · `reconcile` · `booked-not-paid` · `noshow` · `focus` · `segment` · `crm` · `list` (12 entities) · `forms` · `surveys` · `transactions` |
+| **Find** (read-only) | `contact find` (name/email/phone → the id every write needs) · `invoice list` · `appointment list` (upcoming) |
 | **Version** (read-only) | `export` (location → one diffable file) · `diff` (file vs live, or file vs file — *what changed?*) |
 | **Act** | `tag` · `note` · `opp` (create/move/update) · `appointment` (book/cancel) · `send` (SMS/email) |
 | **Build** | `contact create` · `contact upsert` (de-dupe) · `contact update` · `field create` · `field update` · `value create` · `value update` · `calendar create` · `business create` · `business update` |
@@ -384,14 +385,30 @@ The JSON `_meta` block in every `crm` response lets agents branch on staleness w
 
 Every claim above is verifiable — see [`SECURITY.md`](SECURITY.md) for the threat model, the self-audit recipes, and how to report a vulnerability. Zero runtime dependencies: what you read is what runs.
 
+## Finding things
+
+Every write command needs an id. These three turn what you know into what the tool needs.
+
+```sh
+sizmo contact find "ana cruz"        # name, email or phone -> contact id
+sizmo contact find ana@example.com --limit 25
+sizmo invoice list --status draft    # find a draft you created earlier
+sizmo invoice list --top 50
+sizmo appointment list              # what is booked in the next 14 days
+sizmo appointment list --days 30
+```
+
+All three are read-only and print the id on each row, so the next command is a copy away. Each also
+tells you when its answer is incomplete rather than looking clean: `contact find` reports
+GoHighLevel's real match count even when it returns fewer, `invoice list` marks a partial scan as a
+floor, and `appointment list` says plainly when a calendar could not be read instead of showing you
+an empty week.
+
 ## Honest limitations
 
 - **Rate-limit cap: 5 concurrent requests.** The pool is capped at 5 to avoid hammering the GHL API.
 - **Cache TTL: 60 seconds.** Stale data possible within that window. Use `--fresh` when you need live.
 - **No-show / booked-not-paid calendar truncation.** GHL's `/calendars/events` endpoint has no pagination cursor. If a calendar returns >= 100 events the result may be silently truncated. A `degraded: true` warning is emitted in that case.
-- **Finding a contact by name has no first-class command.** Every write takes an opaque `<contactId>`, and the one working fuzzy lookup lives inside `sizmo ask` (`/contacts/?query=…`, live-verified), which needs an AI key. `sizmo segment` has no name or email criterion, so without a key the route is the raw escape hatch: `sizmo api "/contacts/?query=ana&limit=5"`. The endpoint is proven — a `--query` criterion on `segment` is unbuilt, not blocked. Verified 2026-07-30.
-- **Every calendar read looks backwards only.** `noshow` and `booked-not-paid` both query `/calendars/events` with the window ending at *now*, so no sizmo command ever returns an appointment in the future. You can book an appointment with `sizmo appointment book`, then have no way to list what is booked. The endpoint itself supports a forward window — this is a sizmo gap, not an API limit, and a read command for upcoming appointments is unbuilt rather than impossible.
-- **A drafted invoice's id is printed once.** `sizmo invoice draft` reports the new id, and `sizmo invoice send <id>` needs it — but nothing lists drafts. `receivables` fetches every invoice and then keeps only unpaid-and-issued statuses, so `draft` is filtered out by design (a draft is not receivable). Lose the terminal output and the only route back is the raw escape hatch: `sizmo api "/invoices/?altId=<LOCATION_ID>&altType=location&limit=100"`. Verified 2026-07-30.
 - **Pipeline currency.** GHL opportunity monetary values carry no currency field — they inherit pipeline config. The CLI renders them as-is; cross-currency totals are never summed.
 - **No workflow writes.** This tool has no workflow-authoring capability. Workflow creation stays in GoHighLevel's UI.
 - **`sizmo ask`'s LLM step uses your synced CRM model as context** (which pipelines/calendars/tags/forms/surveys/businesses it knows to suggest) — run `sizmo sync` after adding things so the AI is aware of them. Actual name→id resolution (contacts, opportunities, custom fields, calendars, businesses) is always a live fetch, not the cache, so a just-created entity resolves correctly even before the next sync. Accuracy also depends on the LLM provider you configure — a low-confidence resolution says so and asks you to rephrase rather than guessing at a command.
