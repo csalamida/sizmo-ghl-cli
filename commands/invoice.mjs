@@ -1,10 +1,12 @@
-// commands/invoice.mjs — create a DRAFT invoice for a contact, or SEND an existing invoice.
+// commands/invoice.mjs — LIST invoices, create a DRAFT invoice for a contact, or SEND an existing one.
 // Scope required: invoices.write
 // SCOPE-IS-THE-GATE: sizmo exposes what your PIT scope + the public GHL API allow. There is no
 // public "charge a card" endpoint — `draft` creates a document, `send` delivers a pay-link the
 // customer acts on. Every op is confirm-gated; nothing fires without --confirm.
 import { requireConfirm } from '../lib/confirm.mjs';
 import { GhlError, EXIT } from '../lib/errors.mjs';
+import { paginate } from '../lib/paginate.mjs';
+import { notePartialScan } from '../lib/blind.mjs';
 // The single money formatter. invoice draft used to format its own totals two different ways and
 // neither went through here — see the note at the preview line below.
 import { fmtMoney } from '../lib/money.mjs';
@@ -20,11 +22,11 @@ const scopeFix = (scope) =>
 // The subcommand list, declared once so `sizmo schema` and the dispatch below cannot
 // disagree. test/client/schema-subcommands.test.mjs extracts the verbs this file actually
 // dispatches on and fails if they differ from this array.
-const SUBCOMMANDS = ['draft', 'send'];
+const SUBCOMMANDS = ['list', 'draft', 'send'];
 
 export const meta = {
   name: 'invoice',
-  summary: 'create a draft invoice for a contact, or send an existing invoice (pay-link)',
+  summary: 'list invoices, create a draft invoice for a contact, or send an existing invoice (pay-link)',
   subcommands: SUBCOMMANDS,
   flags: [
     { name: '--contact',  type: 'string', desc: 'contact id (draft)' },
@@ -32,6 +34,8 @@ export const meta = {
     { name: '--currency', type: 'string', desc: 'ISO currency (draft, default PHP)' },
     { name: '--name',     type: 'string', desc: 'invoice title (draft)' },
     { name: '--due',      type: 'string', desc: 'due date YYYY-MM-DD (draft, default +14d)' },
+    { name: '--status',   type: 'string', desc: 'filter by status, e.g. draft|sent|paid|void (list)' },
+    { name: '--top',      type: 'int',    desc: 'max rows to show (list, default 20)' },
   ],
   readOnly: false,
 };
@@ -54,9 +58,147 @@ const ymd = (ms) => new Date(ms).toISOString().slice(0, 10);
 
 export async function run(args, ctx) {
   const sub = args._?.[0];
+  if (sub === 'list') return listInvoices(args, ctx);
   if (sub === 'draft') return draftInvoice(args, ctx);
   if (sub === 'send') return sendInvoice(args, ctx);
-  throw new GhlError('usage: sizmo invoice draft --contact <id> --item "Name:amount" | sizmo invoice send <invoiceId>', EXIT.USAGE, 'sizmo invoice --help');
+  throw new GhlError(
+    'usage: sizmo invoice list [--status draft] [--top 20]\n' +
+    '       sizmo invoice draft --contact <id> --item "Name:amount"\n' +
+    '       sizmo invoice send <invoiceId>',
+    EXIT.USAGE, 'sizmo invoice --help');
+}
+
+// ── list ─────────────────────────────────────────────────────────────────────
+//
+// WHY THIS EXISTS
+// `invoice draft` printed the new invoice's id exactly once, and `invoice send <id>` needs it. No
+// command could find it again. `receivables` fetches every invoice but then keeps only the
+// unpaid-and-issued statuses, so a DRAFT is filtered out by design — correctly, since a draft is not
+// receivable. Lose the terminal output and the draft was unreachable except through `sizmo api`.
+//
+// READ-ONLY. Uses the exact request receivables has been paginating in production, so no new API
+// assumption is introduced: GET /invoices/ with altId/altType and offset paging.
+const LIST_TOP_DEFAULT = 20;
+const LIST_PAGE = 100;
+
+async function listInvoices(args, ctx) {
+  const LOC = ctx.cfg.loc;
+  const TOP = args.top ?? LIST_TOP_DEFAULT;
+  if (!Number.isInteger(TOP) || TOP < 1) {
+    throw new GhlError(`--top must be a positive integer (got ${JSON.stringify(args.top)})`, EXIT.USAGE,
+      'example: sizmo invoice list --top 50');
+  }
+  // Filter locally rather than trusting an undocumented server-side status param. The status
+  // vocabulary GoHighLevel returns is known from receivables; which query params it accepts for
+  // filtering is not, and guessing at an API's behaviour is how a filter silently returns nothing.
+  const wantStatus = args.status ? String(args.status).trim().toLowerCase() : null;
+
+  const rows = [];
+  let firstErr = null;
+  const stats = { pages: 0, truncated: false };
+  for await (const inv of paginate({
+    fetchPage: async (offset = 0) => {
+      const r = await ctx.http.get('/invoices/', {
+        query: { altId: LOC, altType: 'location', limit: LIST_PAGE, offset },
+      });
+      if (!r.ok) return { _err: r.code, invoices: [] };
+      return r.j;
+    },
+    getItems: (resp) => {
+      if (resp._err) { firstErr ??= resp._err; return []; }
+      return resp.invoices || resp.data || [];
+    },
+    nextCursor: (resp, items, offset = 0) => {
+      if (resp._err || items.length < LIST_PAGE) return null;
+      return offset + LIST_PAGE;
+    },
+    maxPages: 100,
+    startCursor: 0,
+    stats,
+  })) {
+    rows.push(inv);
+  }
+
+  // Nothing at all came back: UNKNOWN, never an empty list. "You have no invoices" and "I could not
+  // read your invoices" are different answers and only one of them is safe to act on.
+  if (firstErr && rows.length === 0) {
+    if (firstErr === 401 || firstErr === 403) {
+      throw new GhlError(`HTTP ${firstErr} — your PIT lacks invoices.readonly`, EXIT.AUTH,
+        scopeFix('invoices.readonly'));
+    }
+    throw new GhlError(`could not read invoices — HTTP ${firstErr}`, EXIT.API);
+  }
+  // A later page failed: what came back is real, the list is a floor.
+  const partial = notePartialScan({ err: firstErr, count: rows.length, source: 'invoices', ctx });
+  if (stats.truncated) {
+    ctx.out.warn(`invoices truncated at ${stats.pages} pages (${rows.length} invoices) — more exist`,
+      { degraded: true });
+  }
+
+  const mapped = rows.map((i) => {
+    const total = Number(i.total ?? i.amount ?? i.invoiceTotal ?? 0);
+    const paid = Number(i.amountPaid ?? i.totalPaid ?? 0);
+    return {
+      id: i._id || i.id,
+      number: i.invoiceNumber ?? null,
+      status: String(i.status ?? '').toLowerCase() || null,
+      name: i.name ?? null,
+      contactName: i.contactDetails?.name ?? null,
+      contactId: i.contactDetails?.id ?? i.contactDetails?._id ?? i.contactId ?? null,
+      currency: (i.currency || 'PHP').toUpperCase(),
+      total,
+      amountPaid: paid,
+      due: total - paid,
+      issueDate: i.issueDate ?? null,
+      dueDate: i.dueDate ?? null,
+    };
+  });
+  const filtered = wantStatus ? mapped.filter(x => x.status === wantStatus) : mapped;
+  // Ordered newest-first by issue date so the invoice you just drafted is the top row — which is the
+  // situation this command exists for.
+  filtered.sort((a, b) => (Date.parse(b.issueDate || b.dueDate || 0) || 0) - (Date.parse(a.issueDate || a.dueDate || 0) || 0));
+  const shown = filtered.slice(0, TOP);
+
+  const byStatus = {};
+  for (const x of mapped) byStatus[x.status ?? 'unknown'] = (byStatus[x.status ?? 'unknown'] ?? 0) + 1;
+
+  ctx.out.data({
+    location: LOC,
+    scanned: mapped.length,
+    matched: filtered.length,
+    shown: shown.length,
+    ...(wantStatus ? { status: wantStatus } : {}),
+    byStatus,
+    ...(partial || stats.truncated ? { truncated: true, ...(partial ? { partialScanError: firstErr } : {}) } : {}),
+    invoices: shown,
+  });
+
+  ctx.out.card(() => {
+    const floor = (partial || stats.truncated) ? 'at least ' : '';
+    ctx.out.line(`\n  INVOICES — ${floor}${filtered.length}${wantStatus ? ` with status "${wantStatus}"` : ''}  ·  ${mapped.length} scanned  ·  loc ${LOC}`);
+    ctx.out.line('  ' + '─'.repeat(76));
+    if (!filtered.length) {
+      if (wantStatus) {
+        ctx.out.line(`  No invoice with status "${wantStatus}".`);
+        const seen = Object.keys(byStatus).filter(Boolean).sort();
+        if (seen.length) ctx.out.line(`  Statuses present: ${seen.join(', ')}`);
+      } else {
+        ctx.out.line('  No invoices in this location.');
+      }
+      ctx.out.line('');
+      return;
+    }
+    for (const x of shown) {
+      const num = (x.number ? `#${x.number}` : '(no number)').padEnd(12);
+      const who = (x.contactName || x.name || '?').slice(0, 22).padEnd(22);
+      ctx.out.line(`  ${num} ${who} ${fmtMoney(x.total, x.currency).padStart(12)}  ${String(x.status ?? '?').padEnd(16)} ${x.dueDate ? `due ${String(x.dueDate).slice(0, 10)}` : ''}`);
+      ctx.out.line(`      id ${x.id}`);
+    }
+    if (filtered.length > shown.length) ctx.out.line(`  … +${filtered.length - shown.length} more — raise --top`);
+    ctx.out.line('  ' + '─'.repeat(76));
+    ctx.out.line('  Copy an id → sizmo invoice send <id> --confirm   # delivers a pay-link, never charges a card\n');
+  });
+  return EXIT.OK;
 }
 
 async function draftInvoice(args, ctx) {
