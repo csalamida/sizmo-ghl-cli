@@ -81,7 +81,7 @@ WANTED, blocked on an under-specified payload. sizmo can draft and send an invoi
 | `edit-appointment` | PUT | `/calendars/events/appointments/{eventId}` | appointment |
 | `get-appointment` | GET | `/calendars/events/appointments/{eventId}` | appointment |
 | `create-appointment-note` | POST | `/calendars/appointments/{appointmentId}/notes` | appointment |
-| `get-calendar-events` | GET | `/calendars/events` | booked-not-paid, noshow, snapshot |
+| `get-calendar-events` | GET | `/calendars/events` | appointment, booked-not-paid, noshow, snapshot |
 | `create-calendar` | POST | `/calendars/` | calendar |
 | `send-a-new-message` | POST | `/conversations/messages` | send |
 | `cancel-scheduled-message` | DELETE | `/conversations/messages/{messageId}/schedule` | send |
