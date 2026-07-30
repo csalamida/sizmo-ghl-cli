@@ -87,13 +87,23 @@ test('destructive verbs are recognised from the subcommand', async () => {
     'the predicate must also read the verb out of parsed._[0], or a step missing `subcommand` slips past');
 });
 
-test('a concretized step carries its subcommand', async () => {
+test('the EXECUTABLE concretized step carries its subcommand', async () => {
   // It used to be dropped, which is why nothing downstream could tell a delete from a create — and
   // why the execution record shipped in 2.5.0 always reported subcommand: null.
+  //
+  // Anchored on `executable: true` on purpose. There are THREE concrete.push sites in this file, and
+  // a first draft matched the NON-executable one — so removing the subcommand from the push the gate
+  // actually reads left this test green. A mutation survived and exposed it. The gate only ever sees
+  // executable steps, so that is the push that must carry the verb.
   const src = await import('node:fs').then(fs => fs.readFileSync(
     join(import.meta.dirname, '..', '..', 'commands', 'ask.mjs'), 'utf8'));
-  assert.match(src, /concrete\.push\(\{ command: step\.command, subcommand: step\.subcommand/,
-    'the concretized step must keep the verb, or the gate is blind');
+  const pushes = src.split('concrete.push(').slice(1)
+    .map(chunk => chunk.slice(0, chunk.indexOf('});') + 1));
+  const executable = pushes.filter(p => /executable: true/.test(p));
+  assert.equal(executable.length, 1,
+    `expected exactly one executable concrete.push, found ${executable.length} — re-check which one the gate reads`);
+  assert.match(executable[0], /subcommand:/,
+    'the executable step must keep its verb, or isDestructive cannot see a delete and the gate is blind');
 });
 
 // ── leg 2: the gate, asserted at the decision point ──────────────────────────
