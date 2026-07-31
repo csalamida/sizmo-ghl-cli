@@ -262,6 +262,13 @@ export async function run(args, ctx) {
         'GoHighLevel → Settings → Private Integrations → edit your PIT → add opportunities.write scope'
       );
     }
+    // opp move shared the same gap as opp update before 2026-07-27: a 404 from the PUT was mapped
+    // to EXIT.API ("server error — retry") instead of EXIT.NOTFOUND ("your id is wrong — do not
+    // retry"). For an agent branching on exit codes, retry-on-1 is sane policy; retrying a
+    // permanently-missing id forever is not.
+    if (r.code === 404) {
+      throw new GhlError(`no opportunity with id ${oppId} — nothing changed`, EXIT.NOTFOUND);
+    }
     if (!r.ok) {
       throw new GhlError(`opp move failed — HTTP ${r.code}: ${(r.txt || '').slice(0, 200)}`, EXIT.API);
     }
