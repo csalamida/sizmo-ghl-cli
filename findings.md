@@ -1,154 +1,170 @@
-# findings — 2026-07-26 — claim-verification
+# findings — 2026-08-02 — claim-verification
 
 ## What was done
 
-Verified 5 specific, falsifiable claims from README.md, SECURITY.md, and SKILL.md against actual
-source code. Claims chosen for trust-impact on a stranger handing this tool a live CRM token.
-Found one real bug (business writes not supporting `--dry-run`) and one misleading audit recipe.
+Verified 5 specific, falsifiable claims from SECURITY.md, SKILL.md, and AGENTS.md against actual
+source code in the 3.0.0 release. Claims chosen for trust-impact on a stranger handing this tool
+a live CRM token. Found one documentation bug (PIT verification recipe description), fixed it.
+All other claims verified correct.
 
 ---
 
 ## Claims verified + evidence
 
-### Claim 1 — PIT never in argv
+### Claim 1 — SECURITY.md PIT verification recipe description is wrong
 
-**Source:** SECURITY.md — "There is no `--pit` flag, so your token never lands in shell history,
-`ps`, or process args."
+**Source:** SECURITY.md guarantee table — "The PIT is read from stdin or env only — never argv."
+Verify column: `` `grep -rn "'--pit'" lib/ commands/` — you'll find only `--pit-stdin` / `--pit-env`. ``
 
-**Command run:**
+**Underlying property:** TRUE. No bare `--pit` flag exists in the source. Confirmed:
 ```
-grep -rn "\-\-pit" lib/ commands/
+grep -rn "\-\-pit" lib/ commands/ | grep -v "pit-stdin\|pit-env\|no PIT\|no-pit\|your PIT\|Your PIT\|the PIT\|a PIT\|PIT \|PIT'\|PIT\."
+# → (no output — no bare --pit flag)
+```
+`commands/init.mjs:26` contains an explicit code comment: `// local flag parse — NOTE: no --pit flag exists by design.`
+
+**Recipe description:** WRONG. The grep command is `grep -rn "'--pit'" lib/ commands/` — the pattern
+searches for the literal string `'--pit'` (apostrophe-dash-dash-p-i-t-apostrophe). In the source,
+the flags appear as `rest.includes('--pit-stdin')` and `flag('--pit-env')`. Neither contains a
+closing apostrophe immediately after "pit", so the pattern matches nothing.
+
+Running the exact command produces zero output:
+```
+grep -rn "'--pit'" lib/ commands/
+# → (no output)
 ```
 
-**Output (abbreviated):**
-```
-lib//cli.mjs:354:      if (rest.includes('--pit-stdin')) {
-lib//cli.mjs:364:      } else if (flag('--pit-env')) {
-commands//init.mjs:26:  // local flag parse — NOTE: no --pit flag exists by design.
-```
+The description "you'll find only `--pit-stdin` / `--pit-env`" implies those strings will appear
+in the output. They don't. A stranger who runs this gets silence, which they cannot distinguish
+from "the grep missed something" vs "the flags don't exist at all."
 
-**Result: VERIFIED.** Only `--pit-stdin` and `--pit-env` exist. `init.mjs:26` has an explicit
-code comment confirming this is intentional.
+**Fix applied:** SECURITY.md guarantee table, PIT row. Updated the verify column to explain that
+the grep correctly returns nothing (no bare `--pit` literal), and added a second grep
+(`grep -rn "pit-stdin\|pit-env" lib/ commands/`) that positively confirms the two allowed flags
+exist.
 
 ---
 
-### Claim 2 — Zero runtime dependencies (audit recipe)
+### Claim 2 — Egress: "That prints seven hosts"
 
-**Source:** SECURITY.md — "Zero runtime dependencies. Verify: `cat package.json` → `"dependencies": {}`."
+**Source:** SECURITY.md — "Every network destination is a literal string in the source. List them
+all: `grep -rhoE "https://[a-z0-9.-]+" bin/ lib/ commands/ | sort -u` — That prints seven hosts."
 
-**Finding: RECIPE MISLEADS (low severity).** The zero-dep claim is true. But `package.json` has
-NO `"dependencies"` key at all — the field is omitted entirely rather than set to `{}`. Running
-`cat package.json` will NOT show `"dependencies": {}`. A user following the self-audit recipe
-would look for that key, find nothing, and be confused.
+**Command run + actual output:**
+```
+grep -rhoE "https://[a-z0-9.-]+" bin/ lib/ commands/ | sort -u
+https://acme.com
+https://api.anthropic.com
+https://api.openai.com
+https://app.gohighlevel.com
+https://cal.me
+https://registry.npmjs.org
+https://services.leadconnectorhq.com
+```
 
-Evidence — full `package.json` keys: `name`, `version`, `description`, `type`, `bin`, `engines`,
-`scripts`, `author`, `license`, `keywords`, `repository`, `bugs`, `homepage`, `files`, `publishConfig`.
-No `dependencies`. No `devDependencies`.
-
-**No code fix applied.** The underlying claim (zero runtime deps) is correct. The SECURITY.md
-recipe should say: "`cat package.json` — you will NOT see a `dependencies` key; npm omits it
-when the map would be empty. Zero entries = zero deps."
+**Result: VERIFIED.** Exactly 7 hosts. The three active ones (services.leadconnectorhq.com,
+registry.npmjs.org, api.anthropic.com / api.openai.com) match what SECURITY.md documents. The
+remainder (app.gohighlevel.com for deep links, acme.com / cal.me in help-text examples) are
+never fetched.
 
 ---
 
-### Claim 3 — Update check skipped under `--json` and when piped
+### Claim 3 — Fetch call sites: "Five call sites, three files"
 
-**Source:** README.md — "It never runs under `--json` or when output is piped."
+**Source:** SECURITY.md — "Five call sites, three files: `lib/http.mjs` (GoHighLevel),
+`lib/update-notify.mjs` (npm registry), and `lib/llm.mjs` (the two LLM providers).
+Nothing in `commands/` opens a socket directly."
 
-**Verification:** `bin/sizmo.mjs:19`
-```js
-if (!noUpdateFlag && !argv.includes('--json') && !argv.includes('--ndjson') && process.stderr.isTTY) {
+**Command run (using SECURITY.md's exclusion pattern):**
+```
+grep -rn "fetch(\|fetchImpl(" bin/ lib/ commands/ | grep -vE "fetchImpl =|typeof fetchImpl|fetchImpl,|fetchImpl \}"
+lib//update-notify.mjs:42:    const r = await fetchImpl(REGISTRY_URL, ...
+lib//llm.mjs:22:  const r = await fetch('https://api.anthropic.com/v1/messages', ...
+lib//llm.mjs:37:  const r = await fetch('https://api.openai.com/v1/chat/completions', ...
+lib//http.mjs:78:        res = await fetch(url, ...
+lib//http.mjs:140:        res = await fetch(url, ...
 ```
 
-**Result: VERIFIED.** All four skip conditions enforced: `--json`, `--ndjson`, non-TTY stderr
-(piped), and `--no-update-check` / `NO_UPDATE_NOTIFIER` env (handled inside `checkForUpdate`).
+**Result: VERIFIED.** Exactly 5 call sites, 3 files. No fetch in commands/. Each site maps to
+the documented destination.
 
 ---
 
-### Claim 4 — `--dry-run` available on ALL writes
+### Claim 4 — `sizmo ask` never auto-fires invoice, appointment, or opp update
 
-**Source:** README.md — "`--dry-run` available on all writes. Shows the change description without
-executing. Exits 0."
+**Source:** SECURITY.md / SKILL.md — "`sizmo ask` also declines to auto-fire money (`invoice`)
+or scheduling (`appointment`) commands, and `opp update`."
 
-**Verification method:** `lib/confirm.mjs` implements the `dryRun` path in `requireConfirm()`.
-Commands that call `requireConfirm()` get `--dry-run` automatically. Grepped for `requireConfirm`
-across all write commands:
-
-```
-grep -rn "requireConfirm" commands/ (count mode)
-→ field.mjs:3, contact.mjs:4, value.mjs:3, send.mjs:3, tag.mjs:2,
-  calendar.mjs:3, opp.mjs:5, invoice.mjs:3, link.mjs:3,
-  appointment.mjs:4, note.mjs:2
-  (11 files, 35 total hits)
-```
-
-**Finding: BUG — `business create` and `business delete` missing `--dry-run` support.**
-
-`commands/business.mjs` was NOT in the list. It checked `ctx.confirmed` manually:
-
-```js
-// BEFORE (broken) — commands/business.mjs:100
-if (!ctx.confirmed) {
-  ctx.out.line(`  rerun with --confirm to create`);
-  return EXIT.CONFIRM;   // exits 5 whether --dry-run was passed or not
-}
-```
-
-`ctx.dryRun` was never consulted. `sizmo business create --name "X" --dry-run` exited 5 instead
-of 0, showed plain prose instead of the structured JSON confirm envelope, and was incapable of
-emitting the `{status:'dry_run', changes, confirmCommand}` shape `--json` consumers expect.
-
-**Fix applied in this run** (`commands/business.mjs`):
-- Added `import { requireConfirm } from '../lib/confirm.mjs';`
-- Replaced manual `if (!ctx.confirmed)` blocks in `createBusiness` and `deleteBusiness` with
-  `requireConfirm({command, changes, rerunCommand}, ctx)` calls — same pattern as all other
-  write commands
-- Removed spurious `--confirm` entry from command `meta.flags` (global router strips `--confirm`
-  before any command's `parseArgs` sees it; declaring it at command level only polluted help output)
-
-**Test suite after fix:** `node --test --test-concurrency=1` → `606/606 pass`.
-
----
-
-### Claim 5 — No `invoice void` command
-
-**Source:** SKILL.md — "# Invoices — draft/send only, there is no void/charge command"
-(Previous failure class: SKILL.md once documented `invoice void` which never existed in source.)
-
-**Verification:** Read `commands/invoice.mjs` in full.
+**Verification:** `commands/ask.mjs`
 
 ```js
-export async function run(args, ctx) {
-  const sub = args._?.[0];
-  if (sub === 'draft') return draftInvoice(args, ctx);
-  if (sub === 'send') return sendInvoice(args, ctx);
-  throw new GhlError('usage: sizmo invoice draft ... | sizmo invoice send ...', EXIT.USAGE, ...);
-}
+// ask.mjs:52
+const EXECUTABLE_WRITE_COMMANDS = new Set(['tag', 'note', 'send', 'contact', 'opp', 'value', 'field', 'calendar', 'business', 'link']);
+
+// ask.mjs:55
+const EXECUTABLE_OPP_SUBCOMMANDS = new Set(['create', 'move', 'delete']);
+
+// ask.mjs:449
+if (step.command === 'opp') return EXECUTABLE_OPP_SUBCOMMANDS.has(step.subcommand);
 ```
 
-**Result: VERIFIED.** Only `draft` and `send` exist. Any other subcommand throws `EXIT.USAGE`.
-The ghost `invoice void` has been fully removed; SKILL.md's explicit disclaimer is accurate.
+`invoice` and `appointment` are absent from `EXECUTABLE_WRITE_COMMANDS`. `opp` is present but
+gated through `EXECUTABLE_OPP_SUBCOMMANDS`, which excludes `update`. Lines 753-754 additionally
+refuse mixed batches containing these commands. `send cancel` is excluded at line 453.
+
+**Result: VERIFIED.** All three exclusions are in force. A `sizmo ask "send invoice …" --confirm`
+will print the resolved command and exit without firing it.
+
+---
+
+### Claim 5 — 3.0.0 breaking change: destructive one-liner requires preview
+
+**Source:** CHANGELOG.md (3.0.0) and AGENTS.md / SKILL.md — "Anything DESTRUCTIVE (delete, cancel)
+refuses that shortcut: it previews the exact record and exits 5, so a second bare
+`sizmo ask --confirm` is required."
+
+**Verification:** `commands/ask.mjs`
+
+```js
+// ask.mjs:321
+const DESTRUCTIVE_SUBCOMMANDS = new Set(['delete', 'cancel', 'remove', 'void']);
+
+// ask.mjs:797-830 (abbreviated)
+const destructive = result.concrete.filter(isDestructive);
+if (ctx.confirmed && !destructive.length) { /* non-destructive one-liner path — fires */ }
+const blockedOneShot = ctx.confirmed && destructive.length > 0;
+// → exits with preview + exit 5, blockedOneShot:true in JSON envelope
+```
+
+When `--confirm` is passed alongside a sentence containing a destructive step:
+- non-destructive steps: fire immediately (unchanged behaviour)
+- destructive steps: blocked, preview printed, `blockedOneShot: true` + `reason: 'destructive_requires_preview'` in JSON, exits 5
+- a bare `sizmo ask --confirm` then fires the cached plan
+
+**Result: VERIFIED.** The gate is in place. The AGENTS.md/SKILL.md documentation accurately
+describes the 3.0.0 behaviour.
 
 ---
 
 ## Summary table
 
-| Claim | Status | Evidence location |
-|-------|--------|-------------------|
-| PIT never in argv | ✅ VERIFIED | `commands/init.mjs:26`, `lib/cli.mjs:354,364` |
-| Zero deps audit recipe | ⚠ RECIPE MISLEADS | `package.json` has no `dependencies` key; SECURITY.md says `"dependencies": {}` |
-| Update check skipped under `--json`/pipe | ✅ VERIFIED | `bin/sizmo.mjs:19` |
-| `--dry-run` on all writes | 🐛 BUG FIXED | `commands/business.mjs` — now uses `requireConfirm`; 606/606 tests pass |
-| No `invoice void` command | ✅ VERIFIED | `commands/invoice.mjs:41-44` |
+| Claim | Status | Evidence |
+|-------|--------|----------|
+| PIT never in argv | ✅ TRUE (underlying) | `commands/init.mjs:26` comment; no bare `--pit` in source |
+| PIT audit recipe description | 🔧 DOC BUG FIXED | `grep "'--pit'"` returns zero output, not `--pit-stdin`/`--pit-env` as described |
+| Egress: seven hosts | ✅ VERIFIED | grep output = 7 hosts, matches doc exactly |
+| Fetch: five call sites, three files | ✅ VERIFIED | `http.mjs` ×2, `llm.mjs` ×2, `update-notify.mjs` ×1 |
+| `ask` never fires invoice/appointment/opp update | ✅ VERIFIED | `EXECUTABLE_WRITE_COMMANDS`, `EXECUTABLE_OPP_SUBCOMMANDS`, line 449 |
+| 3.0.0 destructive one-liner requires preview | ✅ VERIFIED | `DESTRUCTIVE_SUBCOMMANDS` set, `blockedOneShot` guard, lines 797-830 |
+
+---
 
 ## Files changed
 
-- `commands/business.mjs` — import `requireConfirm`; replace manual `ctx.confirmed` checks with
-  `requireConfirm()` in `createBusiness` and `deleteBusiness`; remove spurious `--confirm` from
-  meta flags. All 606 tests pass after the change.
+- `SECURITY.md` — PIT guarantee row: updated verify column description. The grep command is
+  unchanged; only the description of what it returns was corrected ("nothing" instead of
+  "only `--pit-stdin` / `--pit-env`"). Added a second positive-confirmation grep.
 
 ## Files NOT changed
 
-- `SECURITY.md` — recipe inaccuracy (Claim 2) is low-severity and doc-only; left for supervised
-  review rather than touching a security doc unattended
-- All other source files — verified read-only
+- All source files — all underlying security properties verified correct.
