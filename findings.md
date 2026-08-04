@@ -1,3 +1,86 @@
+# findings — 2026-08-05 — distribution/dx: AGENTS.md + SKILL.md parity
+
+## What was wrong
+
+Three commands added in v2.6.0 were absent from both `AGENTS.md` and `SKILL.md`:
+
+| Command | What it does | Where it should appear |
+|---------|-------------|------------------------|
+| `sizmo contact find "<query>"` | Fuzzy lookup by name/email/phone → prints the contact id every write command needs | "Look Up IDs" section + "Read Commands" |
+| `sizmo invoice list` | List invoices by status; the only way to find a draft invoice id after `invoice draft` creates one | "Read Commands" |
+| `sizmo appointment list` | Upcoming appointments (forward-looking); the only way to find an appointment id to cancel/note | "Read Commands" |
+
+All three confirmed in CLI source:
+
+```
+$ grep "SUBCOMMANDS" commands/contact.mjs
+const SUBCOMMANDS = ['find', 'create', 'upsert', 'update', 'delete'];
+
+$ grep "SUBCOMMANDS" commands/invoice.mjs
+const SUBCOMMANDS = ['list', 'draft', 'send'];
+
+$ grep "SUBCOMMANDS" commands/appointment.mjs
+const SUBCOMMANDS = ['list', 'book', 'update', 'cancel', 'note'];
+```
+
+They are listed in the README's "What it does" table (Find row):
+> `contact find` (name/email/phone → the id every write needs) · `invoice list` · `appointment list` (upcoming)
+
+Gap: README knew about them; the two agent reference files (the ones Codex and Cursor pick up) did not.
+
+## Why it matters
+
+`AGENTS.md` "Look Up IDs Before Running a Command" is exactly the section an AI coding agent reads before writing. Without `contact find`, the documented lookup path was `sizmo list` (entities: calendars, pipelines, fields, users) and `sizmo segment` (contacts by tag/criteria, not name). No documented path from "I have a name" → "I have an id" — the most common write precondition. `contact find` is that path.
+
+Without `invoice list`: no documented way to retrieve an invoice id after `invoice draft` creates one (needed by `invoice send`).
+
+Without `appointment list`: no documented way to find an appointment id to cancel or note.
+
+## Evidence: flags verified against source
+
+```
+contact find:
+  --limit  type: int  desc: 'max matches to show (find only, default 10)'
+  source: commands/contact.mjs, args declaration block
+
+invoice list:
+  --status  type: string  desc: 'filter by status, e.g. draft|sent|paid|void (list)'
+  --top     type: int     desc: 'max rows to show (list, default 20)'
+  source: commands/invoice.mjs, args declaration block
+
+appointment list:
+  --days  type: int  desc: 'how far AHEAD to look (list, default 14)'
+  --top   type: int  desc: 'max rows to show (list, default 20)'
+  source: commands/appointment.mjs, args declaration block
+```
+
+## What was changed
+
+**`AGENTS.md`** (+9 lines):
+- "Look Up IDs" bash block: added `contact find` with four usage examples (name, email, phone, `--limit`)
+- "Read Commands" bullet list: added `contact find`, `invoice list`, `appointment list` after `transactions`
+
+**`SKILL.md`** (+8 lines):
+- "Look Up IDs" bash block: same `contact find` examples (phone example omitted — name/email cover the pattern)
+- "Read Commands" bullet list: added the same three commands after `noshow`
+
+Line counts before → after:
+- `AGENTS.md`: 365 → 374
+- `SKILL.md`: 267 → 275
+
+## Files changed
+
+- `AGENTS.md`
+- `SKILL.md`
+
+## Files NOT changed
+
+- All command source files — read-only this run; no bugs found
+- `README.md` — already documents these commands correctly in the "What it does" table
+- All other source files
+
+---
+
 # findings.md — 2026-07-31 — test-coverage run
 # findings — 2026-08-02 — claim-verification
 
