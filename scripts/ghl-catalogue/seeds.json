@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "Seed queries for harvesting the GoHighLevel operation catalogue from the LeadConnector MCP.",
+    "",
+    "WHY SEEDS AND NOT AN ENUMERATION.",
+    "The MCP facade exposes `search_operations`, which is a SEMANTIC search, not a list API. There is",
+    "no 'return everything' call. Verified 2026-08-04: `search_operations({query:'all operations',",
+    "domains:['opportunities'], limit:100})` returns 0 results, because the query text still drives",
+    "relevance and the domain is only a filter layered on top. A generic query matches nothing.",
+    "",
+    "So the catalogue is harvested by issuing many targeted queries and unioning the results by",
+    "operationId. That means coverage is a FLOOR, never a proven total — the same rule this codebase",
+    "applies to any capped scan. Add seeds to raise the floor; never claim the catalogue is complete.",
+    "",
+    "HOW TO RE-HARVEST.",
+    "Collection needs MCP access, so it is run by an agent, not by a script: for each seed below call",
+    "`search_operations({query, domains, limit: 100})`, union the results by operationId, and write",
+    "them to operations.json. Then `node scripts/catalogue-gap.mjs` does the analysis offline.",
+    "The split is deliberate — the expensive, credential-bound step happens once; the diff that",
+    "actually produces decisions runs forever without a network or a token."
+  ],
+  "harvestedAt": "2026-08-04",
+  "endpoint": "https://services.leadconnectorhq.com/mcp/anthropic/v2",
+  "seeds": [
+    { "domains": ["contacts"],      "query": "contacts tags notes tasks create update delete search" },
+    { "domains": ["opportunities"], "query": "create update delete opportunity deal pipeline stage status followers" },
+    { "domains": ["calendars"],     "query": "calendar events appointments slots availability schedules services create update delete" },
+    { "domains": ["invoices"],      "query": "invoices estimates create send void record payment schedule template text2pay" },
+    { "domains": ["conversations"], "query": "conversations messages send email sms search threads" },
+    { "domains": ["payments"],      "query": "orders transactions subscriptions coupons refunds" },
+    { "domains": ["locations"],     "query": "location custom fields custom values tags settings" },
+    { "domains": ["objects"],       "query": "custom objects records associations schema" },
+    { "domains": ["forms"],         "query": "forms submissions" },
+    { "domains": ["surveys"],       "query": "surveys submissions" },
+    { "domains": ["links"],         "query": "trigger links create update delete" },
+    { "domains": ["businesses"],    "query": "business create update delete list" },
+    { "domains": ["users"],         "query": "users list get" },
+    { "domains": ["workflows"],     "query": "workflows list" },
+    { "domains": ["campaigns"],     "query": "campaigns list" }
+  ]
+}

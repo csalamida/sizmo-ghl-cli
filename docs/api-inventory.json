@@ -1,70 +1,1575 @@
 {
   "_provenance": {
-    "capturedAt": "2026-07-27",
+    "capturedAt": "2026-08-04",
     "source": "LeadConnector MCP for Anthropic (/mcp/anthropic/v2) — search_operations + describe_operation, INTROSPECTION ONLY, never execute_operation",
     "scope": "PARTIAL BY DESIGN. Only the domains sizmo operates in were enumerated: contacts, opportunities, calendars, conversations, locations (custom fields/values), invoices, payments. Domains deliberately outside sizmo's ICP were NOT captured — products, inventory, stores, blogs, social-planner, knowledge-base, voice-ai, saas, medias, funnels, brand-boards.",
-    "honesty": "Every entry below was returned by a real query this session. Nothing here is inferred or remembered. This is a snapshot, not a live view — regenerate when the API changes."
+    "honesty": "Every entry below was returned by a real query this session. Nothing here is inferred or remembered. This is a snapshot, not a live view — regenerate when the API changes.",
+    "refreshHistory": [
+      {
+        "at": "2026-08-04",
+        "added": 55,
+        "enriched": 20,
+        "via": "2026-08-04.json"
+      }
+    ]
   },
   "operations": [
-    { "id": "create-contact", "method": "POST", "path": "/contacts/", "domain": "contacts", "kind": "write" },
-    { "id": "update-contact", "method": "PUT", "path": "/contacts/{contactId}", "domain": "contacts", "kind": "write" },
-    { "id": "add-tags", "method": "POST", "path": "/contacts/{contactId}/tags", "domain": "contacts", "kind": "write" },
-    { "id": "remove-tags", "method": "DELETE", "path": "/contacts/{contactId}/tags", "domain": "contacts", "kind": "delete" },
-    { "id": "contacts.bulk-tags", "method": "POST", "path": "/contacts/bulk/tags/update/{type}", "domain": "contacts", "kind": "write" },
-    { "id": "create-note", "method": "POST", "path": "/contacts/{contactId}/notes", "domain": "contacts", "kind": "write" },
-    { "id": "update-note", "method": "PUT", "path": "/contacts/{contactId}/notes/{id}", "domain": "contacts", "kind": "write" },
-    { "id": "delete-note", "method": "DELETE", "path": "/contacts/{contactId}/notes/{id}", "domain": "contacts", "kind": "delete" },
-    { "id": "get-all-notes", "method": "GET", "path": "/contacts/{contactId}/notes", "domain": "contacts", "kind": "read" },
-    { "id": "create-task", "method": "POST", "path": "/contacts/{contactId}/tasks", "domain": "contacts", "kind": "write" },
-    { "id": "update-task", "method": "PUT", "path": "/contacts/{contactId}/tasks/{taskId}", "domain": "contacts", "kind": "write" },
-    { "id": "update-task-completed", "method": "PUT", "path": "/contacts/{contactId}/tasks/{taskId}/completed", "domain": "contacts", "kind": "write" },
-    { "id": "delete-task", "method": "DELETE", "path": "/contacts/{contactId}/tasks/{taskId}", "domain": "contacts", "kind": "delete" },
-    { "id": "get-all-tasks", "method": "GET", "path": "/contacts/{contactId}/tasks", "domain": "contacts", "kind": "read" },
-
-    { "id": "get-pipelines", "method": "GET", "path": "/opportunities/pipelines", "domain": "opportunities", "kind": "read" },
-    { "id": "create-opportunity", "method": "POST", "path": "/opportunities/", "domain": "opportunities", "kind": "write" },
-    { "id": "update-opportunity", "method": "PUT", "path": "/opportunities/{id}", "domain": "opportunities", "kind": "write" },
-    { "id": "update-opportunity-status", "method": "PUT", "path": "/opportunities/{id}/status", "domain": "opportunities", "kind": "write" },
-
-    { "id": "create-appointment", "method": "POST", "path": "/calendars/events/appointments", "domain": "calendars", "kind": "write" },
-    { "id": "edit-appointment", "method": "PUT", "path": "/calendars/events/appointments/{eventId}", "domain": "calendars", "kind": "write" },
-    { "id": "get-appointment", "method": "GET", "path": "/calendars/events/appointments/{eventId}", "domain": "calendars", "kind": "read" },
-    { "id": "delete-event", "method": "DELETE", "path": "/calendars/events/{eventId}", "domain": "calendars", "kind": "delete" },
-    { "id": "create-appointment-note", "method": "POST", "path": "/calendars/appointments/{appointmentId}/notes", "domain": "calendars", "kind": "write" },
-    { "id": "update-appointment-note", "method": "PUT", "path": "/calendars/appointments/{appointmentId}/notes/{noteId}", "domain": "calendars", "kind": "write" },
-    { "id": "delete-appointment-note", "method": "DELETE", "path": "/calendars/appointments/{appointmentId}/notes/{noteId}", "domain": "calendars", "kind": "delete" },
-    { "id": "get-appointment-notes", "method": "GET", "path": "/calendars/appointments/{appointmentId}/notes", "domain": "calendars", "kind": "read" },
-    { "id": "create-block-slot", "method": "POST", "path": "/calendars/events/block-slots", "domain": "calendars", "kind": "write" },
-    { "id": "edit-block-slot", "method": "PUT", "path": "/calendars/events/block-slots/{eventId}", "domain": "calendars", "kind": "write" },
-    { "id": "get-blocked-slots", "method": "GET", "path": "/calendars/blocked-slots", "domain": "calendars", "kind": "read" },
-    { "id": "get-calendar-events", "method": "GET", "path": "/calendars/events", "domain": "calendars", "kind": "read" },
-    { "id": "create-calendar", "method": "POST", "path": "/calendars/", "domain": "calendars", "kind": "write" },
-    { "id": "updateSchedule", "method": "PUT", "path": "/calendars/schedules/{id}", "domain": "calendars", "kind": "write" },
-    { "id": "update-service-booking", "method": "PUT", "path": "/calendars/services/bookings/{bookingId}", "domain": "calendars", "kind": "write" },
-
-    { "id": "send-a-new-message", "method": "POST", "path": "/conversations/messages", "domain": "conversations", "kind": "write" },
-    { "id": "cancel-scheduled-message", "method": "DELETE", "path": "/conversations/messages/{messageId}/schedule", "domain": "conversations", "kind": "delete" },
-    { "id": "cancel-scheduled-email-message", "method": "DELETE", "path": "/conversations/messages/email/{emailMessageId}/schedule", "domain": "conversations", "kind": "delete" },
-    { "id": "update-message-status", "method": "PUT", "path": "/conversations/messages/{messageId}/status", "domain": "conversations", "kind": "write" },
-    { "id": "add-message-attachments", "method": "PUT", "path": "/conversations/messages/{messageId}/attachments", "domain": "conversations", "kind": "write" },
-    { "id": "add-an-inbound-message", "method": "POST", "path": "/conversations/messages/inbound", "domain": "conversations", "kind": "write" },
-    { "id": "add-an-outbound-message", "method": "POST", "path": "/conversations/messages/outbound", "domain": "conversations", "kind": "write" },
-    { "id": "get-messages", "method": "GET", "path": "/conversations/{conversationId}/messages", "domain": "conversations", "kind": "read" },
-    { "id": "export-messages-by-location", "method": "GET", "path": "/conversations/messages/export", "domain": "conversations", "kind": "read" },
-
-    { "id": "locations.create-custom-field", "method": "POST", "path": "/locations/{locationId}/customFields", "domain": "locations", "kind": "write" },
-    { "id": "locations.update-custom-field", "method": "PUT", "path": "/locations/{locationId}/customFields/{id}", "domain": "locations", "kind": "write" },
-    { "id": "get-custom-field", "method": "GET", "path": "/locations/{locationId}/customFields/{id}", "domain": "locations", "kind": "read" },
-    { "id": "get-custom-fields", "method": "GET", "path": "/locations/{locationId}/customFields", "domain": "locations", "kind": "read" },
-    { "id": "create-custom-value", "method": "POST", "path": "/locations/{locationId}/customValues", "domain": "locations", "kind": "write" },
-    { "id": "update-custom-value", "method": "PUT", "path": "/locations/{locationId}/customValues/{id}", "domain": "locations", "kind": "write" },
-    { "id": "get-custom-value", "method": "GET", "path": "/locations/{locationId}/customValues/{id}", "domain": "locations", "kind": "read" },
-    { "id": "get-custom-values", "method": "GET", "path": "/locations/{locationId}/customValues", "domain": "locations", "kind": "read" },
-
-    { "id": "record-invoice", "method": "POST", "path": "/invoices/{invoiceId}/record-payment", "domain": "invoices", "kind": "write" },
-    { "id": "update-estimate", "method": "PUT", "path": "/invoices/estimate/{estimateId}", "domain": "invoices", "kind": "write" },
-    { "id": "update-estimate-template", "method": "PUT", "path": "/invoices/estimate/template/{templateId}", "domain": "invoices", "kind": "write" },
-    { "id": "update-coupon", "method": "PUT", "path": "/payments/coupon", "domain": "payments", "kind": "write" },
-    { "id": "record-order-payment", "method": "POST", "path": "/payments/orders/{orderId}/record-payment", "domain": "payments", "kind": "write" }
+    {
+      "id": "get-slots",
+      "method": "GET",
+      "path": "/calendars/{calendarId}/free-slots",
+      "domain": "calendars",
+      "kind": "read",
+      "scopes": [
+        "calendars.readonly"
+      ],
+      "params": [
+        "calendarId",
+        "endDate",
+        "startDate",
+        "timezone",
+        "userId",
+        "userIds"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get Free Slots"
+    },
+    {
+      "id": "delete-event-notification",
+      "method": "DELETE",
+      "path": "/calendars/{calendarId}/notifications/{notificationId}",
+      "domain": "calendars",
+      "kind": "delete",
+      "scopes": [
+        "calendars/events.write"
+      ],
+      "params": [
+        "calendarId",
+        "notificationId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete Notification"
+    },
+    {
+      "id": "update-event-notification",
+      "method": "PUT",
+      "path": "/calendars/{calendarId}/notifications/{notificationId}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars/events.write"
+      ],
+      "params": [
+        "calendarId",
+        "notificationId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update notification"
+    },
+    {
+      "id": "create-event-notification",
+      "method": "POST",
+      "path": "/calendars/{calendarId}/notifications",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars/events.write"
+      ],
+      "params": [
+        "calendarId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create notification"
+    },
+    {
+      "id": "delete-appointment-note",
+      "method": "DELETE",
+      "path": "/calendars/appointments/{appointmentId}/notes/{noteId}",
+      "domain": "calendars",
+      "kind": "delete"
+    },
+    {
+      "id": "update-appointment-note",
+      "method": "PUT",
+      "path": "/calendars/appointments/{appointmentId}/notes/{noteId}",
+      "domain": "calendars",
+      "kind": "write"
+    },
+    {
+      "id": "get-appointment-notes",
+      "method": "GET",
+      "path": "/calendars/appointments/{appointmentId}/notes",
+      "domain": "calendars",
+      "kind": "read",
+      "scopes": [
+        "calendars/events.readonly"
+      ],
+      "params": [
+        "appointmentId",
+        "limit",
+        "offset"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get Appointment Notes"
+    },
+    {
+      "id": "create-appointment-note",
+      "method": "POST",
+      "path": "/calendars/appointments/{appointmentId}/notes",
+      "domain": "calendars",
+      "kind": "write"
+    },
+    {
+      "id": "get-blocked-slots",
+      "method": "GET",
+      "path": "/calendars/blocked-slots",
+      "domain": "calendars",
+      "kind": "read",
+      "scopes": [
+        "calendars/events.readonly"
+      ],
+      "params": [
+        "calendarId",
+        "endTime",
+        "groupId",
+        "startTime",
+        "userId"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get Blocked Slots"
+    },
+    {
+      "id": "delete-event",
+      "method": "DELETE",
+      "path": "/calendars/events/{eventId}",
+      "domain": "calendars",
+      "kind": "delete"
+    },
+    {
+      "id": "get-appointment",
+      "method": "GET",
+      "path": "/calendars/events/appointments/{eventId}",
+      "domain": "calendars",
+      "kind": "read"
+    },
+    {
+      "id": "edit-appointment",
+      "method": "PUT",
+      "path": "/calendars/events/appointments/{eventId}",
+      "domain": "calendars",
+      "kind": "write"
+    },
+    {
+      "id": "create-appointment",
+      "method": "POST",
+      "path": "/calendars/events/appointments",
+      "domain": "calendars",
+      "kind": "write"
+    },
+    {
+      "id": "edit-block-slot",
+      "method": "PUT",
+      "path": "/calendars/events/block-slots/{eventId}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars/events.write"
+      ],
+      "params": [
+        "eventId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Block Slot"
+    },
+    {
+      "id": "create-block-slot",
+      "method": "POST",
+      "path": "/calendars/events/block-slots",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars/events.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create Block Slot"
+    },
+    {
+      "id": "get-calendar-events",
+      "method": "GET",
+      "path": "/calendars/events",
+      "domain": "calendars",
+      "kind": "read"
+    },
+    {
+      "id": "delete-group",
+      "method": "DELETE",
+      "path": "/calendars/groups/{groupId}",
+      "domain": "calendars",
+      "kind": "delete",
+      "scopes": [
+        "calendars/groups.write"
+      ],
+      "params": [
+        "groupId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete Group"
+    },
+    {
+      "id": "edit-group",
+      "method": "PUT",
+      "path": "/calendars/groups/{groupId}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars/groups.write"
+      ],
+      "params": [
+        "groupId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Group"
+    },
+    {
+      "id": "create-calendar-group",
+      "method": "POST",
+      "path": "/calendars/groups",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars/groups.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create Calendar Group"
+    },
+    {
+      "id": "create-calendar",
+      "method": "POST",
+      "path": "/calendars/",
+      "domain": "calendars",
+      "kind": "write"
+    },
+    {
+      "id": "delete-calendar-resource",
+      "method": "DELETE",
+      "path": "/calendars/resources/{resourceType}/{id}",
+      "domain": "calendars",
+      "kind": "delete",
+      "scopes": [
+        "calendars/resources.write"
+      ],
+      "params": [
+        "resourceType",
+        "id"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete Calendar Resource"
+    },
+    {
+      "id": "update-calendar-resource",
+      "method": "PUT",
+      "path": "/calendars/resources/{resourceType}/{id}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars/resources.write"
+      ],
+      "params": [
+        "resourceType",
+        "id"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Calendar Resource"
+    },
+    {
+      "id": "create-calendar-resource",
+      "method": "POST",
+      "path": "/calendars/resources/{resourceType}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars/resources.write"
+      ],
+      "params": [
+        "resourceType"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create Calendar Resource"
+    },
+    {
+      "id": "remove-calendar-from-schedule",
+      "method": "DELETE",
+      "path": "/calendars/schedules/{id}/associations/{calendarId}",
+      "domain": "calendars",
+      "kind": "delete",
+      "scopes": [
+        "calendars.write"
+      ],
+      "params": [
+        "id",
+        "calendarId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Remove schedule from a calendar"
+    },
+    {
+      "id": "add-calendar-to-schedule",
+      "method": "PUT",
+      "path": "/calendars/schedules/{id}/associations/{calendarId}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars.write"
+      ],
+      "params": [
+        "id",
+        "calendarId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Apply schedule to a calendar"
+    },
+    {
+      "id": "deleteSchedule",
+      "method": "DELETE",
+      "path": "/calendars/schedules/{id}",
+      "domain": "calendars",
+      "kind": "delete",
+      "scopes": [
+        "calendars.write"
+      ],
+      "params": [
+        "id"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete user availability schedule"
+    },
+    {
+      "id": "getScheduleById",
+      "method": "GET",
+      "path": "/calendars/schedules/{id}",
+      "domain": "calendars",
+      "kind": "read",
+      "scopes": [
+        "calendars.readonly"
+      ],
+      "params": [
+        "id"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get user availability schedule"
+    },
+    {
+      "id": "updateSchedule",
+      "method": "PUT",
+      "path": "/calendars/schedules/{id}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars.write"
+      ],
+      "params": [
+        "id"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update user availability schedule"
+    },
+    {
+      "id": "getCalendarSchedule",
+      "method": "GET",
+      "path": "/calendars/schedules/event-calendar/{calendarId}",
+      "domain": "calendars",
+      "kind": "read",
+      "scopes": [
+        "calendars.readonly"
+      ],
+      "params": [
+        "calendarId"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get event calendar availability schedule"
+    },
+    {
+      "id": "createCalendarSchedule",
+      "method": "POST",
+      "path": "/calendars/schedules/event-calendar/{calendarId}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars.write"
+      ],
+      "params": [
+        "calendarId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create event calendar availability schedule"
+    },
+    {
+      "id": "updateCalendarSchedule",
+      "method": "PUT",
+      "path": "/calendars/schedules/event-calendar/{calendarId}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars.write"
+      ],
+      "params": [
+        "calendarId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update event calendar availability schedule"
+    },
+    {
+      "id": "getAllSchedules",
+      "method": "GET",
+      "path": "/calendars/schedules/search",
+      "domain": "calendars",
+      "kind": "read",
+      "scopes": [
+        "calendars.readonly"
+      ],
+      "params": [
+        "calendarId",
+        "limit",
+        "skip",
+        "userId"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "List user availability schedule"
+    },
+    {
+      "id": "createSchedule",
+      "method": "POST",
+      "path": "/calendars/schedules",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create user availability schedule"
+    },
+    {
+      "id": "delete-service-booking",
+      "method": "DELETE",
+      "path": "/calendars/services/bookings/{bookingId}",
+      "domain": "calendars",
+      "kind": "delete",
+      "scopes": [
+        "calendars/events.write"
+      ],
+      "params": [
+        "bookingId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete Service Booking"
+    },
+    {
+      "id": "update-service-booking",
+      "method": "PUT",
+      "path": "/calendars/services/bookings/{bookingId}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars/events.write"
+      ],
+      "params": [
+        "bookingId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Service Booking"
+    },
+    {
+      "id": "create-service-booking",
+      "method": "POST",
+      "path": "/calendars/services/bookings",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars/events.write"
+      ],
+      "params": [
+        "overrideAvailability",
+        "skipSchedulingNotice"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create Service Booking"
+    },
+    {
+      "id": "delete-service-catalog",
+      "method": "DELETE",
+      "path": "/calendars/services/catalog/{serviceId}",
+      "domain": "calendars",
+      "kind": "delete",
+      "scopes": [
+        "calendars.write"
+      ],
+      "params": [
+        "serviceId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete Service"
+    },
+    {
+      "id": "update-service-catalog",
+      "method": "PUT",
+      "path": "/calendars/services/catalog/{serviceId}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars.write"
+      ],
+      "params": [
+        "serviceId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Service"
+    },
+    {
+      "id": "create-service-catalog",
+      "method": "POST",
+      "path": "/calendars/services/catalog",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create Service"
+    },
+    {
+      "id": "delete-service-location",
+      "method": "DELETE",
+      "path": "/calendars/services/locations/{serviceLocationId}",
+      "domain": "calendars",
+      "kind": "delete",
+      "scopes": [
+        "calendars.write"
+      ],
+      "params": [
+        "serviceLocationId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete Service Location"
+    },
+    {
+      "id": "update-service-location",
+      "method": "PUT",
+      "path": "/calendars/services/locations/{serviceLocationId}",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars.write"
+      ],
+      "params": [
+        "serviceLocationId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Service Location"
+    },
+    {
+      "id": "create-service-location",
+      "method": "POST",
+      "path": "/calendars/services/locations",
+      "domain": "calendars",
+      "kind": "write",
+      "scopes": [
+        "calendars.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create Service Location"
+    },
+    {
+      "id": "delete-note",
+      "method": "DELETE",
+      "path": "/contacts/{contactId}/notes/{id}",
+      "domain": "contacts",
+      "kind": "delete",
+      "scopes": [
+        "contacts.write"
+      ],
+      "params": [
+        "contactId",
+        "id"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete Note"
+    },
+    {
+      "id": "get-note",
+      "method": "GET",
+      "path": "/contacts/{contactId}/notes/{id}",
+      "domain": "contacts",
+      "kind": "read",
+      "scopes": [
+        "contacts.readonly"
+      ],
+      "params": [
+        "contactId",
+        "id"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get Note"
+    },
+    {
+      "id": "update-note",
+      "method": "PUT",
+      "path": "/contacts/{contactId}/notes/{id}",
+      "domain": "contacts",
+      "kind": "write",
+      "scopes": [
+        "contacts.write"
+      ],
+      "params": [
+        "contactId",
+        "id"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Note"
+    },
+    {
+      "id": "get-all-notes",
+      "method": "GET",
+      "path": "/contacts/{contactId}/notes",
+      "domain": "contacts",
+      "kind": "read",
+      "scopes": [
+        "contacts.readonly"
+      ],
+      "params": [
+        "contactId"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get All Notes"
+    },
+    {
+      "id": "create-note",
+      "method": "POST",
+      "path": "/contacts/{contactId}/notes",
+      "domain": "contacts",
+      "kind": "write"
+    },
+    {
+      "id": "remove-tags",
+      "method": "DELETE",
+      "path": "/contacts/{contactId}/tags",
+      "domain": "contacts",
+      "kind": "delete",
+      "scopes": [
+        "contacts.write"
+      ],
+      "params": [
+        "contactId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Remove Tags"
+    },
+    {
+      "id": "add-tags",
+      "method": "POST",
+      "path": "/contacts/{contactId}/tags",
+      "domain": "contacts",
+      "kind": "write",
+      "scopes": [
+        "contacts.write"
+      ],
+      "params": [
+        "contactId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Add Tags"
+    },
+    {
+      "id": "update-task-completed",
+      "method": "PUT",
+      "path": "/contacts/{contactId}/tasks/{taskId}/completed",
+      "domain": "contacts",
+      "kind": "write",
+      "scopes": [
+        "contacts.write"
+      ],
+      "params": [
+        "contactId",
+        "taskId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Task Completed"
+    },
+    {
+      "id": "delete-task",
+      "method": "DELETE",
+      "path": "/contacts/{contactId}/tasks/{taskId}",
+      "domain": "contacts",
+      "kind": "delete",
+      "scopes": [
+        "contacts.write"
+      ],
+      "params": [
+        "contactId",
+        "taskId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete Task"
+    },
+    {
+      "id": "get-task",
+      "method": "GET",
+      "path": "/contacts/{contactId}/tasks/{taskId}",
+      "domain": "contacts",
+      "kind": "read",
+      "scopes": [
+        "contacts.readonly"
+      ],
+      "params": [
+        "contactId",
+        "taskId"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get Task"
+    },
+    {
+      "id": "update-task",
+      "method": "PUT",
+      "path": "/contacts/{contactId}/tasks/{taskId}",
+      "domain": "contacts",
+      "kind": "write",
+      "scopes": [
+        "contacts.write"
+      ],
+      "params": [
+        "contactId",
+        "taskId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Task"
+    },
+    {
+      "id": "get-all-tasks",
+      "method": "GET",
+      "path": "/contacts/{contactId}/tasks",
+      "domain": "contacts",
+      "kind": "read",
+      "scopes": [
+        "contacts.readonly"
+      ],
+      "params": [
+        "contactId"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get all Tasks"
+    },
+    {
+      "id": "create-task",
+      "method": "POST",
+      "path": "/contacts/{contactId}/tasks",
+      "domain": "contacts",
+      "kind": "write",
+      "scopes": [
+        "contacts.write"
+      ],
+      "params": [
+        "contactId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create Task"
+    },
+    {
+      "id": "update-contact",
+      "method": "PUT",
+      "path": "/contacts/{contactId}",
+      "domain": "contacts",
+      "kind": "write"
+    },
+    {
+      "id": "contacts.bulk-tags",
+      "method": "POST",
+      "path": "/contacts/bulk/tags/update/{type}",
+      "domain": "contacts",
+      "kind": "write",
+      "scopes": [
+        "contacts.write"
+      ],
+      "params": [
+        "type"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Contacts Tags (bulk)"
+    },
+    {
+      "id": "create-contact",
+      "method": "POST",
+      "path": "/contacts/",
+      "domain": "contacts",
+      "kind": "write"
+    },
+    {
+      "id": "get-messages",
+      "method": "GET",
+      "path": "/conversations/{conversationId}/messages",
+      "domain": "conversations",
+      "kind": "read"
+    },
+    {
+      "id": "add-message-attachments",
+      "method": "PUT",
+      "path": "/conversations/messages/{messageId}/attachments",
+      "domain": "conversations",
+      "kind": "write"
+    },
+    {
+      "id": "cancel-scheduled-message",
+      "method": "DELETE",
+      "path": "/conversations/messages/{messageId}/schedule",
+      "domain": "conversations",
+      "kind": "delete"
+    },
+    {
+      "id": "update-message-status",
+      "method": "PUT",
+      "path": "/conversations/messages/{messageId}/status",
+      "domain": "conversations",
+      "kind": "write"
+    },
+    {
+      "id": "cancel-scheduled-email-message",
+      "method": "DELETE",
+      "path": "/conversations/messages/email/{emailMessageId}/schedule",
+      "domain": "conversations",
+      "kind": "delete"
+    },
+    {
+      "id": "export-messages-by-location",
+      "method": "GET",
+      "path": "/conversations/messages/export",
+      "domain": "conversations",
+      "kind": "read"
+    },
+    {
+      "id": "add-an-inbound-message",
+      "method": "POST",
+      "path": "/conversations/messages/inbound",
+      "domain": "conversations",
+      "kind": "write"
+    },
+    {
+      "id": "add-an-outbound-message",
+      "method": "POST",
+      "path": "/conversations/messages/outbound",
+      "domain": "conversations",
+      "kind": "write"
+    },
+    {
+      "id": "send-a-new-message",
+      "method": "POST",
+      "path": "/conversations/messages",
+      "domain": "conversations",
+      "kind": "write"
+    },
+    {
+      "id": "record-invoice",
+      "method": "POST",
+      "path": "/invoices/{invoiceId}/record-payment",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices.write"
+      ],
+      "params": [
+        "invoiceId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Record a manual payment for an invoice"
+    },
+    {
+      "id": "void-invoice",
+      "method": "POST",
+      "path": "/invoices/{invoiceId}/void",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices.write"
+      ],
+      "params": [
+        "invoiceId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Void invoice"
+    },
+    {
+      "id": "create-invoice-from-estimate",
+      "method": "POST",
+      "path": "/invoices/estimate/{estimateId}/invoice",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/estimate.write"
+      ],
+      "params": [
+        "estimateId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create Invoice from Estimate"
+    },
+    {
+      "id": "send-estimate",
+      "method": "POST",
+      "path": "/invoices/estimate/{estimateId}/send",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/estimate.write"
+      ],
+      "params": [
+        "estimateId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Send Estimate"
+    },
+    {
+      "id": "update-estimate",
+      "method": "PUT",
+      "path": "/invoices/estimate/{estimateId}",
+      "domain": "invoices",
+      "kind": "write"
+    },
+    {
+      "id": "list-estimates",
+      "method": "GET",
+      "path": "/invoices/estimate/list",
+      "domain": "invoices",
+      "kind": "read",
+      "scopes": [
+        "invoices/estimate.readonly"
+      ],
+      "params": [
+        "altId",
+        "altType",
+        "contactId",
+        "endAt",
+        "limit",
+        "offset",
+        "search",
+        "startAt",
+        "status"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "List Estimates"
+    },
+    {
+      "id": "delete-estimate-template",
+      "method": "DELETE",
+      "path": "/invoices/estimate/template/{templateId}",
+      "domain": "invoices",
+      "kind": "delete",
+      "scopes": [
+        "invoices/estimate.write"
+      ],
+      "params": [
+        "templateId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete Estimate Template"
+    },
+    {
+      "id": "update-estimate-template",
+      "method": "PUT",
+      "path": "/invoices/estimate/template/{templateId}",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/estimate.write"
+      ],
+      "params": [
+        "templateId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Estimate Template"
+    },
+    {
+      "id": "list-estimate-templates",
+      "method": "GET",
+      "path": "/invoices/estimate/template",
+      "domain": "invoices",
+      "kind": "read",
+      "scopes": [
+        "invoices/estimate.readonly"
+      ],
+      "params": [
+        "altId",
+        "altType",
+        "limit",
+        "offset",
+        "search"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "List Estimate Templates"
+    },
+    {
+      "id": "create-estimate-template",
+      "method": "POST",
+      "path": "/invoices/estimate/template",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/estimate.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create Estimate Template"
+    },
+    {
+      "id": "create-new-estimate",
+      "method": "POST",
+      "path": "/invoices/estimate",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/estimate.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create New Estimate"
+    },
+    {
+      "id": "invoices.list-invoices",
+      "method": "GET",
+      "path": "/invoices/",
+      "domain": "invoices",
+      "kind": "read",
+      "scopes": [
+        "invoices.readonly"
+      ],
+      "params": [
+        "altId",
+        "altType",
+        "contactId",
+        "endAt",
+        "limit",
+        "offset",
+        "paymentMode",
+        "search",
+        "sortField",
+        "sortOrder",
+        "startAt",
+        "status"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "List invoices"
+    },
+    {
+      "id": "auto-payment-invoice-schedule",
+      "method": "POST",
+      "path": "/invoices/schedule/{scheduleId}/auto-payment",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/schedule.write"
+      ],
+      "params": [
+        "scheduleId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Manage auto payment for a schedule invoice"
+    },
+    {
+      "id": "cancel-invoice-schedule",
+      "method": "POST",
+      "path": "/invoices/schedule/{scheduleId}/cancel",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/schedule.write"
+      ],
+      "params": [
+        "scheduleId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Cancel a scheduled invoice"
+    },
+    {
+      "id": "schedule-invoice-schedule",
+      "method": "POST",
+      "path": "/invoices/schedule/{scheduleId}/schedule",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/schedule.write"
+      ],
+      "params": [
+        "scheduleId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Schedule a recurring invoice"
+    },
+    {
+      "id": "delete-invoice-schedule",
+      "method": "DELETE",
+      "path": "/invoices/schedule/{scheduleId}",
+      "domain": "invoices",
+      "kind": "delete",
+      "scopes": [
+        "invoices/schedule.write"
+      ],
+      "params": [
+        "scheduleId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete schedule"
+    },
+    {
+      "id": "get-invoice-schedule",
+      "method": "GET",
+      "path": "/invoices/schedule/{scheduleId}",
+      "domain": "invoices",
+      "kind": "read",
+      "scopes": [
+        "invoices/schedule.readonly"
+      ],
+      "params": [
+        "scheduleId",
+        "altId",
+        "altType"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get a schedule"
+    },
+    {
+      "id": "update-invoice-schedule",
+      "method": "PUT",
+      "path": "/invoices/schedule/{scheduleId}",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/schedule.write"
+      ],
+      "params": [
+        "scheduleId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update schedule"
+    },
+    {
+      "id": "list-invoice-schedules",
+      "method": "GET",
+      "path": "/invoices/schedule",
+      "domain": "invoices",
+      "kind": "read",
+      "scopes": [
+        "invoices/schedule.readonly"
+      ],
+      "params": [
+        "altId",
+        "altType",
+        "endAt",
+        "limit",
+        "offset",
+        "paymentMode",
+        "search",
+        "startAt",
+        "status"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "List schedules"
+    },
+    {
+      "id": "create-invoice-schedule",
+      "method": "POST",
+      "path": "/invoices/schedule",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/schedule.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create Invoice Schedule"
+    },
+    {
+      "id": "delete-invoice-template",
+      "method": "DELETE",
+      "path": "/invoices/template/{templateId}",
+      "domain": "invoices",
+      "kind": "delete",
+      "scopes": [
+        "invoices/template.write"
+      ],
+      "params": [
+        "templateId"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Delete template"
+    },
+    {
+      "id": "get-invoice-template",
+      "method": "GET",
+      "path": "/invoices/template/{templateId}",
+      "domain": "invoices",
+      "kind": "read",
+      "scopes": [
+        "invoices/template.readonly"
+      ],
+      "params": [
+        "templateId"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get a template"
+    },
+    {
+      "id": "update-invoice-template",
+      "method": "PUT",
+      "path": "/invoices/template/{templateId}",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/template.write"
+      ],
+      "params": [
+        "templateId"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update template"
+    },
+    {
+      "id": "list-invoice-templates",
+      "method": "GET",
+      "path": "/invoices/template",
+      "domain": "invoices",
+      "kind": "read",
+      "scopes": [
+        "invoices/template.readonly"
+      ],
+      "params": [
+        "altId",
+        "altType",
+        "endAt",
+        "limit",
+        "offset",
+        "paymentMode",
+        "search",
+        "startAt",
+        "status"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "List templates"
+    },
+    {
+      "id": "create-invoice-template",
+      "method": "POST",
+      "path": "/invoices/template",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices/template.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create template"
+    },
+    {
+      "id": "text2pay-invoice",
+      "method": "POST",
+      "path": "/invoices/text2pay",
+      "domain": "invoices",
+      "kind": "write",
+      "scopes": [
+        "invoices.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Create & Send text2pay invoice"
+    },
+    {
+      "id": "get-custom-field",
+      "method": "GET",
+      "path": "/locations/{locationId}/customFields/{id}",
+      "domain": "locations",
+      "kind": "read"
+    },
+    {
+      "id": "locations.update-custom-field",
+      "method": "PUT",
+      "path": "/locations/{locationId}/customFields/{id}",
+      "domain": "locations",
+      "kind": "write"
+    },
+    {
+      "id": "get-custom-fields",
+      "method": "GET",
+      "path": "/locations/{locationId}/customFields",
+      "domain": "locations",
+      "kind": "read"
+    },
+    {
+      "id": "locations.create-custom-field",
+      "method": "POST",
+      "path": "/locations/{locationId}/customFields",
+      "domain": "locations",
+      "kind": "write"
+    },
+    {
+      "id": "get-custom-value",
+      "method": "GET",
+      "path": "/locations/{locationId}/customValues/{id}",
+      "domain": "locations",
+      "kind": "read"
+    },
+    {
+      "id": "update-custom-value",
+      "method": "PUT",
+      "path": "/locations/{locationId}/customValues/{id}",
+      "domain": "locations",
+      "kind": "write"
+    },
+    {
+      "id": "get-custom-values",
+      "method": "GET",
+      "path": "/locations/{locationId}/customValues",
+      "domain": "locations",
+      "kind": "read"
+    },
+    {
+      "id": "create-custom-value",
+      "method": "POST",
+      "path": "/locations/{locationId}/customValues",
+      "domain": "locations",
+      "kind": "write"
+    },
+    {
+      "id": "remove-followers-opportunity",
+      "method": "DELETE",
+      "path": "/opportunities/{id}/followers",
+      "domain": "opportunities",
+      "kind": "delete",
+      "scopes": [
+        "opportunities.write"
+      ],
+      "params": [
+        "id",
+        "isRemoveAllFollowers"
+      ],
+      "destructive": true,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Remove Followers"
+    },
+    {
+      "id": "add-followers-opportunity",
+      "method": "POST",
+      "path": "/opportunities/{id}/followers",
+      "domain": "opportunities",
+      "kind": "write",
+      "scopes": [
+        "opportunities.write"
+      ],
+      "params": [
+        "id"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Add Followers"
+    },
+    {
+      "id": "update-opportunity-status",
+      "method": "PUT",
+      "path": "/opportunities/{id}/status",
+      "domain": "opportunities",
+      "kind": "write",
+      "scopes": [
+        "opportunities.write"
+      ],
+      "params": [
+        "id"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Update Opportunity Status"
+    },
+    {
+      "id": "update-opportunity",
+      "method": "PUT",
+      "path": "/opportunities/{id}",
+      "domain": "opportunities",
+      "kind": "write"
+    },
+    {
+      "id": "get-pipelines",
+      "method": "GET",
+      "path": "/opportunities/pipelines",
+      "domain": "opportunities",
+      "kind": "read"
+    },
+    {
+      "id": "create-opportunity",
+      "method": "POST",
+      "path": "/opportunities/",
+      "domain": "opportunities",
+      "kind": "write"
+    },
+    {
+      "id": "Upsert-opportunity",
+      "method": "POST",
+      "path": "/opportunities/upsert",
+      "domain": "opportunities",
+      "kind": "write",
+      "scopes": [
+        "opportunities.write"
+      ],
+      "destructive": false,
+      "requiresApproval": true,
+      "idempotencyRequired": true,
+      "summary": "Upsert Opportunity"
+    },
+    {
+      "id": "update-coupon",
+      "method": "PUT",
+      "path": "/payments/coupon",
+      "domain": "payments",
+      "kind": "write"
+    },
+    {
+      "id": "record-order-payment",
+      "method": "POST",
+      "path": "/payments/orders/{orderId}/record-payment",
+      "domain": "payments",
+      "kind": "write"
+    }
   ]
 }
