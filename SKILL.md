@@ -28,6 +28,11 @@ sizmo list products            # Name | Product ID | Type
 sizmo list links               # Name | Trigger Link ID
 sizmo list businesses          # Name | Business ID | Website
 sizmo list objects             # Label | Object Key | Field count
+
+# Find a contact when you only have a name, email, or phone — prints the id every write needs
+sizmo contact find "Ana Cruz"            # fuzzy name match; returns top 10
+sizmo contact find ana@example.com       # exact email lookup
+sizmo contact find "ana" --limit 25      # up to 25 results
 ```
 
 All pull from local model cache (0 API calls except `values` which is always live).
@@ -69,6 +74,9 @@ Money surfaces (all read-only — money never moves from the CLI):
 - `sizmo booked-not-paid` — sessions with no invoice or payment (the money leak)
 - `sizmo reconcile` — money reconciliation: collected by source, flags, recurring
 - `sizmo noshow` — no-show recovery: who to re-book
+- `sizmo contact find "<query>"` — find a contact by name/email/phone; prints the id every write needs (`--limit N`, default 10)
+- `sizmo invoice list` — all invoices; `--status draft|sent|paid|void` to narrow; `--top N`
+- `sizmo appointment list` — upcoming appointments (next 14 days default); `--days N` to look further ahead; `--top N`
 
 Local queue state (never touches GoHighLevel — state lives in `~/.config/sizmo/memory/`):
 

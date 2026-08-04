@@ -29,6 +29,12 @@ sizmo list products            # Name | Product ID | Type
 sizmo list links               # Name | Trigger Link ID
 sizmo list businesses          # Name | Business ID | Website
 sizmo list objects             # Label | Object Key | Field count
+
+# Find a specific contact when you only have a name, email, or phone — prints the id every write needs
+sizmo contact find "Ana Cruz"            # fuzzy name match; returns top 10
+sizmo contact find ana@example.com       # exact email lookup
+sizmo contact find "+63917..."           # phone number lookup
+sizmo contact find "ana" --limit 25      # up to 25 results
 ```
 
 All pull from local model cache (0 API calls except `values` which is always live).
@@ -73,6 +79,9 @@ Tags
 - `sizmo diff <file> [file2]` — what changed between saved state and live, or two saved states
 - `sizmo forms` / `sizmo surveys` — list + recent submissions
 - `sizmo transactions` — last 25 payment transactions (`--top N`, `--type subscription`)
+- `sizmo contact find "<query>"` — find a contact by name/email/phone; prints the id every write needs (`--limit N`, default 10)
+- `sizmo invoice list` — all invoices; `--status draft|sent|paid|void` to narrow; `--top N`
+- `sizmo appointment list` — upcoming appointments (next 14 days default); `--days N` to look further ahead; `--top N`
 
 ### Snoozing items out of the queue (`sizmo ack`)
 
