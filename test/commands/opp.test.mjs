@@ -493,3 +493,30 @@ test('opp update: 500 still → EXIT.API (404 mapping must not swallow real serv
     () => run({ _: ['update', 'opp-1'], status: 'won' }, ctx),
     (e) => e.code === EXIT.API);
 });
+
+// ── opp move: 404 → NOTFOUND ──────────────────────────────────────────────────
+// opp move had the same gap as opp update before this fix: a typo'd id returned EXIT.API (1 —
+// "server error, retry") instead of EXIT.NOTFOUND (4 — "your id is wrong, do not retry").
+// An agent with retry-on-1 would loop forever. Induced 2026-08-01.
+
+test('opp move: 404 → EXIT.NOTFOUND, not EXIT.API', async () => {
+  const fixture = { 'PUT /opportunities/ghost-move': { status: 404, j: { message: 'Not Found' } } };
+  const { ctx } = makeFakeCtx({ confirmed: true, model: MODEL, fixture });
+  await assert.rejects(
+    () => run({ _: ['move', 'ghost-move'], stage: 'Won' }, ctx),
+    (e) => {
+      assert.equal(e.code, EXIT.NOTFOUND,
+        `opp move 404 must exit NOTFOUND(4), got ${e.code} — an agent retrying on exit 1 loops forever`);
+      assert.match(e.message, /ghost-move/, 'error must name the bad id');
+      assert.match(e.message, /nothing changed/, 'error must confirm no write happened');
+      return true;
+    });
+});
+
+test('opp move: 500 still → EXIT.API (404 mapping must not swallow real server errors)', async () => {
+  const fixture = { 'PUT /opportunities/opp-x': { status: 500, j: { message: 'boom' } } };
+  const { ctx } = makeFakeCtx({ confirmed: true, model: MODEL, fixture });
+  await assert.rejects(
+    () => run({ _: ['move', 'opp-x'], stage: 'Won' }, ctx),
+    (e) => e.code === EXIT.API);
+});
