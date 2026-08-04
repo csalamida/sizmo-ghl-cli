@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [3.0.1] — 2026-08-04
+
+Three days of the daily engineering loop, reviewed and merged.
+
+### Fixed — `opp move` reported a wrong id as a server error
+
+A 404 from the move request fell through to the generic failure branch and exited 1 ("server error,
+retry"), when the truth was exit 4 ("your id is wrong, do not retry"). An agent branching on exit
+codes would retry a permanently-missing opportunity forever. `opp update` had the identical bug and
+was fixed on 2026-07-27; this is its sibling, found by the loop's failure-paths lane.
+
+### Fixed — a SECURITY.md verification command that returned nothing
+
+The doc invited you to prove the PIT never reaches argv by running `grep -rn "'--pit'" lib/ commands/`
+and said you would find `--pit-stdin` and `--pit-env`. Running it finds *nothing* — the trailing
+apostrophe in the pattern excludes both. The claim being verified is still true; the command offered
+as proof did not demonstrate it. It now explains why that grep is empty and gives one that works.
+
+### Added — 11 tests, none of them decorative
+
+Covering `export` and `opp`. Each was checked by removing the code it guards and confirming the test
+goes red.
+
 ## [3.0.0] — 2026-07-30
 
 ### Changed — `sizmo ask` will not delete something you have not seen
