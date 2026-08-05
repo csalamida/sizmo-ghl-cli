@@ -267,3 +267,61 @@ test('api: valid path + GHL_PIT + mocked fetch → exit 0 + JSON output', async 
   const parsed = JSON.parse(out);
   assert.ok(typeof parsed === 'object', 'output must be JSON');
 });
+
+// --no-loc flag: sub-resource endpoints reject an injected locationId with a 422, so --no-loc
+// skips the injection. Two behaviors to pin: (a) without --no-loc the location IS injected when
+// absent from the path; (b) with --no-loc it is NOT injected even when GHL_LOCATION_ID is set.
+
+test('api: without --no-loc, locationId is auto-injected when absent from path', async () => {
+  const savedPit = process.env.GHL_PIT;
+  const savedLoc = process.env.GHL_LOCATION_ID;
+  const savedFetch = globalThis.fetch;
+  process.env.GHL_PIT = 'pit-NOLOC001';
+  process.env.GHL_LOCATION_ID = 'LOC_INJECT_TEST';
+
+  let fetchedUrl = null;
+  globalThis.fetch = async (url) => {
+    fetchedUrl = url;
+    return { status: 200, headers: new Map(), text: async () => '{}' };
+  };
+
+  try {
+    await route(['api', '/contacts/cid-1/notes'], { write: () => {}, writeErr: () => {} });
+  } finally {
+    globalThis.fetch = savedFetch;
+    if (savedPit !== undefined) process.env.GHL_PIT = savedPit; else delete process.env.GHL_PIT;
+    if (savedLoc !== undefined) process.env.GHL_LOCATION_ID = savedLoc; else delete process.env.GHL_LOCATION_ID;
+  }
+
+  assert.ok(fetchedUrl, 'fetch must have been called');
+  const fetchedStr = fetchedUrl.toString();
+  assert.ok(fetchedStr.includes('locationId=LOC_INJECT_TEST'),
+    `expected locationId injected into URL, got: ${fetchedStr}`);
+});
+
+test('api: --no-loc suppresses locationId injection even when GHL_LOCATION_ID is set', async () => {
+  const savedPit = process.env.GHL_PIT;
+  const savedLoc = process.env.GHL_LOCATION_ID;
+  const savedFetch = globalThis.fetch;
+  process.env.GHL_PIT = 'pit-NOLOC002';
+  process.env.GHL_LOCATION_ID = 'LOC_NOLOC_TEST';
+
+  let fetchedUrl = null;
+  globalThis.fetch = async (url) => {
+    fetchedUrl = url;
+    return { status: 200, headers: new Map(), text: async () => '{}' };
+  };
+
+  try {
+    await route(['api', '/contacts/cid-1/notes', '--no-loc'], { write: () => {}, writeErr: () => {} });
+  } finally {
+    globalThis.fetch = savedFetch;
+    if (savedPit !== undefined) process.env.GHL_PIT = savedPit; else delete process.env.GHL_PIT;
+    if (savedLoc !== undefined) process.env.GHL_LOCATION_ID = savedLoc; else delete process.env.GHL_LOCATION_ID;
+  }
+
+  assert.ok(fetchedUrl, 'fetch must have been called');
+  const fetchedStr = fetchedUrl.toString();
+  assert.ok(!fetchedStr.includes('locationId='),
+    `expected NO locationId in URL when --no-loc is set, got: ${fetchedStr}`);
+});

@@ -1,3 +1,59 @@
+# findings — 2026-08-06 — docs/test hygiene
+
+## Gap fixed: `sizmo api --no-loc` had zero test coverage
+
+### What `--no-loc` does
+
+`--no-loc` is a real, implemented flag on `sizmo api` (`lib/cli.mjs` lines 484-488). When
+`GHL_LOCATION_ID` is set and the URL path lacks any `locationId=` / `location_id=` / `altId=`
+param, `sizmo api` auto-injects `?locationId=<LOC>`. `--no-loc` suppresses that injection —
+required because certain sub-resource endpoints (e.g. `/contacts/:id/notes`) reject **any**
+unrecognized query param with a 422.
+
+```js
+// lib/cli.mjs:484-488
+const noLoc = rest.includes('--no-loc');
+const LOC = creds.loc;
+let urlPath = path;
+if (LOC && !noLoc && !/locationId=|location_id=|altId=/.test(urlPath))
+  urlPath += (urlPath.includes('?') ? '&' : '?') + 'locationId=' + LOC;
+```
+
+The flag is documented in `lib/cli.mjs:465` (usage string), `lib/cli.mjs:540` (shell completion
+metadata), and CHANGELOG.md. It was shipped with zero regression coverage.
+
+### Evidence: no tests before this run
+
+```
+$ grep -rn "no-loc\|noLoc" test/
+(no output)
+```
+
+Full suite before: `1153 tests / 0 fail`.
+
+### Fix: two tests in `test/client/cli.test.mjs`
+
+1. **`api: without --no-loc, locationId is auto-injected when absent from path`** — mocks
+   `globalThis.fetch`, captures the URL, asserts `locationId=LOC_INJECT_TEST` is present.
+2. **`api: --no-loc suppresses locationId injection even when GHL_LOCATION_ID is set`** — same
+   mock, asserts `locationId=` does NOT appear in the URL.
+
+Implementation note: `lib/http.mjs` passes a `URL` object (not a string) to `fetch`, so
+`.toString()` is required before `.includes()`.
+
+### Full suite after
+
+```
+node --test --test-concurrency=1
+# tests 1155 / pass 1155 / fail 0
+```
+
+### Files changed
+
+- `test/client/cli.test.mjs` — 2 tests appended (lines 271-330 of the updated file)
+
+---
+
 # findings.md — 2026-07-31 — test-coverage run
 # findings — 2026-08-02 — claim-verification
 
