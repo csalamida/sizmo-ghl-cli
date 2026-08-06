@@ -388,3 +388,100 @@ describes the 3.0.0 behaviour.
 ## Files NOT changed
 
 - All source files — all underlying security properties verified correct.
+
+---
+
+# findings — 2026-08-07 — test-coverage
+
+## Enumeration result
+
+Commands (`commands/*.mjs`): 34 files.
+Test files (`test/commands/*.test.mjs`): 48 files.
+
+**Coverage gap: none.** Every one of the 34 command files has at least one test file. The 2026-07-16 backlog (`surveys`, `transactions`, `business`) was addressed in a prior run — all three have full, substantive test suites that pass.
+
+Mapping (abridged — full table in the 2026-07-31 section above):
+all 34 commands matched; no remainder.
+
+## Before count
+
+```
+$ npm test
+# tests 1153
+# pass  1153
+# fail  0
+```
+
+## Weakest file: receivables
+
+Test counts per file (bottom of distribution):
+
+| count | file |
+|------:|------|
+| 2 | sync-blocked.test.mjs (intentionally minimal — paired with sync.test.mjs) |
+| 4 | list-blocked.test.mjs (same pattern) |
+| 4 | triage-concurrency.test.mjs (concurrency supplement) |
+| 8 | receivables.test.mjs |
+| 8 | noshow.test.mjs |
+
+`receivables` was chosen: 8 tests against 163 lines of command logic that includes real
+money-math branches (multi-currency), pagination (page 2), partial-scan handling, and four
+distinct aging rendering paths. `sync-blocked`, `list-blocked`, and `triage-concurrency` are
+small by design (supplementary files alongside a primary test file).
+
+## Missing branches identified (by reading `commands/receivables.mjs`)
+
+| Branch | Source location |
+|--------|----------------|
+| Pagination page 2 fetched when page 1 returns exactly 100 items | `nextCursor` returns `offset + 100` |
+| Partial scan: page 1 OK (100 items), page 2 returns 5xx | `notePartialScan` fires → `truncated:true` |
+| Partial scan human card prints "⚠ INCOMPLETE" and names HTTP code | `data.truncated` card branch |
+| Multi-currency: `byCurrency` map emitted, `totalOwed` is cross-currency sum | `currencies.length > 1` |
+| `age < 0` rendering: future due date → "due in Xd" (not "aged -Xd") | human card age switch |
+| `age === 0` rendering → "due today" | human card age switch |
+| `outstanding > TOP` in human card → "… +N more" line | card overflow branch |
+
+## Tests added
+
+File: `test/commands/receivables.test.mjs` — 7 tests appended.
+
+1. `receivables: fetches page 2 when page 1 is exactly at the limit (100 items)`
+   Fixtures: `offset=0` (100 items), `offset=100` (1 item). Asserts `scanned=101`, `totalOwed` spans both pages.
+
+2. `receivables: partial scan → truncated:true + partialScanError in envelope`
+   Page 1 returns 100 items; page 2 returns 500. Asserts `truncated:true`, `partialScanError:500`,
+   `degraded:true`, warning contains "INCOMPLETE" or "page fetch failed".
+
+3. `receivables: partial scan human card prints "⚠ INCOMPLETE" and names the HTTP code`
+   Same scenario, `json:false`. Asserts "INCOMPLETE", HTTP code 503, and "at least" in summary line.
+
+4. `receivables: multi-currency → byCurrency map in envelope, totalOwed is sum across currencies`
+   PHP 10000 + USD 400 invoices. Asserts `byCurrency.PHP=10000`, `byCurrency.USD=400`, `totalOwed=10400`.
+
+5. `receivables: invoice with future due date renders as "due in Xd", not "aged -Xd"`
+   Invoice due 5 days from now. Asserts `/due in \d+d/` present and `aged -` absent.
+
+6. `receivables: invoice due today renders as "due today"`
+   Invoice with `dueDate` exactly at `NOW`. Asserts `age=0` → "due today".
+
+7. `receivables: human card prints "… +N more" when outstanding exceeds --top`
+   5 invoices, `top=2`, `json:false`. Asserts "+3 more" appears in card output.
+
+## After count
+
+```
+$ npm test
+# tests 1160
+# pass  1160
+# fail  0
+```
+
+**+7 tests, 0 failures.**
+
+## Files changed
+
+- `test/commands/receivables.test.mjs` — 7 tests appended (pagination, partial scan, multi-currency, aging rendering, overflow card line)
+
+## Files NOT changed
+
+- All command source files — read-only this run; no bugs found requiring source changes.
