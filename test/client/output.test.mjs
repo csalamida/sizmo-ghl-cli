@@ -331,3 +331,23 @@ test('arrays of primitives are never treated as gutted', () => {
   assert.deepEqual(d.tags, ['vip', 'lead']);
   assert.deepEqual(d.empty, [], 'an empty array stays empty — nothing to preserve or project');
 });
+
+test('project() leaves an ARRAY alone — a field list names keys, not indices', () => {
+  // `typeof [] === 'object'`, so without an explicit guard an array item was rebuilt as {} and a
+  // nested list silently became an empty object. Found by a mutation: deleting projectPayload's
+  // `wasObjects` guard produced BETTER output than the code it was part of, which meant the guard
+  // was masking this rather than fixing it.
+  assert.deepEqual(project([1, 2], ['name']), [1, 2], 'an array must never be rebuilt as an object');
+  assert.deepEqual(project({ a: 1, name: 'x' }, ['name']), { name: 'x' }, 'plain objects still project');
+  assert.equal(project('str', ['name']), 'str');
+  assert.equal(project(null, ['name']), null);
+});
+
+test('an array OF ARRAYS survives projection intact', () => {
+  let buf = '';
+  const out = makeOut({ json: true, command: 'x', location: 'L', fields: ['name'],
+                        write: (s) => { buf += s; }, writeErr: () => {} });
+  out.data({ matrix: [[1, 2], [3, 4]] });
+  out.flush();
+  assert.deepEqual(JSON.parse(buf).data.matrix, [[1, 2], [3, 4]]);
+});
