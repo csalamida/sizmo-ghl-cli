@@ -23,11 +23,11 @@ const scopeFix = (scope) =>
 // The subcommand list, declared once so `sizmo schema` and the dispatch below cannot
 // disagree. test/client/schema-subcommands.test.mjs extracts the verbs this file actually
 // dispatches on and fails if they differ from this array.
-const SUBCOMMANDS = ['list', 'draft', 'send'];
+const SUBCOMMANDS = ['list', 'draft', 'send', 'void'];
 
 export const meta = {
   name: 'invoice',
-  summary: 'list invoices, create a draft invoice for a contact, or send an existing invoice (pay-link)',
+  summary: 'list invoices, draft one for a contact, send it (pay-link), or void one that should not have gone out',
   subcommands: SUBCOMMANDS,
   flags: [
     { name: '--contact',  type: 'string', desc: 'contact id (draft)' },
@@ -61,10 +61,12 @@ export async function run(args, ctx) {
   if (sub === 'list') return listInvoices(args, ctx);
   if (sub === 'draft') return draftInvoice(args, ctx);
   if (sub === 'send') return sendInvoice(args, ctx);
+  if (sub === 'void') return voidInvoice(args, ctx);
   throw new GhlError(
     'usage: sizmo invoice list [--status draft] [--top 20]\n' +
     '       sizmo invoice draft --contact <id> --item "Name:amount"\n' +
-    '       sizmo invoice send <invoiceId>',
+    '       sizmo invoice send <invoiceId>\n' +
+    '       sizmo invoice void <invoiceId>',
     EXIT.USAGE, 'sizmo invoice --help');
 }
 
@@ -296,6 +298,86 @@ async function draftInvoice(args, ctx) {
   const id = inv._id || inv.id || null;
   ctx.out.data({ status: 'ok', command: 'invoice draft', invoiceId: id, currency, total });
   ctx.out.line(`  draft invoice created · id ${id ?? '(see response)'} · ${fmtMoney(total, currency)} · NOT sent`);
+  return EXIT.OK;
+}
+
+// ── void ─────────────────────────────────────────────────────────────────────
+//
+// WHY THIS EXISTS
+// sizmo could create an invoice and send it to a customer, but not take it back. That asymmetry sat
+// on a money surface: the one operation you reach for in a hurry — "that should not have gone out" —
+// was the one that required dropping to the raw `sizmo api` escape hatch, under time pressure, on a
+// document a customer has already seen.
+//
+// FETCH-FIRST, on purpose. A void cannot be undone, so the preview names the RECORD, not just the id
+// you typed: number, contact, amount and current status. Approving `void inv_8f21c` is approving a
+// string; approving "#1043 · Ana Cruz · ₱45,000 · sent" is approving the thing itself. Same reason
+// `sizmo ask` refuses to fire a delete resolved from a sentence.
+//
+// GoHighLevel's own catalogue is self-contradictory here: void-invoice reports
+// `destructiveHint: false` while its description reads "API to delete invoice by invoice id".
+// sizmo treats it as irreversible regardless — the metadata does not get to decide that for us.
+const VOID_READ_SCOPE_FIX = scopeFix('invoices.readonly');
+
+async function voidInvoice(args, ctx) {
+  const id = args._?.[1];
+  if (!id || !String(id).trim()) {
+    throw new GhlError('usage: sizmo invoice void <invoiceId> — exactly one id', EXIT.USAGE,
+      'find the id with: sizmo invoice list');
+  }
+  if (args._?.length > 2) {
+    // Refusing extra positionals rather than silently voiding only the first. A void loop typed by
+    // hand is exactly where a second id gets pasted by accident.
+    throw new GhlError(`sizmo invoice void takes ONE id (got ${args._.length - 1}) — void is not reversible, so it is single-target`,
+      EXIT.USAGE, 'run it once per invoice, checking each preview');
+  }
+  const loc = ctx.cfg.loc;
+
+  // Read it first so the human sees WHAT they are voiding.
+  const r0 = await ctx.http.get(`/invoices/${encodeURIComponent(id)}`, {
+    query: { altId: loc, altType: 'location' },
+  });
+  if (r0.code === 401 || r0.code === 403) {
+    throw new GhlError(`HTTP ${r0.code} — your PIT lacks invoices.readonly, needed to show you what would be voided`,
+      EXIT.AUTH, VOID_READ_SCOPE_FIX);
+  }
+  if (r0.code === 404) throw new GhlError(`no invoice with id ${id} — nothing voided`, EXIT.NOTFOUND);
+  if (!r0.ok) {
+    throw new GhlError(`could not read invoice ${id} — HTTP ${r0.code}. Refusing to void a record I cannot show you.`,
+      EXIT.API);
+  }
+  const inv = r0.j?.invoice ?? r0.j ?? {};
+  const num = inv.invoiceNumber ? `#${inv.invoiceNumber}` : '(no number)';
+  const who = inv.contactDetails?.name ?? inv.name ?? '(unknown contact)';
+  const cur = (inv.currency || 'PHP').toUpperCase();
+  const total = Number(inv.total ?? inv.amount ?? NaN);
+  const status = String(inv.status ?? '').toLowerCase() || 'unknown';
+
+  const changes = [
+    `Void invoice ${num} — ${who} — ${fmtMoney(Number.isFinite(total) ? total : null, cur)}`,
+    `  current status: ${status}`,
+    '  ⚠ voiding cannot be undone, and the customer may already have seen this invoice',
+  ];
+  // A paid invoice is the one you least want to void by accident, so it gets its own line rather
+  // than being one word inside the status line above.
+  if (/paid/.test(status) && !/partially/.test(status)) {
+    changes.push('  ⚠ THIS INVOICE IS ALREADY PAID — voiding it will not refund anything');
+  }
+  const rerunCommand = `sizmo invoice void ${id} --confirm`;
+  const gate = requireConfirm({ command: 'invoice void', changes, rerunCommand }, ctx);
+  if (!gate.proceed) return gate.code;
+
+  const r = await ctx.http.post(`/invoices/${encodeURIComponent(id)}/void`, { altId: loc, altType: 'location' });
+  if (r.code === 401 || r.code === 403) throw new GhlError(`HTTP ${r.code} — your PIT lacks invoices.write`, EXIT.AUTH, SCOPE_FIX);
+  if (r.code === 404) throw new GhlError(`no invoice with id ${id} — nothing voided`, EXIT.NOTFOUND);
+  if (!r.ok) throw new GhlError(`invoice void failed — HTTP ${r.code}: ${(r.txt || '').slice(0, 240).replace(/\s+/g, ' ')}`, EXIT.API);
+
+  ctx.out.data({
+    status: 'ok', command: 'invoice void', invoiceId: id,
+    number: inv.invoiceNumber ?? null, contact: who,
+    previousStatus: status, total: Number.isFinite(total) ? total : null, currency: cur,
+  });
+  ctx.out.line(`  invoice ${num} voided (was ${status}) — ${who}`);
   return EXIT.OK;
 }
 

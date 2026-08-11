@@ -1,6 +1,6 @@
 {
   "_provenance": {
-    "capturedAt": "2026-08-04",
+    "capturedAt": "2026-08-11",
     "source": "LeadConnector MCP for Anthropic (/mcp/anthropic/v2) — search_operations + describe_operation, INTROSPECTION ONLY, never execute_operation",
     "scope": "PARTIAL BY DESIGN. Only the domains sizmo operates in were enumerated: contacts, opportunities, calendars, conversations, locations (custom fields/values), invoices, payments. Domains deliberately outside sizmo's ICP were NOT captured — products, inventory, stores, blogs, social-planner, knowledge-base, voice-ai, saas, medias, funnels, brand-boards.",
     "honesty": "Every entry below was returned by a real query this session. Nothing here is inferred or remembered. This is a snapshot, not a live view — regenerate when the API changes.",
@@ -10,6 +10,12 @@
         "added": 55,
         "enriched": 20,
         "via": "2026-08-04.json"
+      },
+      {
+        "at": "2026-08-11",
+        "added": 2,
+        "enriched": 0,
+        "via": "stdin"
       }
     ]
   },
@@ -991,6 +997,25 @@
       "summary": "Void invoice"
     },
     {
+      "id": "get-invoice",
+      "method": "GET",
+      "path": "/invoices/{invoiceId}",
+      "domain": "invoices",
+      "kind": "read",
+      "scopes": [
+        "invoices.readonly"
+      ],
+      "params": [
+        "invoiceId",
+        "altId",
+        "altType"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get invoice"
+    },
+    {
       "id": "create-invoice-from-estimate",
       "method": "POST",
       "path": "/invoices/estimate/{estimateId}/invoice",
@@ -1309,6 +1334,24 @@
       "requiresApproval": true,
       "idempotencyRequired": true,
       "summary": "Create Invoice Schedule"
+    },
+    {
+      "id": "get-invoice-settings",
+      "method": "GET",
+      "path": "/invoices/settings",
+      "domain": "invoices",
+      "kind": "read",
+      "scopes": [
+        "invoices.readonly"
+      ],
+      "params": [
+        "altId",
+        "altType"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get Invoice Settings"
     },
     {
       "id": "delete-invoice-template",
