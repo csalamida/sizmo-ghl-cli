@@ -27,7 +27,7 @@ Every `--json` response carries `schemaVersion` (currently `1`).
 
 ### a) Data commands → the envelope
 
-`ack`, `booked-not-paid`, `brief`, `crm`, `diff`, `doctor`, `export`, `focus`, `forms`, `list`,
+`ack`, `booked-not-paid`, `brief`, `calls`, `crm`, `diff`, `doctor`, `export`, `focus`, `forms`, `list`,
 `noshow`, `pipeline`, `receivables`, `reconcile`, `segment`, `snapshot`, `surveys`, `sync`,
 `transactions`, `triage` all emit:
 

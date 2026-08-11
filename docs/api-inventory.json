@@ -16,6 +16,12 @@
         "added": 2,
         "enriched": 0,
         "via": "stdin"
+      },
+      {
+        "at": "2026-08-11",
+        "added": 4,
+        "enriched": 0,
+        "via": "stdin"
       }
     ]
   },
@@ -1613,6 +1619,85 @@
       "path": "/payments/orders/{orderId}/record-payment",
       "domain": "payments",
       "kind": "write"
+    },
+    {
+      "id": "voice-ai.get-agent",
+      "method": "GET",
+      "path": "/voice-ai/agents/{agentId}",
+      "domain": "voice-ai",
+      "kind": "read",
+      "scopes": [
+        "voice-ai-agents.readonly"
+      ],
+      "params": [
+        "agentId"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get Agent"
+    },
+    {
+      "id": "get-agents",
+      "method": "GET",
+      "path": "/voice-ai/agents",
+      "domain": "voice-ai",
+      "kind": "read",
+      "scopes": [
+        "voice-ai-agents.readonly"
+      ],
+      "params": [
+        "page",
+        "pageSize",
+        "query"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "List Agents"
+    },
+    {
+      "id": "getCallLog",
+      "method": "GET",
+      "path": "/voice-ai/dashboard/call-logs/{callId}",
+      "domain": "voice-ai",
+      "kind": "read",
+      "scopes": [
+        "voice-ai-dashboard.readonly"
+      ],
+      "params": [
+        "callId"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "Get Call Log"
+    },
+    {
+      "id": "get-call-logs",
+      "method": "GET",
+      "path": "/voice-ai/dashboard/call-logs",
+      "domain": "voice-ai",
+      "kind": "read",
+      "scopes": [
+        "voice-ai-dashboard.readonly"
+      ],
+      "params": [
+        "actionType",
+        "agentId",
+        "callType",
+        "contactId",
+        "endDate",
+        "page",
+        "pageSize",
+        "sort",
+        "sortBy",
+        "startDate"
+      ],
+      "destructive": false,
+      "requiresApproval": false,
+      "idempotencyRequired": false,
+      "summary": "List Call Logs"
     }
   ]
 }

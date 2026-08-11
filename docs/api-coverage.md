@@ -12,11 +12,11 @@ Inventory captured **2026-08-11** via LeadConnector MCP for Anthropic (/mcp/anth
 
 | | count | share |
 |---|---:|---:|
-| Covered by a sizmo command | 29 | 26% |
-| Deliberately not implemented | 28 | 25% |
+| Covered by a sizmo command | 31 | 27% |
+| Deliberately not implemented | 28 | 24% |
 | **Blocked on verification — wanted** | **1** | 1% |
-| **Unreviewed — needs a decision** | **54** | **48%** |
-| Inventory total | 112 | |
+| **Unreviewed — needs a decision** | **56** | **48%** |
+| Inventory total | 116 | |
 
 ## Unreviewed — needs a decision
 
@@ -76,6 +76,8 @@ Inventory captured **2026-08-11** via LeadConnector MCP for Anthropic (/mcp/anth
 | `remove-followers-opportunity` | DELETE | `/opportunities/{id}/followers` | opportunities |
 | `add-followers-opportunity` | POST | `/opportunities/{id}/followers` | opportunities |
 | `Upsert-opportunity` | POST | `/opportunities/upsert` | opportunities |
+| `voice-ai.get-agent` | GET | `/voice-ai/agents/{agentId}` | voice-ai |
+| `getCallLog` | GET | `/voice-ai/dashboard/call-logs/{callId}` | voice-ai |
 
 ## Blocked on verification — wanted, not shipped
 
@@ -153,6 +155,8 @@ WANTED, blocked on an under-specified payload. sizmo can draft and send an invoi
 | `update-opportunity` | PUT | `/opportunities/{id}` | opp |
 | `get-pipelines` | GET | `/opportunities/pipelines` | pipeline |
 | `create-opportunity` | POST | `/opportunities/` | opp |
+| `get-agents` | GET | `/voice-ai/agents` | calls |
+| `get-call-logs` | GET | `/voice-ai/dashboard/call-logs` | calls |
 
 ## Called by sizmo but absent from the inventory
 
