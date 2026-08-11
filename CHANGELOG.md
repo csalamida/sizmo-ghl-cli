@@ -15,6 +15,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [3.1.0] — 2026-08-11
+
+### Fixed — `--fields` returned lists of empty objects
+
+Asking for fields an array does not have did not narrow it, it **emptied** it. Measured with
+`--fields name,total` against the real payloads:
+
+```
+pipeline.pipelines   [{}]              items are {pipeline, stages}
+snapshot.metrics     [{}]              items are {label, value, note}
+brief.actions        [{}]              items are {contact, kind, money, …}
+ack.snoozes          [{}]              items are {contactId, snoozeUntil, reason}
+receivables.list     [{name, total}]   correctly projected
+pipeline.stuck       [{name}]          correctly projected
+```
+
+Four of six arrays came back the right LENGTH carrying nothing. Count the rows and you see data;
+read them and there is none, with nothing to say the two disagree.
+
+An array where none of your fields matched is now returned whole — the data survives and is visibly
+unprojected, so you can tell your field list missed. A partial match still projects. Separately,
+arrays are no longer projectable at all: a field list names keys, an array has indices, and
+`typeof [] === 'object'` was quietly rebuilding a nested list as `{}`.
+
+### Added — the envelope now carries `timezone` and `profile`
+
+Reports could be read anywhere, but nothing said which zone their dates were computed in. The same
+instant is `Aug 11, 8:00 PM` in Manila and `Aug 11, 8:00 AM` in New York, and `profile` names which
+account produced the run rather than leaving an opaque location id.
+
+Both are **additive and optional** — absent when unknown, never null — so the envelope is
+byte-identical to 3.0.1 for a run that has neither. Per API-STABILITY.md that is not a
+`schemaVersion` bump. Both ride on the envelope rather than in each command's `data`, and both are
+wired centrally, so every existing and future report gets them.
+
+### Changed — internal cleanup, no user-visible effect
+
+Time helpers moved to one module. The find was divergence rather than duplication: four copies of
+`ago()` implemented **two different behaviours** under one name — no-shows and stuck deals floor
+anything under an hour to `1h`, while conversation triage falls through to minutes. Both are right
+for their surface, so they are now named apart and a test fails if anyone merges them. Rendered
+output is unchanged.
+
+A `color` flag that was computed, honoured `NO_COLOR`, and read by nothing was removed — the tool
+emits zero ANSI escapes, and a flag promising otherwise invites callers to branch on it.
+
 ## [3.0.1] — 2026-08-04
 
 Three days of the daily engineering loop, reviewed and merged.
