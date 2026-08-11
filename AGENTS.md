@@ -48,6 +48,7 @@ Run `sizmo sync` to refresh if data looks stale.
 sizmo export --out location.json          # snapshot: pipelines, calendars, fields, values, tags, users
 sizmo diff location.json                  # compare snapshot vs live — see what changed
 sizmo diff before.json after.json         # compare two snapshots
+sizmo apply location.json                 # preview the plan — exits 5 (shows what cannot transfer too)
 sizmo apply location.json --confirm       # additive scaffold: creates missing custom values/fields/calendars
 ```
 
@@ -65,16 +66,16 @@ Tags
 
 ## Read Commands (no confirmation, no risk)
 
-- `sizmo brief` — morning screen: revenue at risk, unreplied threads, open opps. Start here.
-- `sizmo pipeline` — pipeline health + stuck deals sweep (closest thing to "list open opportunities")
+- `sizmo brief` — morning screen: revenue at risk, unreplied threads, open opps. Start here. (`--format md|slack` to paste into Slack, email, or Notion)
+- `sizmo pipeline` — pipeline health + stuck deals sweep (closest thing to "list open opportunities") (`--format md|slack`)
 - `sizmo triage` — unreplied conversations by age
-- `sizmo receivables` — overdue invoices + outstanding amounts
+- `sizmo receivables` — overdue invoices + outstanding amounts (`--format md|slack`)
 - `sizmo noshow` — no-shows from the last 30 days
 - `sizmo booked-not-paid` — booked appointments with no associated invoice/payment
-- `sizmo focus` — today's appointments + follow-up tasks
+- `sizmo focus` — today's appointments + follow-up tasks (`--format md|slack`)
 - `sizmo snapshot` — full brief as a single printable snapshot
 - `sizmo segment --tag X` — find contacts by tag, phone, created-days, etc.
-- `sizmo reconcile` — money reconciliation: collected by source, flags, recurring (`--days N`, `--top N`)
+- `sizmo reconcile` — money reconciliation: collected by source, flags, recurring (`--days N`, `--top N`, `--format md|slack`)
 - `sizmo crm` — model overview: entity counts + cache age
 - `sizmo export` — full location dump to JSON (deterministic, key-sorted, byte-identical re-exports)
 - `sizmo diff <file> [file2]` — what changed between saved state and live, or two saved states
