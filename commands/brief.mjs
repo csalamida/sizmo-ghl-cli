@@ -17,6 +17,7 @@ import {
   loadLast, recordRun, diff, filterSnoozed,
   snapshotFromMetrics, formatDelta,
 } from '../lib/memory.mjs';
+import { parseAgeDays, fmtLongDate } from '../lib/dates.mjs';
 
 export const meta = {
   name: 'brief',
@@ -82,16 +83,6 @@ function fmtMoney(n, currency) {
 }
 
 // Parse an age string like "21d", "3h", "5m" back to ageDays
-function parseAgeDays(str) {
-  if (typeof str === 'number') return str;
-  if (!str) return 0;
-  const match = String(str).match(/^(\d+(?:\.\d+)?)(d|h|m)$/i);
-  if (!match) return 0;
-  const n = Number(match[1]);
-  if (match[2] === 'd') return n;
-  if (match[2] === 'h') return Math.ceil(n / 24);
-  return Math.max(0, Math.ceil(n / 1440));
-}
 
 // Shape the 4 lane sources into rankActions input format.
 // Called by both collect() (for the JSON envelope) and run() (for the TTY card).
@@ -362,7 +353,7 @@ function renderPretty(rm, data, DAYS, ctx) {
   const W = 64;
   const bar = (ch = '─') => ch.repeat(W);
   const pad = (s) => { const str = String(s); return str.length >= W ? str.slice(0, W) : str + ' '.repeat(W - str.length); };
-  const today = new Date().toLocaleDateString('en-US', { timeZone: rm.tz, weekday: 'long', month: 'short', day: 'numeric' });
+  const today = fmtLongDate(Date.now(), rm.tz);
 
   ctx.out.line('\n╔' + bar('═') + '╗');
   ctx.out.line('║' + pad('  ' + rm.headline) + '║');
@@ -422,7 +413,7 @@ function renderPretty(rm, data, DAYS, ctx) {
 }
 
 function renderSlack(rm, data, DAYS, ctx) {
-  const today = new Date().toLocaleDateString('en-US', { timeZone: rm.tz, weekday: 'long', month: 'short', day: 'numeric' });
+  const today = fmtLongDate(Date.now(), rm.tz);
   const actions = data.actions || [];
   ctx.out.line(`*${rm.headline}*`);
   ctx.out.line('');
@@ -444,7 +435,7 @@ function renderSlack(rm, data, DAYS, ctx) {
 }
 
 function renderMd(rm, data, DAYS, ctx) {
-  const today = new Date().toLocaleDateString('en-US', { timeZone: rm.tz, weekday: 'long', month: 'short', day: 'numeric' });
+  const today = fmtLongDate(Date.now(), rm.tz);
   const actions = data.actions || [];
   ctx.out.line(`# ${rm.headline}`);
   ctx.out.line('');

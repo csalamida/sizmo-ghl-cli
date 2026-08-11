@@ -9,6 +9,7 @@ import { notePartialScan } from '../lib/blind.mjs';
 import { mapLimit } from '../lib/pool.mjs';
 import { ENTITY_SPECS, timezoneFromModel, tzLabel } from '../lib/model.mjs';
 import { fmtMoney as money } from '../lib/money.mjs';
+import { fmtShortDate } from '../lib/dates.mjs';
 
 export const meta = {
   name: 'snapshot',
@@ -17,8 +18,7 @@ export const meta = {
   readOnly: true,
 };
 
-const fmtDate = (ms, tz) =>
-  new Date(ms).toLocaleString('en-US', { timeZone: tz, month: 'short', day: 'numeric' });
+const fmtDate = (ms, tz) => fmtShortDate(ms, tz);
 // `truncated` and `partialScanError` are part of the shape on purpose. An earlier attempt spread
 // `truncated: true` into this options object and it was silently discarded, because the destructure
 // below only names the keys it knows — so the metric rendered its warning text while the machine

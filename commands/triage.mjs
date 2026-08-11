@@ -5,6 +5,7 @@
 import { paginate } from '../lib/paginate.mjs';
 import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
 import { mapLimit } from '../lib/pool.mjs';
+import { agoFine } from '../lib/dates.mjs';
 
 export const meta = {
   name: 'triage',
@@ -28,13 +29,7 @@ export async function collect(args, ctx) {
   const LOC = ctx.cfg.loc;
   const NOW = ctx.now;
   const START = NOW - DAYS * 24 * 60 * 60 * 1000;
-  const ago = (ms) => {
-    const d = Math.floor((NOW - ms) / 86400000);
-    if (d >= 1) return d + 'd';
-    const h = Math.floor((NOW - ms) / 3600000);
-    if (h >= 1) return h + 'h';
-    return Math.max(1, Math.floor((NOW - ms) / 60000)) + 'm';
-  };
+  const ago = (ms) => agoFine(NOW, ms);
 
   // paginate conversations to completion — limit:100 per page, offset-based (trust-fix #2)
   const convos = [];
@@ -133,13 +128,7 @@ export async function run(args, ctx) {
   const DAYS = args.days ?? 30;
   const LOC = ctx.cfg.loc;
   const NOW = ctx.now;
-  const ago = (ms) => {
-    const d = Math.floor((NOW - ms) / 86400000);
-    if (d >= 1) return d + 'd';
-    const h = Math.floor((NOW - ms) / 3600000);
-    if (h >= 1) return h + 'h';
-    return Math.max(1, Math.floor((NOW - ms) / 60000)) + 'm';
-  };
+  const ago = (ms) => agoFine(NOW, ms);
 
   ctx.out.card(() => {
     if (data.blocked) {

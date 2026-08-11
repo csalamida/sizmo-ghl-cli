@@ -11,6 +11,7 @@ import { collect as noshowCollect } from './noshow.mjs';
 import { collect as bnpCollect }    from './booked-not-paid.mjs';
 import { rankActions, hasMixedCurrencies } from '../lib/prioritize.mjs';
 import { filterSnoozed } from '../lib/memory.mjs';
+import { parseAgeDays } from '../lib/dates.mjs';
 
 export const meta = {
   name: 'focus',
@@ -25,16 +26,6 @@ export const meta = {
 };
 
 // Parse an age string like "21d", "3h", "5m" back to ageDays (fractional ok, floor to 0)
-function parseAgeDays(str, nowMs) {
-  if (typeof str === 'number') return str;
-  if (!str) return 0;
-  const m = String(str).match(/^(\d+(?:\.\d+)?)(d|h|m)$/i);
-  if (!m) return 0;
-  const n = Number(m[1]);
-  if (m[2] === 'd') return n;
-  if (m[2] === 'h') return Math.ceil(n / 24);
-  return Math.max(0, Math.ceil(n / 1440));
-}
 
 // Wrap a collect() so a throw → degraded sentinel instead of crashing focus
 async function safe(name, fn, ctx) {

@@ -8,6 +8,7 @@ import { mapLimit } from '../lib/pool.mjs';
 import { fmtMoney as money } from '../lib/money.mjs';
 import { timezoneFromModel } from '../lib/model.mjs';
 import { exitForBlockedSource } from '../lib/blind.mjs';
+import { fmtShortDate } from '../lib/dates.mjs';
 
 export const meta = {
   name: 'booked-not-paid',
@@ -224,7 +225,7 @@ export async function run(args, ctx) {
   if (ctx.ensureModel && ctx.model === undefined) { try { await ctx.ensureModel(); } catch { /* tz falls back */ } }
   const tz = timezoneFromModel(ctx.model);
   const fmt = (t) =>
-    new Date(t).toLocaleString('en-US', { timeZone: tz, month: 'short', day: 'numeric' });
+    fmtShortDate(t, tz);
 
   ctx.out.card(() => {
     if (data.blocked) {

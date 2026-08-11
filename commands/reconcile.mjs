@@ -9,6 +9,7 @@ import { paginate } from '../lib/paginate.mjs';
 import { ENTITY_SPECS } from '../lib/model.mjs';
 import { fmtMoney as m } from '../lib/money.mjs';
 import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
+import { ymd } from '../lib/dates.mjs';
 
 export const meta = {
   name: 'reconcile',
@@ -31,7 +32,6 @@ export async function collect(args, ctx) {
   const DAY_MS = 24 * 60 * 60 * 1000;
   const START = NOW - DAYS * DAY_MS;
   // YYYY-MM-DD, the format list-transactions documents for startAt/endAt.
-  const ymd = (ms) => new Date(ms).toISOString().slice(0, 10);
   // Mirror snapshot's inWindow normalization: numeric seconds (< 1e12) → ms.
   // GHL currently returns ISO strings, but numeric-epoch fields are defensively handled.
   const inWin = (v) => {

@@ -9,6 +9,7 @@ import { paginate } from '../lib/paginate.mjs';
 import { ENTITY_SPECS } from '../lib/model.mjs';
 import { fmtMoney } from '../lib/money.mjs';
 import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
+import { agoCoarse } from '../lib/dates.mjs';
 
 export const meta = {
   name: 'pipeline',
@@ -33,10 +34,7 @@ export async function collect(args, ctx) {
   const LOC = ctx.cfg.loc;
   const NOW = ctx.now;
   const STUCK_MS = STUCK_DAYS * 24 * 60 * 60 * 1000;
-  const ago = (t) => {
-    const d = Math.floor((NOW - t) / 86400000);
-    return d >= 1 ? d + 'd' : Math.max(1, Math.floor((NOW - t) / 3600000)) + 'h';
-  };
+  const ago = (t) => agoCoarse(NOW, t);
 
   // Build stage/pipeline name resolution from the CRM model (no per-run structure re-fetch).
   // Falls back to a live fetch only when model is genuinely unavailable.

@@ -10,6 +10,7 @@ import { notePartialScan } from '../lib/blind.mjs';
 // The single money formatter. invoice draft used to format its own totals two different ways and
 // neither went through here — see the note at the preview line below.
 import { fmtMoney } from '../lib/money.mjs';
+import { ymd } from '../lib/dates.mjs';
 
 const SCOPE_FIX = 'GoHighLevel → Settings → Private Integrations → edit your PIT → add invoices.write scope';
 
@@ -54,7 +55,6 @@ function parseItems(raw, currency) {
   });
 }
 
-const ymd = (ms) => new Date(ms).toISOString().slice(0, 10);
 
 export async function run(args, ctx) {
   const sub = args._?.[0];

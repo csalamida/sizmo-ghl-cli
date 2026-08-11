@@ -6,6 +6,7 @@
 import { mapLimit } from '../lib/pool.mjs';
 import { ENTITY_SPECS, timezoneFromModel } from '../lib/model.mjs';
 import { exitForBlockedSource } from '../lib/blind.mjs';
+import { agoCoarse, fmtDateTime } from '../lib/dates.mjs';
 export const meta = {
   name: 'noshow',
   summary: 'No-show recovery — who to re-book',
@@ -125,13 +126,9 @@ export async function run(args, ctx) {
 
   const DAYS = args.days ?? 30;
   const NOW = ctx.now;
-  const ago = (t) => {
-    const d = Math.floor((NOW - t) / 86400000);
-    return d >= 1 ? d + 'd' : Math.max(1, Math.floor((NOW - t) / 3600000)) + 'h';
-  };
+  const ago = (t) => agoCoarse(NOW, t);
   const tz = timezoneFromModel(ctx.model);
-  const fmt = (t) =>
-    new Date(t).toLocaleString('en-US', { timeZone: tz, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const fmt = (t) => fmtDateTime(t, tz);
 
   ctx.out.card(() => {
     if (data.blocked) {
