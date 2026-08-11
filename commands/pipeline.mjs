@@ -10,6 +10,7 @@ import { ENTITY_SPECS } from '../lib/model.mjs';
 import { fmtMoney } from '../lib/money.mjs';
 import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
 import { agoCoarse } from '../lib/dates.mjs';
+import { resolveFormat, renderShareable } from '../lib/render.mjs';
 
 export const meta = {
   name: 'pipeline',
@@ -17,6 +18,7 @@ export const meta = {
   flags: [
     { name: '--stuck-days', type: 'int', default: 7, desc: 'idle threshold in days' },
     { name: '--top', type: 'int', default: 100, desc: 'max stuck deals to show' },
+    { name: '--format', type: 'str', default: 'pretty', desc: 'human render: pretty (default) | slack | md — affects human output only, never --json' },
   ],
   readOnly: true,
 };
@@ -213,7 +215,26 @@ export async function run(args, ctx) {
   const STUCK_DAYS = args['stuck-days'] ?? 7;
   const TOP = args.top ?? 100;
 
+  const _fmt = resolveFormat(args, ctx);
   ctx.out.card(() => {
+    // Shareable formats render from the payload and stop here; `pretty` below is untouched.
+    if (_fmt !== 'pretty') return renderShareable(ctx, _fmt, {
+      title: 'Pipeline',
+      meta: [`loc ${data.location}`, ctx.cfg.profileName ? `profile ${ctx.cfg.profileName}` : null].filter(Boolean).join(' · '),
+      stats: [
+        ['Open value', fmtMoney(data.totalValue, 'PHP')],
+        ['Open deals', String(data.openCount)],
+        ['Stuck', String((data.stuck ?? []).length)],
+      ],
+      table: {
+        columns: ['Deal', 'Value', 'Stage', 'Idle'],
+        rows: (data.stuck ?? []).map(x => [x.name ?? '—', fmtMoney(x.value, 'PHP'), x.stage ?? '—', x.idle ?? '—']),
+      },
+      notes: [
+        data.truncated ? 'The scan was capped — open value is a FLOOR, not a total.' : null,
+      ].filter(Boolean),
+      footer: 'Deal values are PHP by GoHighLevel convention — the API exposes no per-deal currency.',
+    });
     // Blocked → say UNKNOWN. money(null) across null deals would read as a healthy empty
     // pipeline to someone whose deals were never visible.
     if (data.blocked) {

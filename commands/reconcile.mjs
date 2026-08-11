@@ -10,6 +10,7 @@ import { ENTITY_SPECS } from '../lib/model.mjs';
 import { fmtMoney as m } from '../lib/money.mjs';
 import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
 import { ymd } from '../lib/dates.mjs';
+import { resolveFormat, renderShareable } from '../lib/render.mjs';
 
 export const meta = {
   name: 'reconcile',
@@ -17,6 +18,7 @@ export const meta = {
   flags: [
     { name: '--days', type: 'int', default: 30, desc: 'window in days' },
     { name: '--top', type: 'int', default: 20, desc: 'max source rows' },
+    { name: '--format', type: 'str', default: 'pretty', desc: 'human render: pretty (default) | slack | md — affects human output only, never --json' },
   ],
   readOnly: true,
 };
@@ -236,7 +238,32 @@ export async function run(args, ctx) {
     : m(data.collected, data.currency);
   const cur = data.currency || 'PHP';
 
+  const _fmt = resolveFormat(args, ctx);
   ctx.out.card(() => {
+    // Shareable formats render from the payload and stop here; `pretty` below is untouched.
+    if (_fmt !== 'pretty') return renderShareable(ctx, _fmt, {
+      title: `Payments reconciliation — last ${data.days}d`,
+      meta: [`loc ${data.location}`, ctx.cfg.profileName ? `profile ${ctx.cfg.profileName}` : null].filter(Boolean).join(' · '),
+      stats: [
+        ['Collected', data.byCurrency
+          ? Object.entries(data.byCurrency).map(([c, v]) => m(v, c)).join(' + ')
+          : m(data.collected, data.currency)],
+        ['Payments in window', String(data.inWindow)],
+        ['Transactions scanned', String(data.scanned)],
+        ['Refunds', String(data.flags?.refunds ?? 0)],
+        ['Failed', String(data.flags?.failed ?? 0)],
+        ['Recurring', data.subscriptions ? `${data.subscriptions.active} active / ${data.subscriptions.total} subs` : "can't see"],
+      ],
+      table: {
+        columns: ['Source', 'Payments'],
+        rows: Object.entries(data.bySource ?? {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, String(v)]),
+      },
+      notes: [
+        data.blocked ? 'A payments source was blocked — collected is UNKNOWN, not zero.' : null,
+        data.byCurrency ? 'Multiple currencies present — totals are NOT summed across them.' : null,
+      ].filter(Boolean),
+      footer: 'Read-only. I reconcile and flag — I never charge, refund, or collect.',
+    });
     // Blocked → UNKNOWN. Printing "0 collected · 0 txn in window" plus a clean flags line would
     // be a fabricated all-clear on money nobody was allowed to look at — and this render also
     // reads data.flags.*, which is null on a blocked read.

@@ -12,12 +12,14 @@ import { collect as bnpCollect }    from './booked-not-paid.mjs';
 import { rankActions, hasMixedCurrencies } from '../lib/prioritize.mjs';
 import { filterSnoozed } from '../lib/memory.mjs';
 import { parseAgeDays } from '../lib/dates.mjs';
+import { resolveFormat, renderShareable } from '../lib/render.mjs';
 
 export const meta = {
   name: 'focus',
   summary: 'one ranked to-do queue by money at stake',
   flags: [
     { name: '--top',        type: 'int',  default: 15,   desc: 'max items to display' },
+    { name: '--format', type: 'str', default: 'pretty', desc: 'human render: pretty (default) | slack | md — affects human output only, never --json' },
     { name: '--stuck-days', type: 'int',  default: 7,    desc: 'idle threshold for stuck deals' },
     { name: '--no-memory',  type: 'bool', default: false, desc: 'skip snooze filtering (pure stateless run)' },
     { name: '--show-acked', type: 'bool', default: false, desc: 'include snoozed/acked items in output' },
@@ -127,7 +129,28 @@ export async function run(args, ctx) {
 
   ctx.out.data(data);
 
+  const _fmt = resolveFormat(args, ctx);
   ctx.out.card(() => {
+    // Shareable formats render from the payload and stop here; `pretty` below is untouched.
+    if (_fmt !== 'pretty') return renderShareable(ctx, _fmt, {
+      title: 'Focus — what to do next',
+      meta: [`loc ${data.location}`, ctx.cfg.profileName ? `profile ${ctx.cfg.profileName}` : null].filter(Boolean).join(' · '),
+      stats: [
+        ['Ranked actions', String((data.ranked ?? []).length)],
+        ['Value unknown', String((data.unknownValue ?? []).length)],
+        ...(data.snoozedCount ? [['Snoozed (hidden)', String(data.snoozedCount)]] : []),
+      ],
+      table: {
+        columns: ['Do this', 'Who', 'Why'],
+        rows: (data.ranked ?? []).map(x => [x.action ?? '—', x.name ?? x.contact ?? '—', x.inputs ?? '—']),
+      },
+      notes: [
+        ctx.out.degraded ? 'A data source was degraded — this list may be incomplete.' : null,
+        data.mixedCurrencies ? 'Multiple currencies present — ranking does not sum across them.' : null,
+        (data.unknownValue ?? []).length ? `${data.unknownValue.length} item(s) have no readable value and are listed separately, never ranked as zero.` : null,
+      ].filter(Boolean),
+      footer: 'Read-only. Nothing here has been actioned.',
+    });
     const W = 70;
     const bar = (ch = '─') => ch.repeat(W);
     ctx.out.line('\n  FOCUS — ranked action queue by money at stake  ·  loc ' + data.location);

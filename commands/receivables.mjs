@@ -6,12 +6,14 @@
 import { paginate } from '../lib/paginate.mjs';
 import { fmtMoney as money } from '../lib/money.mjs';
 import { exitForBlockedSource, notePartialScan } from '../lib/blind.mjs';
+import { resolveFormat, renderShareable } from '../lib/render.mjs';
 
 export const meta = {
   name: 'receivables',
   summary: 'A/R — who owes, how much, how old',
   flags: [
     { name: '--top', type: 'int', default: 20, desc: 'max rows to display' },
+    { name: '--format', type: 'str', default: 'pretty', desc: 'human render: pretty (default) | slack | md — affects human output only, never --json' },
   ],
   readOnly: true,
 };
@@ -118,7 +120,32 @@ export async function run(args, ctx) {
   ctx.out.data(data);
 
   const TOP = args.top ?? 20;
+  const _fmt = resolveFormat(args, ctx);
   ctx.out.card(() => {
+    // Shareable formats render from the payload and stop here; `pretty` below is untouched.
+    if (_fmt !== 'pretty') return renderShareable(ctx, _fmt, {
+      title: 'Receivables',
+      meta: [`loc ${data.location}`, ctx.cfg.profileName ? `profile ${ctx.cfg.profileName}` : null].filter(Boolean).join(' · '),
+      stats: [
+        ['Outstanding', data.byCurrency
+          ? Object.entries(data.byCurrency).map(([c, v]) => money(v, c)).join(' + ')
+          : money(data.totalOwed, data.currency)],
+        ['Invoices', String(data.outstanding)],
+        ['Scanned', String(data.scanned)],
+      ],
+      table: {
+        columns: ['Invoice', 'Client', 'Amount', 'Status', 'Age'],
+        rows: (data.list ?? []).map(x => [
+          x.num ? `#${x.num}` : '—', x.name ?? '—', money(x.total, x.cur), x.status ?? '—',
+          x.age == null ? '—' : (x.overdue ? `${x.age}d overdue` : `due in ${Math.abs(x.age)}d`),
+        ]),
+      },
+      notes: [
+        data.truncated ? 'A page failed mid-scan — this is a FLOOR, not a total. More may be owed.' : null,
+        data.byCurrency ? 'Multiple currencies present — totals are NOT summed across them.' : null,
+      ].filter(Boolean),
+      footer: 'Read-only. sizmo never charges or collects.',
+    });
     // Blocked → say so. Rendering money(null) or "Nothing outstanding. All settled. ✅" here
     // would tell the user their books are clear when the truth is we were denied the read.
     if (data.blocked) {
