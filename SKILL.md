@@ -44,6 +44,7 @@ Run `sizmo sync` to refresh if data looks stale.
 sizmo export --out location.json          # snapshot: pipelines, calendars, fields, values, tags, users
 sizmo diff location.json                  # compare snapshot vs live — see what changed
 sizmo diff before.json after.json         # compare two snapshots
+sizmo apply location.json                 # create what the file describes and this location lacks (additive; 3 of 6 groups)
 ```
 
 Diff output is plain English — no IDs, no JSON arrows:
@@ -64,6 +65,7 @@ Tags
 - `sizmo pipeline` — pipeline health + stuck deals sweep (closest thing to "list open opportunities")
 - `sizmo snapshot` — point-in-time state summary
 - `sizmo export` — full location dump to JSON (deterministic, key-sorted, byte-identical re-exports)
+- `sizmo apply <file>` — **confirm-gated, additive only.** Creates custom values, custom fields and calendars the file has and this location does not. Matches on NAME (not id), so it is idempotent across locations. It can never create pipelines, location tags or users — GoHighLevel has no API operation for those — and it says so in the preview rather than doing three sixths of the job silently. Never deletes, renames or updates.
 - `sizmo diff <file> [file2]` — what changed between saved state and live (or two saved states)
 - `sizmo segment --tag X` — find contacts by criteria (tag, phone, created-days, etc.)
 - `sizmo crm` — query the local CRM model — counts, lists, staleness

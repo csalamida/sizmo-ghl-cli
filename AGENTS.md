@@ -48,6 +48,7 @@ Run `sizmo sync` to refresh if data looks stale.
 sizmo export --out location.json          # snapshot: pipelines, calendars, fields, values, tags, users
 sizmo diff location.json                  # compare snapshot vs live — see what changed
 sizmo diff before.json after.json         # compare two snapshots
+sizmo apply location.json --confirm       # additive scaffold: creates missing custom values/fields/calendars
 ```
 
 Diff output is plain English — no IDs, no JSON arrows:
