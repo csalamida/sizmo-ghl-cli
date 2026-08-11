@@ -274,3 +274,60 @@ test('no ANSI escape sequences anywhere in the shipped source', async () => {
   assert.deepEqual(offenders, [],
     `these emit ANSI escapes with no colour support behind them: ${offenders.join(', ')}`);
 });
+
+// ── --fields must not GUT an array it does not fit ──────────────────────────
+// Projecting every array with one flat field list emptied the arrays whose items carry none of the
+// requested keys. Measured 2026-08-11 with `--fields name,total` against real payload shapes: four
+// of six arrays came back as lists of EMPTY OBJECTS — the right length, carrying nothing. A consumer
+// counting rows sees data; a consumer reading rows sees none, with nothing to say they disagree.
+//
+// Same rule as "a blocked source is UNKNOWN, never zero", one level up: fields that do not APPLY to
+// an array must not render as an array of empties.
+
+test('--fields leaves an array alone when NO item carries any requested field', () => {
+  let buf = '';
+  const out = makeOut({ json: true, command: 'pipeline', location: 'L', fields: ['name', 'total'],
+                        write: (s) => { buf += s; }, writeErr: () => {} });
+  // pipelines[] items are {pipeline, stages} — neither `name` nor `total` exists on them.
+  out.data({ pipelines: [{ pipeline: 'Sales', stages: [{ stage: 'New', count: 2 }] }] });
+  out.flush();
+  const arr = JSON.parse(buf).data.pipelines;
+  assert.deepEqual(arr, [{ pipeline: 'Sales', stages: [{ stage: 'New', count: 2 }] }],
+    'an array the field list does not fit was gutted to empty objects instead of left intact');
+});
+
+test('--fields still projects the arrays it DOES fit — the inverse guard', () => {
+  // The over-correction to guard against: bailing out of projection entirely would make --fields a
+  // no-op, which is the bug this whole path already had once.
+  let buf = '';
+  const out = makeOut({ json: true, command: 'receivables', location: 'L', fields: ['name', 'total'],
+                        write: (s) => { buf += s; }, writeErr: () => {} });
+  out.data({ list: [{ name: 'Ana', total: 100, id: 'i1', status: 'sent' }] });
+  out.flush();
+  assert.deepEqual(JSON.parse(buf).data.list, [{ name: 'Ana', total: 100 }],
+    '--fields stopped projecting an array it genuinely matches');
+});
+
+test('a PARTIAL match still projects — one matching item is enough', () => {
+  // If any item carries a requested field, the field list applies to that array. An item lacking it
+  // legitimately projects to {} — that is "this row has none of your fields", not a gutted array.
+  let buf = '';
+  const out = makeOut({ json: true, command: 'x', location: 'L', fields: ['name'],
+                        write: (s) => { buf += s; }, writeErr: () => {} });
+  out.data({ mixed: [{ name: 'has', other: 1 }, { other: 2 }] });
+  out.flush();
+  assert.deepEqual(JSON.parse(buf).data.mixed, [{ name: 'has' }, {}]);
+});
+
+test('arrays of primitives are never treated as gutted', () => {
+  // project() returns non-objects unchanged, so a list of tag names has no keys to keep and would
+  // look "all empty" to a naive check.
+  let buf = '';
+  const out = makeOut({ json: true, command: 'x', location: 'L', fields: ['name'],
+                        write: (s) => { buf += s; }, writeErr: () => {} });
+  out.data({ tags: ['vip', 'lead'], empty: [] });
+  out.flush();
+  const d = JSON.parse(buf).data;
+  assert.deepEqual(d.tags, ['vip', 'lead']);
+  assert.deepEqual(d.empty, [], 'an empty array stays empty — nothing to preserve or project');
+});
