@@ -219,3 +219,45 @@ test('--fields: non-list keys are untouched (metadata preserved)', () => {
   assert.equal(env.data.threads[0].name, 'Alice');
   assert.ok(!('contactId' in env.data.threads[0]), 'projected field stripped');
 });
+
+// ── the mode switch is --json/--ndjson, never the terminal ──────────────────
+// The module header used to claim "TTY → human card; non-TTY/--json → frozen envelope". card() has
+// never consulted tty — it gates on `machine = json || ndjson` — so redirecting a report to a file
+// writes the full human card. That is the right behaviour (piping is not a request for machine
+// output), but the comment described a rule that did not exist, and someone would plan around it.
+
+test('the human card renders when piped, as long as no machine flag is set', () => {
+  let buf = '';
+  const out = makeOut({ command: 'brief', location: 'L', write: (s) => { buf += s; }, writeErr: () => {} });
+  out.data({ x: 1 });
+  out.card(() => out.line('HUMAN CARD'));
+  out.flush();
+  assert.match(buf, /HUMAN CARD/,
+    'redirecting output must not silently switch the tool to machine mode — only --json/--ndjson do that');
+  assert.ok(!buf.includes('schemaVersion'),
+    'without a machine flag, flush must emit nothing to stdout');
+});
+
+test('makeOut exposes no colour flag', () => {
+  // `color` was computed from tty and honoured NO_COLOR, but nothing ever read it and the codebase
+  // emits zero ANSI escapes. A flag that promises something the layer does not do is worse than its
+  // absence — it invites a caller to branch on it.
+  const out = makeOut({ command: 'brief', location: 'L', write: () => {}, writeErr: () => {} });
+  assert.ok(!('color' in out), 'the dead colour flag is back without an implementation behind it');
+});
+
+test('no ANSI escape sequences anywhere in the shipped source', async () => {
+  // The claim above is only true while it stays true.
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const { join, dirname } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const offenders = [];
+  for (const dir of ['commands', 'lib', 'bin']) {
+    for (const f of readdirSync(join(REPO, dir)).filter(f => f.endsWith('.mjs'))) {
+      if (/\x1b\[/.test(readFileSync(join(REPO, dir, f), 'utf8'))) offenders.push(`${dir}/${f}`);
+    }
+  }
+  assert.deepEqual(offenders, [],
+    `these emit ANSI escapes with no colour support behind them: ${offenders.join(', ')}`);
+});
