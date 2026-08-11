@@ -15,6 +15,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [3.3.0] — 2026-08-11
+
+Additive. Nothing existing changed behaviour.
+
+### Added — `sizmo apply`
+
+Phase 3 of location-as-file: **export → diff → apply**. Creates what an export file describes and
+this location is missing.
+
+```
+sizmo apply location.json            previews the plan, exits 5
+sizmo apply location.json --confirm  creates
+```
+
+**It never deletes, renames or updates.** Additive only. An apply that could delete is a different
+tool with a different blast radius, and "I ran it against the wrong location" has to stay
+recoverable.
+
+**It cannot copy a location, and says so in the text you approve.** Three of the six exported groups
+have no create path — not unimplemented here, absent from the GoHighLevel API entirely:
+
+```
+CANNOT BE CREATED — no API operation exists:
+  pipelines: 2 in the file cannot be created · GoHighLevel exposes no create-pipeline operation
+  tags: 2 · location-level tags are not writable through the API
+  users: 1 · the API carries no user operations at all
+
+⚠ after this runs the location will NOT be a full copy of the file
+```
+
+That block sits inside the confirmation, because a limit shown after approval is a limit you
+approved without reading.
+
+**It is idempotent across locations.** It matches on NAME, not id. Applying a file into a different
+location means every id differs, so id-matching would treat everything as missing and a second run
+would duplicate the lot.
+
+Per-group **fidelity** is stated, because an export does not capture everything a create accepts.
+Custom values reproduce exactly. Custom fields reproduce name and type but lose placeholder, position
+and picklist options. Calendars are **name only** — the export records just id and name, so an
+applied calendar is a namesake, not a copy.
+
+A name that exists but whose content differs is reported and left alone. A group this location cannot
+read is skipped, never created blind. A failure stops the run and marks the remaining steps as not
+attempted.
+
+### Added — `--format md|slack` on `receivables`, `reconcile`, `pipeline` and `focus`
+
+`brief` already had it; these four now share one renderer rather than four copies of a format. Paste
+a report into Slack, an email or Notion instead of reading it in a terminal.
+
+Caveats travel with the report. A note saying "this is a FLOOR, a source was blocked" appears in
+every format — one that showed it in the terminal and dropped it in Slack would leave the reader with
+a number they think is a total.
+
+An unknown `--format` now warns and names the valid values instead of silently rendering `pretty`.
+
+### Changed — every catalogued API operation now has a decision
+
+`docs/api-coverage.md` had 56 operations marked "unreviewed". All 56 now have an answer: 49
+deliberate with a written reason, 7 in a new **wanted** category — in scope, nothing blocking them,
+simply not built.
+
+The scope note was corrected: it still claimed voice-ai was uncaptured four days after `sizmo calls`
+shipped against it, and it now states plainly that the inventory is a **floor**. "Unreviewed: 0"
+means every operation we know about has a decision — never that the API has no more surface.
+
 ## [3.2.0] — 2026-08-11
 
 Two additions. Nothing existing changed behaviour, so upgrading is safe.
