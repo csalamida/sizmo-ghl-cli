@@ -248,14 +248,27 @@ test('makeOut exposes no colour flag', () => {
 
 test('no ANSI escape sequences anywhere in the shipped source', async () => {
   // The claim above is only true while it stays true.
+  //
+  // Matching a real ESC BYTE is not enough, and a mutation proved it: adding
+  // `const BOLD = '\x1b[1m'` to a command left this test green, because source code contains the
+  // four-character ESCAPE FORM (backslash-x-1-b), not the byte itself. A guard that only sees the
+  // byte can never catch colour added the normal way — which is the only way it would be added.
+  // So both forms are checked, plus the other spellings of the same escape.
   const { readFileSync, readdirSync } = await import('node:fs');
   const { join, dirname } = await import('node:path');
   const { fileURLToPath } = await import('node:url');
   const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  // eslint-disable-next-line no-control-regex
+  const RAW_BYTE = /\[/;                       // an actual ESC in the file
+  const SOURCE_FORMS = /\\(x1[bB]|u001[bB]|033|e)\[/; // how a human would write it in JS
   const offenders = [];
   for (const dir of ['commands', 'lib', 'bin']) {
     for (const f of readdirSync(join(REPO, dir)).filter(f => f.endsWith('.mjs'))) {
-      if (/\x1b\[/.test(readFileSync(join(REPO, dir, f), 'utf8'))) offenders.push(`${dir}/${f}`);
+      const src = readFileSync(join(REPO, dir, f), 'utf8');
+      // CODE only — this very test's own explanation names the escape forms it looks for, and a
+      // guard reading its own prose is a false positive this codebase has produced repeatedly.
+      const code = src.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
+      if (RAW_BYTE.test(code) || SOURCE_FORMS.test(code)) offenders.push(`${dir}/${f}`);
     }
   }
   assert.deepEqual(offenders, [],
