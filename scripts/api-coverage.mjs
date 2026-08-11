@@ -23,6 +23,58 @@ const inventory = JSON.parse(readFileSync(join(REPO, 'docs', 'api-inventory.json
 // Operations sizmo intentionally does not implement. Each needs a REASON — an unexplained entry
 // here is indistinguishable from a gap someone got tired of looking at.
 const DELIBERATE_OMISSIONS = {
+  // ── triaged 2026-08-11 — every remaining unreviewed operation got a decision ──
+  'createSchedule': 'availability rules are booking-system CONFIGURATION — set up in the UI once, not operated daily. sizmo books, cancels and reports on appointments; it does not build the booking system.',
+  'updateSchedule': 'same: availability configuration, not an operation.',
+  'deleteSchedule': 'same: availability configuration.',
+  'getScheduleById': 'same surface. The operational question is "what is booked" (`appointment list`) and "when am I free" (get-slots, backlogged), not "what are my rules".',
+  'getAllSchedules': 'same surface.',
+  'getCalendarSchedule': 'same surface, event-calendar variant.',
+  'createCalendarSchedule': 'same surface, event-calendar variant.',
+  'updateCalendarSchedule': 'same surface, event-calendar variant.',
+  'add-calendar-to-schedule': 'wiring a schedule to a calendar is setup, done once in the UI.',
+  'remove-calendar-from-schedule': 'same setup surface.',
+  'create-calendar-group': 'calendar GROUPS organise a booking page. Presentation configuration, not an operation.',
+  'edit-group': 'same: presentation configuration.',
+  'delete-group': 'same: presentation configuration.',
+  'create-calendar-resource': 'resources (rooms, equipment) are a scheduling model sizmo does not expose — the ICP is a coach with a calendar, not a clinic with rooms.',
+  'update-calendar-resource': 'same: resource model not exposed.',
+  'delete-calendar-resource': 'same: resource model not exposed.',
+  'create-service-catalog': 'the services product surface is separate from appointments and sizmo exposes neither. Consistent with the existing update-service-booking decision.',
+  'update-service-catalog': 'same services surface.',
+  'delete-service-catalog': 'same services surface.',
+  'create-service-booking': 'same services surface — and consistent with the existing update-service-booking omission.',
+  'delete-service-booking': 'same services surface.',
+  'create-service-location': 'same services surface.',
+  'update-service-location': 'same services surface.',
+  'delete-service-location': 'same services surface.',
+  'create-event-notification': 'appointment reminder configuration. Set once in the UI; sizmo does not author automations (the same line that keeps workflow authoring out).',
+  'update-event-notification': 'same: reminder configuration.',
+  'delete-event-notification': 'same: reminder configuration.',
+  'create-invoice-template': 'invoice templates are document CONFIGURATION, authored in the UI where they can be seen.',
+  'update-invoice-template': 'same: template configuration.',
+  'delete-invoice-template': 'same: template configuration.',
+  'get-invoice-template': 'same surface — sizmo does not expose templates, so reading one has nothing to attach to.',
+  'list-invoice-templates': 'same surface.',
+  'create-estimate-template': 'estimate templates depend on an estimates surface that is BACKLOG, not built. Revisit with it.',
+  'list-estimate-templates': 'same: depends on the estimates surface.',
+  'delete-estimate-template': 'same: depends on the estimates surface. (An existing entry already records update-estimate-template.)',
+  'create-invoice-schedule': 'recurring BILLING SETUP is configuration — deciding a customer pays monthly is a UI decision made once. sizmo reports the money that results (`reconcile` reads payments/subscriptions) and the schedule LIST is backlogged as a read.',
+  'update-invoice-schedule': 'same: recurring billing configuration.',
+  'delete-invoice-schedule': 'same: recurring billing configuration.',
+  'get-invoice-schedule': 'the LIST is the operational read and is backlogged; a single-schedule fetch adds nothing until schedules are exposed.',
+  'schedule-invoice-schedule': 'starts a recurring billing run — a money-moving decision that belongs in the UI where the whole schedule is visible. sizmo never automates money.',
+  'cancel-invoice-schedule': 'same: money-moving recurring decision, made in the UI.',
+  'auto-payment-invoice-schedule': 'turning on automatic charging is the single most consequential money setting in the account. Deliberately not reachable from a CLI.',
+  'get-invoice-settings': 'account-level invoice configuration (numbering, terms). Set once in the UI.',
+  'text2pay-invoice': 'REDUNDANT: it creates and sends in one call, which is exactly the preview-then-fire split sizmo deliberately separates into `invoice draft` + `invoice send`. Collapsing them would remove the step where a human sees the invoice before the customer does.',
+  'add-followers-opportunity': 'followers are team-assignment. sizmo reports on deals and moves them; it is not a team-management surface.',
+  'remove-followers-opportunity': 'same: team assignment.',
+  'get-note': 'REDUNDANT and against an existing decision: note surfaces are create-only (2.4.8), and `get-all-notes` is already a deliberate omission. A single-note fetch is note archaeology.',
+  'get-task': 'REDUNDANT: sizmo ships no task surface by design (see create-task) — there is nothing to read a task into.',
+  'voice-ai.get-agent': 'REDUNDANT: `sizmo calls` lists agents and attributes calls to them. A single-agent fetch answers a configuration question, and agent CONFIG is deliberately out (sizmo reports on Voice AI, it does not author agents).',
+  'getCallLog': 'REDUNDANT: `sizmo calls` returns the call rows. A single-call fetch would add a transcript-drilldown surface, which is a different feature than "how did the AI do this week".',
+
   'contacts.bulk-tags':          'bulk write. sizmo\'s delete/write commands are single-target by design — a bulk tag update cannot be previewed meaningfully per contact.',
   'add-an-inbound-message':      'fabricates inbound history. sizmo records what happened, it does not invent it.',
   'add-an-outbound-message':     'logs an external call sizmo did not place. Same reason as inbound.',
@@ -65,6 +117,39 @@ const DELIBERATE_OMISSIONS = {
 };
 
 // A third category, added 2026-07-27 because neither existing one was honest about record-invoice.
+// WANTED means: in scope, genuinely useful to the ICP, nothing unsafe about building it — just not
+// built yet. It is a BACKLOG, not a defect and not a decision against.
+//
+// This category exists because the other two would both be lies for these. "Deliberate" says we
+// looked and decided against it. "Blocked on verification" says building it correctly needs
+// something unsafe. Neither is true of an estimates surface or a free-slots read: they are simply
+// work nobody has done. Leaving them "unreviewed" was the third lie — it says nobody has looked,
+// and someone now has.
+const WANTED_NOT_BUILT = {
+  // ── calendars ──
+  'get-slots': 'IN SCOPE. "When am I free?" is a business question and sizmo cannot answer it. '
+    + 'Everything else in the calendars backlog is booking-system CONFIGURATION; this one is a read '
+    + 'a coach would run weekly. Distinct from `appointment list`, which says what is booked, not what is open.',
+
+  // ── invoices: the estimates surface ──
+  // Quote → accept → invoice is a real coach workflow and sizmo covers none of it. It is a whole
+  // surface rather than a gap, which is why it is backlog and not a bug.
+  'create-new-estimate':          'IN SCOPE. Quote → invoice is a genuine coach workflow sizmo does not cover at all.',
+  'send-estimate':                'IN SCOPE. Half of an estimates surface is worse than none; it lands with create/list.',
+  'list-estimates':               'IN SCOPE. Without a list, an estimate id is irrecoverable — the same hole `invoice list` closed for invoices.',
+  'create-invoice-from-estimate': 'IN SCOPE. The whole point of an estimate: turn the accepted one into an invoice without retyping it.',
+
+  // ── invoices: recurring, read only ──
+  'list-invoice-schedules': 'IN SCOPE as a READ. "What recurring billing do I have running?" is a money question. '
+    + 'Note `reconcile` already reports MRR from payments/subscriptions, so this is the invoice-side view of the same '
+    + 'money, not a missing number. The recurring-schedule WRITES are deliberate omissions — see below.',
+
+  // ── opportunities ──
+  'Upsert-opportunity': 'IN SCOPE. sizmo has create and update but not the idempotent form. This codebase already '
+    + 'treats retry-safety as a correctness property (POST is never retried on timeout because it is not idempotent); '
+    + 'an upsert is the endpoint that makes a retried deal-create safe.',
+};
+
 // BLOCKED means: in scope, genuinely wanted, and NOT implemented because doing it correctly needs
 // verification that is not safe to perform. Marking such a thing "deliberate" would imply we do not
 // want it; leaving it "unreviewed" would imply nobody has looked. Both are lies.
@@ -149,13 +234,15 @@ const rows = inventory.operations.map(op => {
     by: by ? [...by].sort().join(', ') : null,
     deliberate: DELIBERATE_OMISSIONS[op.id] ?? null,
     blocked: BLOCKED_ON_VERIFICATION[op.id] ?? null,
+    wanted: WANTED_NOT_BUILT[op.id] ?? null,
   };
 });
 
 const covered   = rows.filter(r => r.covered);
 const deliberate = rows.filter(r => !r.covered && r.deliberate);
 const blocked    = rows.filter(r => !r.covered && !r.deliberate && r.blocked);
-const unreviewed = rows.filter(r => !r.covered && !r.deliberate && !r.blocked);
+const wanted     = rows.filter(r => !r.covered && !r.deliberate && !r.blocked && r.wanted);
+const unreviewed = rows.filter(r => !r.covered && !r.deliberate && !r.blocked && !r.wanted);
 
 // Endpoints sizmo calls that the inventory does not know about. Not necessarily wrong — the
 // inventory is a partial snapshot — but worth surfacing so it can be refreshed deliberately.
@@ -171,14 +258,16 @@ Inventory captured **${inventory._provenance.capturedAt}** via ${inventory._prov
 
 > **This is not a to-do list.** Most uncovered operations *should* be uncovered — sizmo is built for
 > coaches and consultants, so e-commerce, blogs and social surfaces have no place in it. Gaps are
-> split into **deliberate** (decided, with a reason) and **unreviewed** (needs a human decision).
+> split into **deliberate** (decided, with a reason), **wanted** (backlog — nothing blocking it),
+> **blocked** (needs unsafe verification) and **unreviewed** (nobody has looked yet).
 > An unreviewed gap is a question, not a defect.
 
 | | count | share |
 |---|---:|---:|
 | Covered by a sizmo command | ${covered.length} | ${pct(covered.length)} |
 | Deliberately not implemented | ${deliberate.length} | ${pct(deliberate.length)} |
-| **Blocked on verification — wanted** | **${blocked.length}** | ${pct(blocked.length)} |
+| **Blocked on verification** | **${blocked.length}** | ${pct(blocked.length)} |
+| **Wanted — backlog, nothing blocking it** | **${wanted.length}** | ${pct(wanted.length)} |
 | **Unreviewed — needs a decision** | **${unreviewed.length}** | **${pct(unreviewed.length)}** |
 | Inventory total | ${rows.length} | |
 
@@ -188,6 +277,15 @@ ${unreviewed.length === 0 ? '_None. Every operation in the inventory is either c
 `| Operation | Method | Path | Domain |
 |---|---|---|---|
 ${unreviewed.map(r => `| \`${r.id}\` | ${r.method} | \`${r.path}\` | ${r.domain} |`).join('\n')}`}
+
+## Wanted — backlog, nothing blocking it
+
+In scope, useful to the ICP, and nothing unsafe about building it. Just not built. This is a
+BACKLOG, not a defect and not a decision against — the other labels would each be a lie here.
+"Deliberate" says we looked and decided against. "Blocked on verification" says it needs something
+unsafe. "Unreviewed" says nobody looked, and someone has.
+
+${wanted.length === 0 ? '_None._' : wanted.map(r => `### \`${r.id}\` — ${r.method} \`${r.path}\`\n\n${r.wanted}`).join('\n\n')}
 
 ## Blocked on verification — wanted, not shipped
 

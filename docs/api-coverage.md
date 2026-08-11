@@ -7,77 +7,57 @@ Inventory captured **2026-08-11** via LeadConnector MCP for Anthropic (/mcp/anth
 
 > **This is not a to-do list.** Most uncovered operations *should* be uncovered — sizmo is built for
 > coaches and consultants, so e-commerce, blogs and social surfaces have no place in it. Gaps are
-> split into **deliberate** (decided, with a reason) and **unreviewed** (needs a human decision).
+> split into **deliberate** (decided, with a reason), **wanted** (backlog — nothing blocking it),
+> **blocked** (needs unsafe verification) and **unreviewed** (nobody has looked yet).
 > An unreviewed gap is a question, not a defect.
 
 | | count | share |
 |---|---:|---:|
 | Covered by a sizmo command | 31 | 27% |
-| Deliberately not implemented | 28 | 24% |
-| **Blocked on verification — wanted** | **1** | 1% |
-| **Unreviewed — needs a decision** | **56** | **48%** |
+| Deliberately not implemented | 77 | 66% |
+| **Blocked on verification** | **1** | 1% |
+| **Wanted — backlog, nothing blocking it** | **7** | 6% |
+| **Unreviewed — needs a decision** | **0** | **0%** |
 | Inventory total | 116 | |
 
 ## Unreviewed — needs a decision
 
-| Operation | Method | Path | Domain |
-|---|---|---|---|
-| `get-slots` | GET | `/calendars/{calendarId}/free-slots` | calendars |
-| `delete-event-notification` | DELETE | `/calendars/{calendarId}/notifications/{notificationId}` | calendars |
-| `update-event-notification` | PUT | `/calendars/{calendarId}/notifications/{notificationId}` | calendars |
-| `create-event-notification` | POST | `/calendars/{calendarId}/notifications` | calendars |
-| `delete-group` | DELETE | `/calendars/groups/{groupId}` | calendars |
-| `edit-group` | PUT | `/calendars/groups/{groupId}` | calendars |
-| `create-calendar-group` | POST | `/calendars/groups` | calendars |
-| `delete-calendar-resource` | DELETE | `/calendars/resources/{resourceType}/{id}` | calendars |
-| `update-calendar-resource` | PUT | `/calendars/resources/{resourceType}/{id}` | calendars |
-| `create-calendar-resource` | POST | `/calendars/resources/{resourceType}` | calendars |
-| `remove-calendar-from-schedule` | DELETE | `/calendars/schedules/{id}/associations/{calendarId}` | calendars |
-| `add-calendar-to-schedule` | PUT | `/calendars/schedules/{id}/associations/{calendarId}` | calendars |
-| `deleteSchedule` | DELETE | `/calendars/schedules/{id}` | calendars |
-| `getScheduleById` | GET | `/calendars/schedules/{id}` | calendars |
-| `getCalendarSchedule` | GET | `/calendars/schedules/event-calendar/{calendarId}` | calendars |
-| `createCalendarSchedule` | POST | `/calendars/schedules/event-calendar/{calendarId}` | calendars |
-| `updateCalendarSchedule` | PUT | `/calendars/schedules/event-calendar/{calendarId}` | calendars |
-| `getAllSchedules` | GET | `/calendars/schedules/search` | calendars |
-| `createSchedule` | POST | `/calendars/schedules` | calendars |
-| `delete-service-booking` | DELETE | `/calendars/services/bookings/{bookingId}` | calendars |
-| `create-service-booking` | POST | `/calendars/services/bookings` | calendars |
-| `delete-service-catalog` | DELETE | `/calendars/services/catalog/{serviceId}` | calendars |
-| `update-service-catalog` | PUT | `/calendars/services/catalog/{serviceId}` | calendars |
-| `create-service-catalog` | POST | `/calendars/services/catalog` | calendars |
-| `delete-service-location` | DELETE | `/calendars/services/locations/{serviceLocationId}` | calendars |
-| `update-service-location` | PUT | `/calendars/services/locations/{serviceLocationId}` | calendars |
-| `create-service-location` | POST | `/calendars/services/locations` | calendars |
-| `get-note` | GET | `/contacts/{contactId}/notes/{id}` | contacts |
-| `get-task` | GET | `/contacts/{contactId}/tasks/{taskId}` | contacts |
-| `create-invoice-from-estimate` | POST | `/invoices/estimate/{estimateId}/invoice` | invoices |
-| `send-estimate` | POST | `/invoices/estimate/{estimateId}/send` | invoices |
-| `list-estimates` | GET | `/invoices/estimate/list` | invoices |
-| `delete-estimate-template` | DELETE | `/invoices/estimate/template/{templateId}` | invoices |
-| `list-estimate-templates` | GET | `/invoices/estimate/template` | invoices |
-| `create-estimate-template` | POST | `/invoices/estimate/template` | invoices |
-| `create-new-estimate` | POST | `/invoices/estimate` | invoices |
-| `auto-payment-invoice-schedule` | POST | `/invoices/schedule/{scheduleId}/auto-payment` | invoices |
-| `cancel-invoice-schedule` | POST | `/invoices/schedule/{scheduleId}/cancel` | invoices |
-| `schedule-invoice-schedule` | POST | `/invoices/schedule/{scheduleId}/schedule` | invoices |
-| `delete-invoice-schedule` | DELETE | `/invoices/schedule/{scheduleId}` | invoices |
-| `get-invoice-schedule` | GET | `/invoices/schedule/{scheduleId}` | invoices |
-| `update-invoice-schedule` | PUT | `/invoices/schedule/{scheduleId}` | invoices |
-| `list-invoice-schedules` | GET | `/invoices/schedule` | invoices |
-| `create-invoice-schedule` | POST | `/invoices/schedule` | invoices |
-| `get-invoice-settings` | GET | `/invoices/settings` | invoices |
-| `delete-invoice-template` | DELETE | `/invoices/template/{templateId}` | invoices |
-| `get-invoice-template` | GET | `/invoices/template/{templateId}` | invoices |
-| `update-invoice-template` | PUT | `/invoices/template/{templateId}` | invoices |
-| `list-invoice-templates` | GET | `/invoices/template` | invoices |
-| `create-invoice-template` | POST | `/invoices/template` | invoices |
-| `text2pay-invoice` | POST | `/invoices/text2pay` | invoices |
-| `remove-followers-opportunity` | DELETE | `/opportunities/{id}/followers` | opportunities |
-| `add-followers-opportunity` | POST | `/opportunities/{id}/followers` | opportunities |
-| `Upsert-opportunity` | POST | `/opportunities/upsert` | opportunities |
-| `voice-ai.get-agent` | GET | `/voice-ai/agents/{agentId}` | voice-ai |
-| `getCallLog` | GET | `/voice-ai/dashboard/call-logs/{callId}` | voice-ai |
+_None. Every operation in the inventory is either covered or explicitly decided against._
+
+## Wanted — backlog, nothing blocking it
+
+In scope, useful to the ICP, and nothing unsafe about building it. Just not built. This is a
+BACKLOG, not a defect and not a decision against — the other labels would each be a lie here.
+"Deliberate" says we looked and decided against. "Blocked on verification" says it needs something
+unsafe. "Unreviewed" says nobody looked, and someone has.
+
+### `get-slots` — GET `/calendars/{calendarId}/free-slots`
+
+IN SCOPE. "When am I free?" is a business question and sizmo cannot answer it. Everything else in the calendars backlog is booking-system CONFIGURATION; this one is a read a coach would run weekly. Distinct from `appointment list`, which says what is booked, not what is open.
+
+### `create-invoice-from-estimate` — POST `/invoices/estimate/{estimateId}/invoice`
+
+IN SCOPE. The whole point of an estimate: turn the accepted one into an invoice without retyping it.
+
+### `send-estimate` — POST `/invoices/estimate/{estimateId}/send`
+
+IN SCOPE. Half of an estimates surface is worse than none; it lands with create/list.
+
+### `list-estimates` — GET `/invoices/estimate/list`
+
+IN SCOPE. Without a list, an estimate id is irrecoverable — the same hole `invoice list` closed for invoices.
+
+### `create-new-estimate` — POST `/invoices/estimate`
+
+IN SCOPE. Quote → invoice is a genuine coach workflow sizmo does not cover at all.
+
+### `list-invoice-schedules` — GET `/invoices/schedule`
+
+IN SCOPE as a READ. "What recurring billing do I have running?" is a money question. Note `reconcile` already reports MRR from payments/subscriptions, so this is the invoice-side view of the same money, not a missing number. The recurring-schedule WRITES are deliberate omissions — see below.
+
+### `Upsert-opportunity` — POST `/opportunities/upsert`
+
+IN SCOPE. sizmo has create and update but not the idempotent form. This codebase already treats retry-safety as a correctness property (POST is never retried on timeout because it is not idempotent); an upsert is the endpoint that makes a retried deal-create safe.
 
 ## Blocked on verification — wanted, not shipped
 
@@ -93,6 +73,9 @@ WANTED, blocked on an under-specified payload. sizmo can draft and send an invoi
 
 | Operation | Reason |
 |---|---|
+| `delete-event-notification` | same: reminder configuration. |
+| `update-event-notification` | same: reminder configuration. |
+| `create-event-notification` | appointment reminder configuration. Set once in the UI; sizmo does not author automations (the same line that keeps workflow authoring out). |
 | `delete-appointment-note` | same create-only decision (2.4.8). |
 | `update-appointment-note` | same create-only decision (2.4.8), applied to appointment notes for consistency with contact notes. |
 | `get-appointment-notes` | same create-only decision (2.4.8). |
@@ -100,13 +83,38 @@ WANTED, blocked on an under-specified payload. sizmo can draft and send an invoi
 | `delete-event` | REDUNDANT for appointments: `sizmo appointment cancel` uses the appointment-specific DELETE /calendars/events/appointments/{id}. This generic route also covers block slots, which are already a deliberate omission. |
 | `edit-block-slot` | same as create-block-slot. |
 | `create-block-slot` | calendar availability editing is a UI-shaped task; no CLI demand seen. |
+| `delete-group` | same: presentation configuration. |
+| `edit-group` | same: presentation configuration. |
+| `create-calendar-group` | calendar GROUPS organise a booking page. Presentation configuration, not an operation. |
+| `delete-calendar-resource` | same: resource model not exposed. |
+| `update-calendar-resource` | same: resource model not exposed. |
+| `create-calendar-resource` | resources (rooms, equipment) are a scheduling model sizmo does not expose — the ICP is a coach with a calendar, not a clinic with rooms. |
+| `remove-calendar-from-schedule` | same setup surface. |
+| `add-calendar-to-schedule` | wiring a schedule to a calendar is setup, done once in the UI. |
+| `deleteSchedule` | same: availability configuration. |
+| `getScheduleById` | same surface. The operational question is "what is booked" (`appointment list`) and "when am I free" (get-slots, backlogged), not "what are my rules". |
 | `updateSchedule` | availability rules are UI-shaped and high-blast; not a CLI surface. |
+| `getCalendarSchedule` | same surface, event-calendar variant. |
+| `createCalendarSchedule` | same surface, event-calendar variant. |
+| `updateCalendarSchedule` | same surface, event-calendar variant. |
+| `getAllSchedules` | same surface. |
+| `createSchedule` | availability rules are booking-system CONFIGURATION — set up in the UI once, not operated daily. sizmo books, cancels and reports on appointments; it does not build the booking system. |
+| `delete-service-booking` | same services surface. |
 | `update-service-booking` | service bookings are a separate product surface from appointments. |
+| `create-service-booking` | same services surface — and consistent with the existing update-service-booking omission. |
+| `delete-service-catalog` | same services surface. |
+| `update-service-catalog` | same services surface. |
+| `create-service-catalog` | the services product surface is separate from appointments and sizmo exposes neither. Consistent with the existing update-service-booking decision. |
+| `delete-service-location` | same services surface. |
+| `update-service-location` | same services surface. |
+| `create-service-location` | same services surface. |
 | `delete-note` | same create-only decision (2.4.8). Deleting a note destroys the record of a conversation; the UI is the right place for that. |
+| `get-note` | REDUNDANT and against an existing decision: note surfaces are create-only (2.4.8), and `get-all-notes` is already a deliberate omission. A single-note fetch is note archaeology. |
 | `update-note` | note surfaces are create-only by an existing decision (2.4.8) — a note is an append-only record; editing rewrites history. |
 | `get-all-notes` | same create-only decision (2.4.8). Reading notes back is a UI task; sizmo surfaces the conversation via `triage`, not note archaeology. |
 | `update-task-completed` | same: no task surface by design. |
 | `delete-task` | same: no task surface by design. |
+| `get-task` | REDUNDANT: sizmo ships no task surface by design (see create-task) — there is nothing to read a task into. |
 | `update-task` | same: no task surface by design. |
 | `get-all-tasks` | same: no task surface by design. |
 | `create-task` | sizmo derives the to-do list from money signals (focus/brief) rather than maintaining a parallel manual task system; `ack` handles suppression. A task CRUD surface would compete with focus for the same question. |
@@ -117,10 +125,31 @@ WANTED, blocked on an under-specified payload. sizmo can draft and send an invoi
 | `add-an-inbound-message` | fabricates inbound history. sizmo records what happened, it does not invent it. |
 | `add-an-outbound-message` | logs an external call sizmo did not place. Same reason as inbound. |
 | `update-estimate` | sizmo has no estimates surface at all — no create, no list. Updating something you can neither create nor read is meaningless. Revisit only if an estimates surface is ever built. |
+| `delete-estimate-template` | same: depends on the estimates surface. (An existing entry already records update-estimate-template.) |
 | `update-estimate-template` | estimate templates depend on an estimates surface sizmo has not built. |
+| `list-estimate-templates` | same: depends on the estimates surface. |
+| `create-estimate-template` | estimate templates depend on an estimates surface that is BACKLOG, not built. Revisit with it. |
+| `auto-payment-invoice-schedule` | turning on automatic charging is the single most consequential money setting in the account. Deliberately not reachable from a CLI. |
+| `cancel-invoice-schedule` | same: money-moving recurring decision, made in the UI. |
+| `schedule-invoice-schedule` | starts a recurring billing run — a money-moving decision that belongs in the UI where the whole schedule is visible. sizmo never automates money. |
+| `delete-invoice-schedule` | same: recurring billing configuration. |
+| `get-invoice-schedule` | the LIST is the operational read and is backlogged; a single-schedule fetch adds nothing until schedules are exposed. |
+| `update-invoice-schedule` | same: recurring billing configuration. |
+| `create-invoice-schedule` | recurring BILLING SETUP is configuration — deciding a customer pays monthly is a UI decision made once. sizmo reports the money that results (`reconcile` reads payments/subscriptions) and the schedule LIST is backlogged as a read. |
+| `get-invoice-settings` | account-level invoice configuration (numbering, terms). Set once in the UI. |
+| `delete-invoice-template` | same: template configuration. |
+| `get-invoice-template` | same surface — sizmo does not expose templates, so reading one has nothing to attach to. |
+| `update-invoice-template` | same: template configuration. |
+| `list-invoice-templates` | same surface. |
+| `create-invoice-template` | invoice templates are document CONFIGURATION, authored in the UI where they can be seen. |
+| `text2pay-invoice` | REDUNDANT: it creates and sends in one call, which is exactly the preview-then-fire split sizmo deliberately separates into `invoice draft` + `invoice send`. Collapsing them would remove the step where a human sees the invoice before the customer does. |
+| `remove-followers-opportunity` | same: team assignment. |
+| `add-followers-opportunity` | followers are team-assignment. sizmo reports on deals and moves them; it is not a team-management surface. |
 | `update-opportunity-status` | REDUNDANT, not missing. PUT /opportunities/{id} accepts `status` directly (verified via describe_operation), and `sizmo opp update --status won|lost|abandoned` already uses it. The dedicated /status route is a convenience alias for the same capability — implementing it would add a second way to do one thing. |
 | `update-coupon` | promotions are e-commerce-shaped, outside the coach/consultant ICP. |
 | `record-order-payment` | order payments belong to the store surface sizmo does not expose. |
+| `voice-ai.get-agent` | REDUNDANT: `sizmo calls` lists agents and attributes calls to them. A single-agent fetch answers a configuration question, and agent CONFIG is deliberately out (sizmo reports on Voice AI, it does not author agents). |
+| `getCallLog` | REDUNDANT: `sizmo calls` returns the call rows. A single-call fetch would add a transcript-drilldown surface, which is a different feature than "how did the AI do this week". |
 
 ## Covered
 
@@ -198,6 +227,6 @@ _Every `ctx.http.*` call site resolved to a concrete path, so the counts above h
 
 ## Scope of the inventory
 
-PARTIAL BY DESIGN. Only the domains sizmo operates in were enumerated: contacts, opportunities, calendars, conversations, locations (custom fields/values), invoices, payments. Domains deliberately outside sizmo's ICP were NOT captured — products, inventory, stores, blogs, social-planner, knowledge-base, voice-ai, saas, medias, funnels, brand-boards.
+PARTIAL BY DESIGN, AND A FLOOR. Enumerated: contacts, opportunities, calendars, conversations, locations (custom fields/values), invoices, payments, and voice-ai (added 2026-08-11 with `sizmo calls`). Deliberately NOT captured, as outside the coach/consultant ICP: products, inventory, stores, blogs, social-planner, knowledge-base, saas, medias, funnels, brand-boards. It is a FLOOR rather than a total: the MCP facade exposes only a SEMANTIC search with no list-everything call (verified 2026-08-04 — a generic query returns 0 results), so operations are found by asking targeted questions and unioning the answers. Two endpoints sizmo had been CALLING for weeks were absent from this file until 2026-08-11, which is what a floor looks like in practice. So 'UNREVIEWED: 0' means every operation we KNOW ABOUT has a decision — never that the API has no more surface.
 
 Every entry below was returned by a real query this session. Nothing here is inferred or remembered. This is a snapshot, not a live view — regenerate when the API changes.

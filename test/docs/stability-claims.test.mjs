@@ -312,3 +312,38 @@ test('CONTRIBUTING does not claim the README table is generated', () => {
     'CONTRIBUTING says the README command table is generated, but scripts/ contains no generator. ' +
     'Either build one or tell contributors to edit the table by hand.');
 });
+
+// ── the coverage report's categories must stay honest ────────────────────────
+
+test('"UNREVIEWED: 0" is never presented without the floor disclaimer', () => {
+  // 0 unreviewed was FALSE COMFORT once already: before 2026-08-04 the inventory held 55 operations
+  // and reported 0 unreviewed, which read as "everything is decided" when it meant "everything we
+  // happened to know about is decided". Harvesting doubled the inventory and 54 questions appeared.
+  //
+  // The number is only honest next to the statement that the inventory is a FLOOR. If someone ever
+  // tidies that paragraph away, the report starts lying again in exactly the same way.
+  const cov = read('docs/api-coverage.md');
+  if (!/\*\*Unreviewed — needs a decision\*\* \| \*\*0\*\*/.test(cov)) return;  // only binds at 0
+  assert.match(cov, /FLOOR/,
+    'the report claims 0 unreviewed without saying the inventory is a floor — that reads as "the API has no more surface"');
+  assert.match(cov, /every operation we KNOW ABOUT has a decision/i,
+    'the scope note must spell out what 0 unreviewed does and does not mean');
+});
+
+test('every operation is in exactly ONE category', () => {
+  // The four categories are mutually exclusive by construction. An operation in two of them means
+  // the filters overlap and a count is double-reported.
+  const cov = read('docs/api-coverage.md');
+  const counts = {};
+  for (const label of ['Covered by a sizmo command', 'Deliberately not implemented',
+                       'Blocked on verification', 'Wanted — backlog, nothing blocking it',
+                       'Unreviewed — needs a decision']) {
+    const m = cov.match(new RegExp(`\\| \\*{0,2}${label.replace(/[-—]/g, '.')}\\*{0,2} \\| \\*{0,2}(\\d+)\\*{0,2} \\|`));
+    assert.ok(m, `the summary table lost its "${label}" row`);
+    counts[label] = Number(m[1]);
+  }
+  const total = Number(cov.match(/\| Inventory total \| (\d+) \|/)[1]);
+  const sum = Object.values(counts).reduce((a, b) => a + b, 0);
+  assert.equal(sum, total,
+    `the categories sum to ${sum} but the inventory holds ${total} — an operation is counted twice or not at all`);
+});

@@ -1,9 +1,9 @@
 {
   "_provenance": {
     "capturedAt": "2026-08-11",
-    "source": "LeadConnector MCP for Anthropic (/mcp/anthropic/v2) — search_operations + describe_operation, INTROSPECTION ONLY, never execute_operation",
-    "scope": "PARTIAL BY DESIGN. Only the domains sizmo operates in were enumerated: contacts, opportunities, calendars, conversations, locations (custom fields/values), invoices, payments. Domains deliberately outside sizmo's ICP were NOT captured — products, inventory, stores, blogs, social-planner, knowledge-base, voice-ai, saas, medias, funnels, brand-boards.",
-    "honesty": "Every entry below was returned by a real query this session. Nothing here is inferred or remembered. This is a snapshot, not a live view — regenerate when the API changes.",
+    "source": "LeadConnector MCP for Anthropic (/mcp/anthropic/v2) \u2014 search_operations + describe_operation, INTROSPECTION ONLY, never execute_operation",
+    "scope": "PARTIAL BY DESIGN, AND A FLOOR. Enumerated: contacts, opportunities, calendars, conversations, locations (custom fields/values), invoices, payments, and voice-ai (added 2026-08-11 with `sizmo calls`). Deliberately NOT captured, as outside the coach/consultant ICP: products, inventory, stores, blogs, social-planner, knowledge-base, saas, medias, funnels, brand-boards. It is a FLOOR rather than a total: the MCP facade exposes only a SEMANTIC search with no list-everything call (verified 2026-08-04 \u2014 a generic query returns 0 results), so operations are found by asking targeted questions and unioning the answers. Two endpoints sizmo had been CALLING for weeks were absent from this file until 2026-08-11, which is what a floor looks like in practice. So 'UNREVIEWED: 0' means every operation we KNOW ABOUT has a decision \u2014 never that the API has no more surface.",
+    "honesty": "Every entry below was returned by a real query this session. Nothing here is inferred or remembered. This is a snapshot, not a live view \u2014 regenerate when the API changes.",
     "refreshHistory": [
       {
         "at": "2026-08-04",
@@ -23,7 +23,8 @@
         "enriched": 0,
         "via": "stdin"
       }
-    ]
+    ],
+    "triagedAt": "2026-08-11"
   },
   "operations": [
     {
