@@ -15,6 +15,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [3.2.0] — 2026-08-11
+
+Two additions. Nothing existing changed behaviour, so upgrading is safe.
+
+### Added — `sizmo invoice void`
+
+sizmo could create an invoice and send it to a customer but not take it back. That asymmetry sat on
+a money surface, and on the one operation you reach for in a hurry.
+
+```
+sizmo invoice void <invoiceId>            previews the record, exits 5
+sizmo invoice void <invoiceId> --confirm  voids it
+```
+
+It reads the invoice FIRST, so the preview names the record rather than echoing the id you typed:
+
+```
+Void invoice #1043 — Ana Cruz — ₱45,000
+  current status: sent
+  ⚠ voiding cannot be undone, and the customer may already have seen this invoice
+```
+
+If the invoice cannot be **read**, it is not voided — a preview that could not be built means you
+approved an id and nothing else. An already-paid invoice gets its own warning line. It is
+single-target: a second id is refused, since a hand-typed void loop is where a stray one gets pasted.
+
+### Added — `sizmo calls`
+
+What your Voice AI agents actually did. Every other report in sizmo covers what humans did; if an AI
+answers your phone, none of it saw that.
+
+```
+sizmo calls
+sizmo calls --days 30 --type live
+```
+
+It leads with outcomes rather than volume, because the call count is not the interesting number:
+
+```
+booked an appointment       2   50% of calls
+transferred to a human      1   25% of calls
+total time on calls    8m 49s   avg 2m 12s
+```
+
+**Known limit, stated rather than discovered:** the request shape is documented and pinned by tests,
+but the RESPONSE shape is not published and has not been verified against a live account with Voice
+AI configured. Fields are read through several plausible spellings and anything unreadable renders
+as unknown, never zero. If your account reports differently, that is a gap to report, not a wrong
+number to trust. A 404 means the location has no Voice AI rather than an error in the tool.
+
 ## [3.1.0] — 2026-08-11
 
 ### Fixed — `--fields` returned lists of empty objects
