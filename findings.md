@@ -621,3 +621,71 @@ $ npm test
 ## Files NOT changed
 
 - All command source files — read-only this run; no bugs found requiring source changes.
+
+---
+
+# findings — 2026-08-13 — docs hygiene
+
+## Gap fixed: `sizmo api --no-loc` absent from README
+
+### What
+
+`README.md` line 247 documented `sizmo api` with only two flags:
+
+```
+sizmo api /path         # raw GET escape hatch (--paginate --max-pages N)
+```
+
+`--no-loc` is a real, implemented, tested flag — missing from this line only.
+
+### Evidence
+
+**Implementation — lib/cli.mjs:485**
+```js
+const noLoc = rest.includes('--no-loc');
+```
+
+**Usage string — lib/cli.mjs:465**
+```
+usage: sizmo api </path?query> [--paginate] [--max-pages N] [--no-loc]
+```
+
+**Tab-completion metadata — lib/cli.mjs:540**
+```js
+flagsByCmd.api = ['--paginate', '--max-pages', '--no-loc'];
+```
+
+**Regression tests — test/client/cli.test.mjs:271-326**
+Two tests pin both behaviors (injection on, injection suppressed). Added in the 2026-08-06 run.
+
+**What `--no-loc` does (from the code comment at lib/cli.mjs:481-484):**
+Certain GHL sub-resource endpoints (e.g. `/contacts/:id/notes`) reject any unrecognized query
+param with a 422 — including an auto-injected `locationId`. `--no-loc` skips the injection for
+exactly that case.
+
+### Why it matters
+
+A user hitting a 422 on a sub-resource call has no obvious fix from the docs. The usage string
+inside the binary says `--no-loc` exists, but only users who already know to run `sizmo api
+--help` or read the source would find it. The README quick-ref is where most users look first.
+
+### Fix applied
+
+`README.md` line 247:
+
+```diff
+-sizmo api /path         # raw GET escape hatch (--paginate --max-pages N)
++sizmo api /path         # raw GET escape hatch (--paginate --max-pages N --no-loc)
+```
+
+Single-character diff. No logic changed.
+
+### Files changed
+
+- `README.md` — line 247 updated
+
+### Files NOT changed
+
+- All other docs — SKILL.md, AGENTS.md, docs/how-to/*.md, docs/maintainers/*.md have no
+  `sizmo api` one-liner that would need the same fix.
+- All source files — read-only this run.

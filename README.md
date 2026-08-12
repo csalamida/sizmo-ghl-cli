@@ -244,7 +244,7 @@ sizmo config set --profile <name> --loc <id> --pit-stdin
 sizmo config set --ai-key "sk-…" --ai-provider anthropic  # enables `sizmo ask` (optional)
 sizmo config rm <name>  # remove a profile
 sizmo config cache-clear # delete the 60s read cache from disk (it holds contact data)
-sizmo api /path         # raw GET escape hatch (--paginate --max-pages N)
+sizmo api /path         # raw GET escape hatch (--paginate --max-pages N --no-loc)
 ```
 
 **Tab-completion** — add `eval "$(sizmo completions zsh)"` to your `~/.zshrc` (or `bash` → `~/.bashrc`)
