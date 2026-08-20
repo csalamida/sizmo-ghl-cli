@@ -621,3 +621,80 @@ $ npm test
 ## Files NOT changed
 
 - All command source files — read-only this run; no bugs found requiring source changes.
+
+---
+
+# findings — 2026-08-12 — distribution/dx: README + SKILL.md + AGENTS.md staleness
+
+## What was wrong
+
+Two 3.3.0 features (released 2026-08-11) were entirely absent from all three discovery docs
+(README.md, SKILL.md, AGENTS.md).
+
+### Finding 1 — `sizmo apply` absent from README
+
+Evidence (CHANGELOG.md lines 22–79, confirmed by reading):
+
+```
+## [3.3.0] — 2026-08-11
+### Added — `sizmo apply`
+Phase 3 of location-as-file: export → diff → apply. Creates what an export file describes
+and this location is missing.
+
+sizmo apply location.json            previews the plan, exits 5
+sizmo apply location.json --confirm  creates
+```
+
+Before this run:
+- README "What it does" table: `Version (read-only)` row listed only `export` and `diff` — no `apply`.
+- README commands table: had a `sizmo diff` row, no `sizmo apply` row.
+- AGENTS.md Core Loop block: showed only `sizmo apply location.json --confirm` (execute form) —
+  no preview form, which is the normal first step since apply exits 5 without `--confirm`.
+
+SKILL.md already documented `apply` in both the Core Loop block and Read Commands section — no change needed.
+
+### Finding 2 — `--format md|slack` absent from all three docs
+
+Evidence (CHANGELOG.md lines 64–73):
+
+```
+### Added — `--format md|slack` on `receivables`, `reconcile`, `pipeline` and `focus`
+`brief` already had it; these four now share one renderer rather than four copies of a format.
+Paste a report into Slack, an email or Notion instead of reading it in a terminal.
+```
+
+Before this run: `--format md|slack` was not mentioned in README, SKILL.md, or AGENTS.md for any command (including `brief` which had it pre-3.3.0).
+
+## Changes made
+
+**README.md:**
+- "What it does" table: changed `Version (read-only)` → `Version`, added `apply` with confirm-gate note.
+- Commands table: inserted `sizmo apply <file>` row after `sizmo diff` row, with additive-only, NAME-matching, and pipeline/tag/user limit described.
+- Commands table key flags: added `--format md|slack` to `brief`, `pipeline`, `receivables`, `reconcile`, `focus`.
+
+**SKILL.md:**
+- Read Commands: appended `(--format md|slack to paste into Slack, email, or Notion)` to `brief`, `focus`, `pipeline`, `receivables`, `reconcile`.
+
+**AGENTS.md:**
+- Core Loop block: added bare `sizmo apply location.json` preview line before the `--confirm` execute line.
+- Read Commands: same `--format md|slack` annotations as SKILL.md for the five commands.
+
+## Diff summary
+
+```
+git diff --stat
+AGENTS.md | 11 ++++++-----
+README.md | 13 +++++++------
+SKILL.md  | 10 +++++-----
+3 files changed, 18 insertions(+), 16 deletions(-)
+```
+
+All changes are docs-only. No code, no tests, no package.json. Safe to merge as-is.
+
+## Files NOT touched
+
+- No npm publish attempted.
+- No git push or PR created.
+- No external URLs fetched.
+- No files outside the repo root modified.
+- demo asciinema/GIF: not attempted (requires a live GHL location; no safe test fixture available unattended).
