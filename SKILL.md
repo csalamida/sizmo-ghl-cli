@@ -59,10 +59,10 @@ Tags
 
 ## Read Commands (no confirmation, no risk)
 
-- `sizmo brief` — morning screen: revenue at risk, unreplied threads, open opps. Start here.
-- `sizmo focus` — one ranked to-do queue by money at stake
+- `sizmo brief` — morning screen: revenue at risk, unreplied threads, open opps. Start here. (`--format md|slack` to paste into Slack, email, or Notion)
+- `sizmo focus` — one ranked to-do queue by money at stake (`--format md|slack`)
 - `sizmo triage` — unreplied conversation sweep (who is waiting on a human)
-- `sizmo pipeline` — pipeline health + stuck deals sweep (closest thing to "list open opportunities")
+- `sizmo pipeline` — pipeline health + stuck deals sweep (closest thing to "list open opportunities") (`--format md|slack`)
 - `sizmo snapshot` — point-in-time state summary
 - `sizmo export` — full location dump to JSON (deterministic, key-sorted, byte-identical re-exports)
 - `sizmo apply <file>` — **confirm-gated, additive only.** Creates custom values, custom fields and calendars the file has and this location does not. Matches on NAME (not id), so it is idempotent across locations. It can never create pipelines, location tags or users — GoHighLevel has no API operation for those — and it says so in the preview rather than doing three sixths of the job silently. Never deletes, renames or updates.
@@ -72,9 +72,9 @@ Tags
 
 Money surfaces (all read-only — money never moves from the CLI):
 
-- `sizmo receivables` — A/R: who owes, how much, how old
+- `sizmo receivables` — A/R: who owes, how much, how old (`--format md|slack`)
 - `sizmo booked-not-paid` — sessions with no invoice or payment (the money leak)
-- `sizmo reconcile` — money reconciliation: collected by source, flags, recurring
+- `sizmo reconcile` — money reconciliation: collected by source, flags, recurring (`--format md|slack`)
 - `sizmo noshow` — no-show recovery: who to re-book
 - `sizmo contact find "<query>"` — find a contact by name/email/phone; prints the id every write needs (`--limit N`, default 10)
 - `sizmo invoice list` — all invoices; `--status draft|sent|paid|void` to narrow; `--top N`

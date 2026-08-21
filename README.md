@@ -17,7 +17,7 @@ A full terminal interface to one GoHighLevel location — **read it, build it, b
 | **Ask** (natural language — your own AI agent, or sizmo's opt-in resolver) | `ask "who hasn't replied in 3 days"` · `ask "tag Ana as follow-up"` — resolves to the exact command |
 | **See** (read-only) | `brief` · `snapshot` · `triage` · `pipeline` · `receivables` · `reconcile` · `booked-not-paid` · `noshow` · `focus` · `segment` · `crm` · `list` (12 entities) · `forms` · `surveys` · `transactions` |
 | **Find** (read-only) | `contact find` (name/email/phone → the id every write needs) · `invoice list` · `appointment list` (upcoming) |
-| **Version** (read-only) | `export` (location → one diffable file) · `diff` (file vs live, or file vs file — *what changed?*) |
+| **Version** | `export` (location → one diffable file) · `diff` (file vs live, or file vs file — *what changed?*) · `apply` (file → location — create what the file describes and this location lacks; confirm-gated, additive only, never deletes) |
 | **Act** | `tag` · `note` · `opp` (create/move/update) · `appointment` (book/cancel) · `send` (SMS/email) |
 | **Build** | `contact create` · `contact upsert` (de-dupe) · `contact update` · `field create` · `field update` · `value create` · `value update` · `calendar create` · `business create` · `business update` |
 | **Delete** (single-target, accident-proof) | `contact delete` · `field delete` · `value delete` · `calendar delete` · `business delete` |
@@ -134,15 +134,15 @@ Command list generated from `sizmo schema` (authoritative — pulled directly fr
 
 | Command | Summary | Key flags |
 |---------|---------|-----------|
-| `sizmo brief` | Morning brief — numbers + NEEDS YOU TODAY | `--days N` (default 7) |
+| `sizmo brief` | Morning brief — numbers + NEEDS YOU TODAY | `--days N` (default 7), `--format md\|slack` |
 | `sizmo snapshot` | Monday card — 6 metrics, one screen | `--days N` (default 7) |
 | `sizmo triage` | Who is waiting on a reply, longest first | `--top N` (default 10), `--days N` (default 30) |
-| `sizmo pipeline` | Pipeline health — value by stage + stuck deal sweep | `--stuck-days N` (default 7), `--top N` (default 100) |
+| `sizmo pipeline` | Pipeline health — value by stage + stuck deal sweep | `--stuck-days N` (default 7), `--top N` (default 100), `--format md\|slack` |
 | `sizmo noshow` | No-show recovery — who to re-book | `--days N` (default 30), `--top N` (default 15) |
-| `sizmo receivables` | A/R — who owes, how much, how old | `--top N` (default 20) |
-| `sizmo reconcile` | Money reconciliation — collected by source, flags, recurring | `--days N` (default 30), `--top N` (default 20) |
+| `sizmo receivables` | A/R — who owes, how much, how old | `--top N` (default 20), `--format md\|slack` |
+| `sizmo reconcile` | Money reconciliation — collected by source, flags, recurring | `--days N` (default 30), `--top N` (default 20), `--format md\|slack` |
 | `sizmo booked-not-paid` | Sessions with no invoice or payment — the money leak | `--days N` (default 30), `--top N` (default 15) |
-| `sizmo focus` | One ranked to-do queue by money at stake | `--top N` (default 15), `--stuck-days N` (default 7) |
+| `sizmo focus` | One ranked to-do queue by money at stake | `--top N` (default 15), `--stuck-days N` (default 7), `--format md\|slack` |
 | `sizmo ack <contactId>` | Snooze a contact so it stops surfacing in `focus`/`brief`. Local state only — never writes to GoHighLevel, so no `--confirm`. Acked items are **hidden, not deleted**, and the count is always shown in the footer; reveal with `--show-acked` | `--for 7d\|48h\|30m` (default 7d), `--reason "..."`, `--list`, `--clear <contactId>` |
 | `sizmo segment` | Find contacts by criteria — tag, phone, age, etc. | `--tag X`, `--without-tag X`, `--no-tags`, `--created-days N`, `--has-phone`, `--no-phone`, `--top N` (default 20) |
 | `sizmo crm` | Query the local CRM model — counts, lists, staleness | `--all` (show all items) |
@@ -154,6 +154,7 @@ Command list generated from `sizmo schema` (authoritative — pulled directly fr
 | `sizmo sync` | Refresh the local CRM model (all 12 entities) | `[entity]` (sync one) |
 | `sizmo export` | Dump the location's structure to one deterministic, diffable file | `--out <file>` (else stdout) |
 | `sizmo diff` | Compare an export against live, or two exports — what changed | `sizmo diff <file>` \| `sizmo diff <a> <b>` |
+| `sizmo apply <file>` | Create what the export file describes and this location lacks — additive only, never deletes or renames. Matches on NAME for idempotency across locations. Cannot create pipelines, tags or users (no GHL API operation) — the preview says so and quantifies what will not transfer. | `--confirm` (else previews + exits 5) |
 
 ### Writes (confirm-gated)
 
@@ -244,7 +245,7 @@ sizmo config set --profile <name> --loc <id> --pit-stdin
 sizmo config set --ai-key "sk-…" --ai-provider anthropic  # enables `sizmo ask` (optional)
 sizmo config rm <name>  # remove a profile
 sizmo config cache-clear # delete the 60s read cache from disk (it holds contact data)
-sizmo api /path         # raw GET escape hatch (--paginate --max-pages N)
+sizmo api /path         # raw GET escape hatch (--paginate --max-pages N --no-loc)
 ```
 
 **Tab-completion** — add `eval "$(sizmo completions zsh)"` to your `~/.zshrc` (or `bash` → `~/.bashrc`)
