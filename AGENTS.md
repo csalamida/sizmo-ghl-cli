@@ -208,9 +208,10 @@ sizmo business create --name "Acme" --website "https://..." --confirm
 sizmo business update <id> --city "Cebu" --confirm                       # partial edit; only what you pass changes
 sizmo business delete <id> --confirm
 
-# Invoices — draft/send only, there is no void/charge command
+# Invoices — draft/send/void, there is no card-charge command
 sizmo invoice draft --contact <id> --item "Session:5000" [--currency PHP --due 2026-08-01] --confirm
 sizmo invoice send <invoiceId> --confirm
+sizmo invoice void <invoiceId> --confirm   # cannot be undone — fetches + shows the record first
 ```
 
 ---
