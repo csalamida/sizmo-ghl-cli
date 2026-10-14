@@ -1,4 +1,4 @@
-// commands/invoice.mjs — LIST invoices, create a DRAFT invoice for a contact, or SEND an existing one.
+// commands/invoice.mjs — LIST invoices, create a DRAFT invoice for a contact, SEND or VOID an existing one.
 // Scope required: invoices.write
 // SCOPE-IS-THE-GATE: sizmo exposes what your PIT scope + the public GHL API allow. There is no
 // public "charge a card" endpoint — `draft` creates a document, `send` delivers a pay-link the

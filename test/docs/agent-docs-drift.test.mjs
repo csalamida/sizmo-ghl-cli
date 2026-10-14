@@ -153,11 +153,14 @@ for (const [label, doc] of [['SKILL.md', SKILL], ['AGENTS.md', AGENTS]]) {
 
 // ── specific past regressions, pinned ─────────────────────────────────────────
 
-test('neither agent doc resurrects the non-existent `invoice void` command', () => {
-  // Documented for real in SKILL.md until 2.4.8. It has never existed.
+test('invoice void is documented in both agent docs now that it is real (shipped a756e57)', () => {
+  // Until 2026-08-11 this was the opposite assertion: `invoice void` was a 2.4.8 fabrication that
+  // had never existed, so both docs were forbidden from mentioning it. commit a756e57 then shipped
+  // a real `sizmo invoice void` (commands/invoice.mjs SUBCOMMANDS, test/commands/invoice-void.test.mjs)
+  // and nobody flipped this test — so it spent weeks enforcing the exact staleness it exists to catch.
   for (const [label, doc] of [['SKILL.md', SKILL], ['AGENTS.md', AGENTS]]) {
-    assert.ok(!/invoice\s+void/i.test(doc),
-      `${label} documents "invoice void", which has never been implemented.`);
+    assert.ok(/invoice\s+void/i.test(doc),
+      `${label} does not document "invoice void", which has existed since commit a756e57.`);
   }
 });
 
