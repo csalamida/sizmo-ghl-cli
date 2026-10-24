@@ -622,4 +622,184 @@ $ npm test
 
 - All command source files — read-only this run; no bugs found requiring source changes.
 
-<<<<<
+---
+
+# findings — 2026-10-25 — claim-verification
+
+## Why these 5 claims
+
+The last claim-verification run (2026-08-02) checked PIT-argv, egress-host-count, fetch-call-sites,
+`ask`'s money/scheduling exclusions, and the 3.0.0 destructive-one-liner gate — all still structurally
+true (nothing touched those code paths since: `git log` shows no commits between `7d23b8d` and now
+touching `ask.mjs`'s gating logic or `http.mjs`/`llm.mjs`/`update-notify.mjs`'s fetch call sites).
+Re-checking the same five would be free but low-value. Instead I verified claims introduced by the
+three releases that shipped *after* that run (3.1.0 → 3.3.0: `invoice void`, `apply`, `--format
+md|slack`, the api-coverage decision table) plus the oldest, most load-bearing claim in SECURITY.md
+that had never been checked: zero runtime dependencies. These are the claims where being wrong would
+most directly change whether a stranger hands this tool a live PIT — a fabricated "additive only"
+guarantee on a write command, or a dependency tree that doesn't exist, are the closest analogues to
+the historical SKILL.md flag-syntax / `invoice void` failures this lane exists to catch.
+
+## Claim 1 — "zero runtime dependencies" (SECURITY.md:7, :62, :136)
+
+**Source:** "The whole tool has zero runtime dependencies — `package.json` has no `dependencies`
+field at all... Verify with `npm ls --omit=dev` (prints `(empty)`)."
+
+```
+$ grep -n '"dependencies"' package.json
+(no output — the key is absent, not an empty object)
+
+$ npm ls --omit=dev
+sizmo@3.3.0 /private/.../sizmo-daily-loop-claim-verification-Nyv2zn
+`-- (empty)
+```
+
+**Result: VERIFIED.** Both halves of the claim hold — the field is truly absent (not `{}`, which a
+naive grep for `"dependencies": {}` would miss, as SECURITY.md itself warns), and `npm ls --omit=dev`
+prints exactly `(empty)` as documented.
+
+## Claim 2 — `sizmo apply` is additive-only: "never deletes, renames or updates" (CHANGELOG 3.3.0)
+
+**Source:** CHANGELOG.md 3.3.0 — "**It never deletes, renames or updates.** Additive only."
+
+**Verification:** read `commands/apply.mjs` in full (265 lines). The only commands it ever invokes
+are the three in the `CREATABLE` table, and every one of them is hardcoded to the `create`
+subcommand:
+
+```js
+// commands/apply.mjs:41, :48, :58 — toArgs for the three creatable groups
+toArgs: (x) => ({ _: ['create'], name: x.name, value: x.value ?? '' }),      // customValues
+toArgs: (x) => ({ _: ['create'], name: x.name, ...(x.dataType ? {type:...} : {}) }), // customFields
+toArgs: (x) => ({ _: ['create'], name: x.name }),                           // calendars
+```
+
+Names that already exist but differ in content are explicitly routed to `changes.push(...'left
+unchanged (apply never updates)')` (line 199) — never to an update call. There is no `update`,
+`delete`, or `rename` string anywhere in the file's execution path (`grep -c "delete\|rename" commands/apply.mjs` → 0 matches outside comments). The three non-creatable groups (`pipelines`, `tags`,
+`users`) are reported in `notApplicable` and never acted on.
+
+**Result: VERIFIED.** The claim matches the code exactly — `apply` can only create, via three
+hardcoded `create` calls, and explicitly refuses to touch a name that already exists with different
+content.
+
+## Claim 3 — `sizmo invoice void` reads the record first and is confirm-gated (CHANGELOG 3.2.0)
+
+**Source:** CHANGELOG.md 3.2.0 — "It reads the invoice FIRST, so the preview names the record rather
+than echoing the id you typed."
+
+```
+$ grep -n "void" commands/invoice.mjs | sed -n '1,20p'
+26:const SUBCOMMANDS = ['list', 'draft', 'send', 'void'];
+336:  // Read it first so the human sees WHAT they are voiding.
+341:    throw new GhlError(`HTTP ${r0.code} — your PIT lacks invoices.readonly, ...`, ...)
+344:  if (r0.code === 404) throw new GhlError(`no invoice with id ${id} — nothing voided`, EXIT.NOTFOUND);
+366:  const rerunCommand = `sizmo invoice void ${id} --confirm`;
+367:  const gate = requireConfirm({ command: 'invoice void', changes, rerunCommand }, ctx);
+370:  const r = await ctx.http.post(`/invoices/${encodeURIComponent(id)}/void`, {...});
+```
+
+`voidInvoice()` does a GET on `/invoices/{id}` before anything else, builds the confirmation preview
+from the fetched record (number, contact, amount, status — including a dedicated warning line when
+the invoice is already paid), and only then calls `requireConfirm`. The POST to the void endpoint is
+unreachable unless `gate.proceed` is true.
+
+**Result: VERIFIED.** Order of operations in the source is GET → build preview from real fields →
+confirm gate → POST. No code path reaches the POST without the GET succeeding first.
+
+## Claim 4 — "No telemetry — sizmo never phones home about you" (SECURITY.md:61)
+
+**Source:** "Outbound traffic goes to exactly three places, and only the first two happen by
+default: (1) the GoHighLevel API, (2) a once-a-day npm-registry check... (3) only if you configured
+`sizmo ask` with an AI key... Opt out of the update check with `--no-update-check` or
+`NO_UPDATE_NOTIFIER=1`."
+
+**Verification:** `lib/update-notify.mjs` — `fetchLatest()` does a plain `GET
+https://registry.npmjs.org/sizmo/latest` with no body, no query params, no custom headers beyond
+`accept: application/json`; `checkForUpdate()` honors `env.NO_UPDATE_NOTIFIER ||
+env.SIZMO_NO_UPDATE_CHECK` as an early return. Confirmed the CLI actually wires the flag through:
+
+```
+$ grep -n "no-update-check" bin/sizmo.mjs lib/cli.mjs
+bin//sizmo.mjs:9:const noUpdateFlag = rawArgv.includes('--no-update-check');
+bin//sizmo.mjs:10:const argv = rawArgv.filter(a => a !== '--no-update-check');
+lib/cli.mjs:525:const COMPLETION_GLOBALS = [..., '--no-update-check'];
+```
+
+**Result: VERIFIED.** The update check sends nothing user-identifying (no PIT, no location id, no
+machine id — just a GET of a public, unparameterized URL), is cached 24h, fails silent and offline-
+safe, and both documented opt-outs (`--no-update-check` flag, `NO_UPDATE_NOTIFIER`/
+`SIZMO_NO_UPDATE_CHECK` env vars) are actually wired into `bin/sizmo.mjs` / `lib/update-notify.mjs`,
+not just documented.
+
+## Claim 5 — writes are confirm-gated; `--format md|slack` on the four 3.3.0 commands (CHANGELOG 3.3.0 + general confirm-gate claim)
+
+Tested live against the sandbox's test GHL location rather than just reading source, since this is
+the claim category (a write silently firing, or a flag silently no-opping) that burned this repo
+before.
+
+**Confirm gate — real run, no `--confirm`:**
+```
+$ node bin/sizmo.mjs contact create --name "SIZMO-VERIFY-exitcode" --phone "+10000000002"
+Exit code 5
+  CONFIRM REQUIRED — contact create
+  Create contact: +10000000002 · SIZMO-VERIFY-exitcode
+  → rerun with --confirm to execute:
+    sizmo contact create --name "SIZMO-VERIFY-exitcode" --phone "+10000000002" --confirm
+```
+No contact was created (nothing to clean up — this one was never confirmed).
+
+**Confirm gate — real run, with `--confirm` (test entity left behind per this run's naming rule):**
+```
+$ node bin/sizmo.mjs contact create --name "SIZMO-VERIFY-claimcheck" --phone "+10000000001" --confirm
+  contact created · id A8UOjEYncE13kTALn1GT
+```
+
+**`--format` — real run, valid value:**
+```
+$ node bin/sizmo.mjs receivables --format md
+## Receivables
+_loc C2E4NvAWRXh0f3cU5M7K · profile c2e4_
+- **Outstanding:** ₱300
+...
+| #003002 | Carl James Salamida | ₱300 | sent | 240d overdue |
+_Read-only. sizmo never charges or collects._
+```
+
+**`--format` — real run, invalid value (CHANGELOG claims it now warns instead of silently rendering `pretty`):**
+```
+$ node bin/sizmo.mjs receivables --format bogus --json
+unknown --format "bogus" — rendering as pretty. Valid: pretty, slack, md
+{ "schemaVersion": 1, "command": "receivables", ... }
+```
+
+**Result: VERIFIED, both halves.** The confirm gate actually blocks an unconfirmed write (exit 5,
+nothing created) and actually lets a confirmed one through (real contact id returned). `--format md`
+renders markdown as documented; an unrecognized `--format` prints the warned-about message and the
+named valid values, then falls back to `pretty` — matching the CHANGELOG 3.3.0 claim exactly, not
+the pre-3.3.0 silent-fallback behavior it replaced.
+
+## Summary table
+
+| Claim | Status | Evidence |
+|-------|--------|----------|
+| Zero runtime dependencies | ✅ VERIFIED | `package.json` has no `dependencies` key; `npm ls --omit=dev` → `(empty)` |
+| `apply` is additive-only (no delete/rename/update) | ✅ VERIFIED | all 3 `toArgs` hardcode `_: ['create']`; differing names routed to a no-op branch |
+| `invoice void` reads-then-confirms-then-writes | ✅ VERIFIED | GET before preview, `requireConfirm` before POST, in that order in source |
+| No telemetry beyond the npm update check | ✅ VERIFIED | plain unparameterized GET; both opt-out mechanisms wired in `bin/sizmo.mjs` |
+| Writes are confirm-gated + `--format md\|slack` works as documented | ✅ VERIFIED | live run: unconfirmed write → exit 5, nothing created; confirmed write → real id; `--format md` renders; invalid `--format` warns + falls back |
+
+No documentation bugs found this run — all 5 claims checked out against source and, for claim 5,
+against live execution. This is a legitimate outcome for this lane: the task does not require
+finding a defect every run, only that every claim checked is backed by a command whose real output
+is pasted here.
+
+## Files changed
+
+- `findings.md` — this section only.
+
+## Files NOT changed
+
+- All source and doc files — this run was read/verify-only, plus one test contact created against
+  the sandbox location per the run's own write-testing allowance (`SIZMO-VERIFY-claimcheck`, id
+  `A8UOjEYncE13kTALn1GT`) — intentionally left in place, named per the required prefix, as a
+  harmless artifact of Claim 5's live confirm-gate test.
