@@ -83,6 +83,9 @@ sizmo sync                   # refresh local CRM model (run after changing stage
 sizmo export --out file.json # dump full location structure to one deterministic, diffable JSON file
 sizmo diff file.json         # compare saved file vs live — what changed?
 sizmo diff a.json b.json     # compare two saved exports
+sizmo calls                  # what your Voice AI agents did — calls handled, bookings made, transfers
+sizmo ack <contactId>        # snooze a contact so it stops resurfacing in focus/brief (local state only)
+sizmo ack --list             # show all active snoozes with expiry
 ```
 
 `sizmo brief` never invents a number. A blocked data source is reported as unknown, never as zero.
@@ -172,6 +175,10 @@ sizmo calendar delete <calendarId> --confirm
 # Invoices (scope-gated)
 sizmo invoice draft --contact <id> --item "Session:5000" --confirm   # creates document, no charge
 sizmo invoice send <invoiceId> --confirm                              # sends pay-link, not a card charge
+sizmo invoice void <invoiceId> --confirm                              # void one that should not have gone out — not reversible
+
+# Location-as-file (additive scaffold)
+sizmo apply location.json --confirm   # create what the export file describes and this location lacks — never deletes
 ```
 
 Delete commands are single-target by design. No `--all`, no wildcard. The CLI fetches and names the resource before deleting — a wrong ID returns NOTFOUND, nothing touched.
