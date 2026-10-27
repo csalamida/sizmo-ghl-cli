@@ -26,6 +26,11 @@ const AGENTS = readFileSync(join(REPO, 'AGENTS.md'), 'utf8');
 // full iteration AFTER --subject shipped, surviving a green 793-test run. README is the file most
 // humans read first and the one npm renders on the package page.
 const README = readFileSync(join(REPO, 'README.md'), 'utf8');
+// llms.txt joined the guarded set 2026-10-28. It is the file AI answer engines and LLM-based
+// discovery tools read first (the whole point of the /llms.txt convention), and `apply`, `ack`,
+// `calls` and `invoice void` were all missing from it with nothing catching it, because it had
+// never been wired into this test.
+const LLMS = readFileSync(join(REPO, 'llms.txt'), 'utf8');
 
 const commandNames = readdirSync(join(REPO, 'commands'))
   .filter(f => f.endsWith('.mjs'))
@@ -261,6 +266,43 @@ test('README command table: the Key-flags column matches source', () => {
     `README's table lists flags that do not exist: ${[...new Set(problems)].join(', ')}`);
 });
 
+// ── llms.txt (added 2026-10-28) ──────────────────────────────────────────────
+// Same contract as README: this is a prose/example file an LLM reads, not a human-curated table,
+// so it gets the mechanical checks (command coverage, per-command flag validity) rather than the
+// table-cell check, which is README-specific markdown structure.
+
+test('llms.txt documents every command', () => {
+  const missing = expected.filter(c => !mentions(LLMS, c));
+  assert.deepEqual(missing, [],
+    `Commands absent from llms.txt: ${missing.join(', ')}. This file is what AI answer engines ` +
+    `and LLM-based discovery tools read as the CLI's command surface — a command missing here is ` +
+    `invisible to exactly the audience this file exists for.`);
+});
+
+test('llms.txt: every flag in a shell example is valid FOR THAT COMMAND', () => {
+  const fences = shellFences(LLMS);
+  const problems = [];
+  for (const rawLine of fences.split('\n')) {
+    const line = rawLine.replace(/#.*$/, '').trim();
+    const m = /^sizmo\s+([a-z0-9-]+)/i.exec(line);
+    if (!m) continue;
+    const cmd = m[1].toLowerCase();
+    const known = flagsFor.get(cmd);
+    const used = [...line.matchAll(/\s(--[a-z0-9-]+)/gi)]
+      .map(f => f[1].toLowerCase())
+      .filter(f => /^--[a-z0-9]/.test(f));
+    for (const flag of used) {
+      if (realFlags.has(flag) && !known) continue;
+      if (!realFlags.has(flag)) { problems.push(`${cmd}: ${flag} (exists nowhere)`); continue; }
+      if (known && !known.has(flag) && !GLOBALS.has(flag)) {
+        problems.push(`${cmd}: ${flag} (real flag, but not on \`sizmo ${cmd}\`)`);
+      }
+    }
+  }
+  assert.deepEqual([...new Set(problems)].sort(), [],
+    `llms.txt shows flags that will fail as written:\n  ${[...new Set(problems)].sort().join('\n  ')}`);
+});
+
 test('README does not claim --subject is missing (it shipped 2026-07-27)', () => {
   // The exact regression this guard exists for. Pinned by shape rather than detected generically,
   // because generic negative-claim detection does not work (see the scope note above).
@@ -270,10 +312,11 @@ test('README does not claim --subject is missing (it shipped 2026-07-27)', () =>
     'README still carries the pre---subject wording.');
 });
 
-test('all three doc surfaces agree on which commands exist', () => {
+test('all four doc surfaces agree on which commands exist', () => {
   // SKILL and AGENTS were already cross-checked; README was not, so it could drift alone.
+  // llms.txt joined 2026-10-28 for the same reason — it was never compared against the others.
   const inconsistent = expected.filter(c => {
-    const seen = [mentions(SKILL, c), mentions(AGENTS, c), mentions(README, c)];
+    const seen = [mentions(SKILL, c), mentions(AGENTS, c), mentions(README, c), mentions(LLMS, c)];
     return seen.some(Boolean) && !seen.every(Boolean);
   }).sort();
   assert.deepEqual(inconsistent, [],
